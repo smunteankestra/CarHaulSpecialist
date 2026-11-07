@@ -577,3 +577,135 @@ a.card:hover {
     position: static;
   }
 }
+
+/* phase 2: orders, tracking, invoices */
+.admin-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.admin-nav a {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid #d7e0e8;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.admin-nav a.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #eef2f6;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.badge-requested { background: #fff4e5; color: #8a4b00; }
+.badge-confirmed { background: #e6f0ff; color: #12407f; }
+.badge-assigned { background: #e8f1ff; color: #12407f; }
+.badge-picked_up { background: #e9f6ec; color: #1c5c2c; }
+.badge-in_transit { background: #e9f6ec; color: #1c5c2c; }
+.badge-delivered { background: #e4f5e8; color: #14532d; }
+.badge-closed { background: #eef2f6; color: #33475b; }
+.badge-cancelled { background: #fdecea; color: #8f1d14; }
+
+.two-up {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.form-section {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 0.6rem 0 -0.2rem;
+  border-top: 1px solid #edf2f6;
+  padding-top: 0.7rem;
+}
+
+.form-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.timeline li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 8px;
+  background: #f4f7fa;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.timeline li.reached {
+  background: rgba(242, 106, 27, 0.1);
+  color: var(--text);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.chip {
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid #d7e0e8;
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: #fff;
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-small {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.mt {
+  margin-top: 1.4rem;
+}
+
+.invoice-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+@media print {
+  .site-header,
+  .site-footer,
+  .no-print {
+    display: none;
+  }
+}

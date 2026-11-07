@@ -2,7 +2,20 @@ import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
 import { SESSION_COOKIE, sessionMaxAge, signSession, timingSafeEqual, verifySession } from "./auth";
+import {
+  addNote,
+  assignCarrier,
+  createInvoice,
+  createOrder,
+  isOrderStatus,
+  markInvoicePaid,
+  setStatus,
+  type InvoiceRow,
+  type OrderEventRow,
+  type OrderRow,
+} from "./orders";
 import { lookupZip, priceQuote, roadMiles, type TransportType, type VehicleCondition } from "./quote";
+import { adminOrderPage, adminOrdersPage, bookPage, invoicePage, trackPage, type BookValues } from "./views-order";
 import {
   adminLoginPage,
   adminPage,
@@ -127,6 +140,117 @@ app.post("/quote", async (c) => {
   );
 });
 
+function bookValuesFrom(body: Record<string, unknown>): BookValues {
+  const pick = (key: keyof BookValues) => String(body[key] ?? "").trim();
+  return {
+    name: pick("name"),
+    email: pick("email"),
+    phone: pick("phone"),
+    vin: pick("vin"),
+    origin_street: pick("origin_street"),
+    origin_city: pick("origin_city"),
+    origin_state: pick("origin_state"),
+    origin_zip: pick("origin_zip"),
+    origin_contact: pick("origin_contact"),
+    origin_phone: pick("origin_phone"),
+    dest_street: pick("dest_street"),
+    dest_city: pick("dest_city"),
+    dest_state: pick("dest_state"),
+    dest_zip: pick("dest_zip"),
+    dest_contact: pick("dest_contact"),
+    dest_phone: pick("dest_phone"),
+    vehicle_year: pick("vehicle_year"),
+    vehicle_make: pick("vehicle_make"),
+    vehicle_model: pick("vehicle_model"),
+    transport_type: pick("transport_type") || "open",
+    condition: pick("condition") || "running",
+    ready_date: pick("ready_date") || String(body.available_date ?? "").trim(),
+    notes: pick("notes"),
+    lead_id: pick("lead_id"),
+  };
+}
+
+async function priceFor(values: BookValues): Promise<{ distance: number | null; price: number | null }> {
+  const [origin, destination] = await Promise.all([lookupZip(values.origin_zip ?? ""), lookupZip(values.dest_zip ?? "")]);
+  if (!origin || !destination) return { distance: null, price: null };
+  const distance = roadMiles(origin, destination);
+  const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
+  const condition: VehicleCondition = values.condition === "non-running" ? "non-running" : "running";
+  return { distance, price: priceQuote(distance, transport, condition, false).total };
+}
+
+app.get("/book", (c) => c.html(bookPage({}, null)));
+
+app.post("/book", async (c) => {
+  const values = bookValuesFrom(await c.req.parseBody());
+  const { price } = await priceFor(values);
+  return c.html(bookPage(values, price));
+});
+
+app.post("/book/submit", async (c) => {
+  const values = bookValuesFrom(await c.req.parseBody());
+  const invalid = (message: string) => c.html(bookPage(values, null, message), 400);
+
+  if (!values.name || !values.email || !values.phone) return invalid("Name, email and phone are required.");
+  if (!EMAIL_PATTERN.test(values.email)) return invalid("That email does not look right.");
+  if (!ZIP_PATTERN.test(values.origin_zip ?? "") || !ZIP_PATTERN.test(values.dest_zip ?? "")) {
+    return invalid("Both ZIP codes must be five digits.");
+  }
+  if (!values.origin_street || !values.dest_street) return invalid("Both street addresses are required.");
+  if (!values.origin_contact || !values.origin_phone || !values.dest_contact || !values.dest_phone) {
+    return invalid("A contact name and phone are required at both ends.");
+  }
+
+  const { distance, price } = await priceFor(values);
+  if (price === null || distance === null) {
+    return invalid("We could not price that route automatically. Call dispatch and we will book it by hand.");
+  }
+
+  const order = await createOrder(c.env.DB, {
+    leadId: values.lead_id ? Number(values.lead_id) : null,
+    customerName: values.name,
+    customerEmail: values.email,
+    customerPhone: values.phone,
+    transportType: values.transport_type === "enclosed" ? "enclosed" : "open",
+    condition: values.condition === "non-running" ? "non-running" : "running",
+    vehicleYear: values.vehicle_year ?? "",
+    vehicleMake: values.vehicle_make ?? "",
+    vehicleModel: values.vehicle_model ?? "",
+    vin: values.vin ?? "",
+    originStreet: values.origin_street ?? "",
+    originCity: values.origin_city ?? "",
+    originState: (values.origin_state ?? "").toUpperCase(),
+    originZip: values.origin_zip ?? "",
+    originContact: values.origin_contact ?? "",
+    originPhone: values.origin_phone ?? "",
+    destStreet: values.dest_street ?? "",
+    destCity: values.dest_city ?? "",
+    destState: (values.dest_state ?? "").toUpperCase(),
+    destZip: values.dest_zip ?? "",
+    destContact: values.dest_contact ?? "",
+    destPhone: values.dest_phone ?? "",
+    readyDate: values.ready_date ?? "",
+    distanceMiles: distance,
+    price,
+    notes: values.notes ?? "",
+  });
+
+  return c.redirect(`/track/${order.token}?new=1`, 303);
+});
+
+app.get("/track/:token", async (c) => {
+  const token = c.req.param("token");
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE token = ?").bind(token).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  const [{ results: events }, { results: invoices }] = await Promise.all([
+    c.env.DB.prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id").bind(order.id).all<OrderEventRow>(),
+    c.env.DB.prepare("SELECT * FROM invoices WHERE order_id = ? AND status != 'void' ORDER BY id").bind(order.id).all<InvoiceRow>(),
+  ]);
+
+  return c.html(trackPage(order, events, invoices));
+});
+
 app.get("/services/:slug", (c) => {
   const page = servicePage(c.req.param("slug"));
   return page ? c.html(page) : c.html(notFoundPage(), 404);
@@ -188,6 +312,130 @@ app.get("/admin", async (c) => {
   ).all<LeadRow>();
 
   return c.html(adminPage(results, email));
+});
+
+app.get("/admin/orders", async (c) => {
+  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
+  if (!email) return c.redirect("/admin/login", 303);
+
+  const status = c.req.query("status") ?? "all";
+  const filtered = status !== "all" && isOrderStatus(status);
+  const statement = filtered
+    ? c.env.DB.prepare("SELECT * FROM orders WHERE status = ? ORDER BY id DESC LIMIT 200").bind(status)
+    : c.env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 200");
+  const { results } = await statement.all<OrderRow>();
+
+  return c.html(adminOrdersPage(results, status));
+});
+
+app.get("/admin/orders/:id", async (c) => {
+  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
+  if (!email) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  const [{ results: events }, { results: invoices }] = await Promise.all([
+    c.env.DB.prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id").bind(id).all<OrderEventRow>(),
+    c.env.DB.prepare("SELECT * FROM invoices WHERE order_id = ? ORDER BY id DESC").bind(id).all<InvoiceRow>(),
+  ]);
+
+  return c.html(adminOrderPage(order, events, invoices));
+});
+
+app.post("/admin/orders/:id/status", async (c) => {
+  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
+  if (!email) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const status = String(body.status ?? "");
+  if (!isOrderStatus(status)) return c.redirect(`/admin/orders/${id}`, 303);
+
+  await setStatus(c.env.DB, id, status, email, String(body.note ?? ""));
+  return c.redirect(`/admin/orders/${id}`, 303);
+});
+
+app.post("/admin/orders/:id/carrier", async (c) => {
+  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
+  if (!email) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const name = String(body.carrier_name ?? "").trim();
+  if (!name) return c.redirect(`/admin/orders/${id}`, 303);
+
+  await assignCarrier(
+    c.env.DB,
+    id,
+    { name, mc: String(body.carrier_mc ?? "").trim(), phone: String(body.carrier_phone ?? "").trim() },
+    email,
+  );
+  return c.redirect(`/admin/orders/${id}`, 303);
+});
+
+app.post("/admin/orders/:id/note", async (c) => {
+  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
+  if (!email) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const note = String(body.note ?? "").trim();
+  if (note) await addNote(c.env.DB, id, note, email);
+  return c.redirect(`/admin/orders/${id}`, 303);
+});
+
+app.post("/admin/orders/:id/invoice", async (c) => {
+  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
+  if (!email) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const amount = Number(body.amount ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) return c.redirect(`/admin/orders/${id}`, 303);
+
+  const dueDate = String(body.due_at ?? "").trim();
+  const dueAt = dueDate ? new Date(`${dueDate}T23:59:59Z`).getTime() : null;
+
+  await createInvoice(
+    c.env.DB,
+    id,
+    {
+      description: String(body.description ?? `Vehicle transport`).trim() || "Vehicle transport",
+      amount: Math.round(amount),
+      dueAt: dueAt && Number.isFinite(dueAt) ? dueAt : null,
+      note: String(body.note ?? "").trim(),
+    },
+    email,
+  );
+  return c.redirect(`/admin/orders/${id}`, 303);
+});
+
+app.post("/admin/invoices/:id/paid", async (c) => {
+  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
+  if (!email) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const invoice = await c.env.DB.prepare("SELECT * FROM invoices WHERE id = ?").bind(id).first<InvoiceRow>();
+  if (!invoice) return c.html(notFoundPage(), 404);
+
+  await markInvoicePaid(c.env.DB, id, email);
+  return c.redirect(`/admin/orders/${invoice.order_id}`, 303);
+});
+
+app.get("/admin/invoices/:id", async (c) => {
+  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
+  if (!email) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const invoice = await c.env.DB.prepare("SELECT * FROM invoices WHERE id = ?").bind(id).first<InvoiceRow>();
+  if (!invoice) return c.html(notFoundPage(), 404);
+
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(invoice.order_id).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  return c.html(invoicePage(invoice, order));
 });
 
 app.notFound((c) => c.html(notFoundPage(), 404));

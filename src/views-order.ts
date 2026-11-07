@@ -1,0 +1,373 @@
+import { esc, layout, site } from "./views";
+import {
+  CUSTOMER_STAGES,
+  ORDER_STATUSES,
+  STATUS_LABELS,
+  type InvoiceRow,
+  type OrderEventRow,
+  type OrderRow,
+  type OrderStatus,
+} from "./orders";
+
+export interface BookValues {
+  name?: string;
+  email?: string;
+  phone?: string;
+  vin?: string;
+  origin_street?: string;
+  origin_city?: string;
+  origin_state?: string;
+  origin_zip?: string;
+  origin_contact?: string;
+  origin_phone?: string;
+  dest_street?: string;
+  dest_city?: string;
+  dest_state?: string;
+  dest_zip?: string;
+  dest_contact?: string;
+  dest_phone?: string;
+  vehicle_year?: string;
+  vehicle_make?: string;
+  vehicle_model?: string;
+  transport_type?: string;
+  condition?: string;
+  ready_date?: string;
+  notes?: string;
+  lead_id?: string;
+}
+
+const money = (value: number) => `$${value.toLocaleString()}`;
+const when = (value: number) => new Date(value).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+
+export function bookPage(values: BookValues, price: number | null, error?: string): string {
+  const v = (key: keyof BookValues) => esc(values[key] ?? "");
+  const hidden = Object.entries(values)
+    .filter(([key]) => key === "lead_id")
+    .map(([key, value]) => `<input type="hidden" name="${key}" value="${esc(value)}">`)
+    .join("");
+
+  return layout({
+    title: "Book your transport — Car Haul Specialist",
+    description: "Confirm the addresses, contacts and vehicle details so dispatch can assign a carrier.",
+    canonical: "/book",
+    body: `
+<section class="wrap section">
+  <p class="eyebrow">Booking</p>
+  <h1 class="page-title">Book your transport</h1>
+  <p class="lede narrow">We need both addresses and a contact at each end. Dispatch confirms the carrier and the pickup window after you submit.</p>
+  <div class="quote-layout">
+    <form class="quote-form" method="post" action="/book/submit">
+      ${hidden}
+      ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
+
+      <h3 class="form-section">Customer</h3>
+      <div class="field-row">
+        <label class="field"><span>Full name *</span><input name="name" required value="${v("name")}" autocomplete="name"></label>
+        <label class="field"><span>Email *</span><input name="email" type="email" required value="${v("email")}" autocomplete="email"></label>
+        <label class="field"><span>Phone *</span><input name="phone" required value="${v("phone")}" autocomplete="tel"></label>
+      </div>
+
+      <h3 class="form-section">Vehicle</h3>
+      <div class="field-row">
+        <label class="field"><span>Year</span><input name="vehicle_year" maxlength="4" value="${v("vehicle_year")}"></label>
+        <label class="field"><span>Make</span><input name="vehicle_make" value="${v("vehicle_make")}"></label>
+        <label class="field"><span>Model</span><input name="vehicle_model" value="${v("vehicle_model")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>VIN</span><input name="vin" maxlength="17" value="${v("vin")}" placeholder="17 characters"></label>
+        <label class="field"><span>Transport</span>
+          <select name="transport_type">
+            <option value="open"${values.transport_type !== "enclosed" ? " selected" : ""}>Open trailer</option>
+            <option value="enclosed"${values.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
+          </select>
+        </label>
+        <label class="field"><span>Condition</span>
+          <select name="condition">
+            <option value="running"${values.condition !== "non-running" ? " selected" : ""}>Runs and drives</option>
+            <option value="non-running"${values.condition === "non-running" ? " selected" : ""}>Not running</option>
+          </select>
+        </label>
+      </div>
+
+      <h3 class="form-section">Pickup</h3>
+      <div class="field-row">
+        <label class="field"><span>Street address *</span><input name="origin_street" required value="${v("origin_street")}" autocomplete="street-address"></label>
+        <label class="field"><span>City</span><input name="origin_city" value="${v("origin_city")}"></label>
+        <label class="field"><span>State</span><input name="origin_state" maxlength="2" value="${v("origin_state")}"></label>
+        <label class="field"><span>ZIP *</span><input name="origin_zip" inputmode="numeric" maxlength="5" required value="${v("origin_zip")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Contact name *</span><input name="origin_contact" required value="${v("origin_contact")}"></label>
+        <label class="field"><span>Contact phone *</span><input name="origin_phone" required value="${v("origin_phone")}"></label>
+      </div>
+
+      <h3 class="form-section">Delivery</h3>
+      <div class="field-row">
+        <label class="field"><span>Street address *</span><input name="dest_street" required value="${v("dest_street")}"></label>
+        <label class="field"><span>City</span><input name="dest_city" value="${v("dest_city")}"></label>
+        <label class="field"><span>State</span><input name="dest_state" maxlength="2" value="${v("dest_state")}"></label>
+        <label class="field"><span>ZIP *</span><input name="dest_zip" inputmode="numeric" maxlength="5" required value="${v("dest_zip")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Contact name *</span><input name="dest_contact" required value="${v("dest_contact")}"></label>
+        <label class="field"><span>Contact phone *</span><input name="dest_phone" required value="${v("dest_phone")}"></label>
+      </div>
+
+      <h3 class="form-section">Schedule</h3>
+      <div class="field-row">
+        <label class="field"><span>Ready date</span><input name="ready_date" type="date" value="${v("ready_date")}"></label>
+        <label class="field"><span>Anything we should know?</span><textarea name="notes" rows="2">${v("notes")}</textarea></label>
+      </div>
+
+      <button class="btn btn-accent btn-block" type="submit">Submit booking request</button>
+      <p class="form-note">No card is charged now. Dispatch confirms the carrier and price before pickup.</p>
+    </form>
+
+    <aside class="quote-side">
+      <div class="price-card">
+        <p class="eyebrow">Quoted price</p>
+        <p class="price">${price === null ? "To confirm" : money(price)}</p>
+        <p class="muted small">${price === null ? "Dispatch will confirm the price against the actual lane." : "Based on your route and trailer type. Dispatch confirms before pickup."}</p>
+        <ul class="breakdown">
+          <li><span>Payment</span><span>On delivery</span></li>
+          <li><span>Deposit</span><span>None online</span></li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+</section>`,
+  });
+}
+
+function statusBadge(status: string): string {
+  const label = STATUS_LABELS[status as OrderStatus] ?? status;
+  return `<span class="badge badge-${esc(status)}">${esc(label)}</span>`;
+}
+
+export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
+  const done = new Set(events.map((event) => event.kind));
+  const timeline = CUSTOMER_STAGES.map((stage) => {
+    const reached = done.has(stage) || order.status === stage;
+    return `<li class="${reached ? "reached" : ""}"><strong>${esc(STATUS_LABELS[stage])}</strong>${
+      reached ? "" : `<span class="muted small">pending</span>`
+    }</li>`;
+  }).join("");
+
+  return layout({
+    title: `${order.number} — Car Haul Specialist`,
+    description: `Status of shipment ${order.number}.`,
+    body: `
+<section class="wrap section">
+  <p class="eyebrow">Shipment</p>
+  <h1 class="page-title">${esc(order.number)} ${statusBadge(order.status)}</h1>
+  <p class="muted">${esc(order.origin_city ?? order.origin_zip)}, ${esc(order.origin_state ?? "")} → ${esc(order.dest_city ?? order.dest_zip)}, ${esc(order.dest_state ?? "")}</p>
+
+  <div class="cards two-up">
+    <div class="card">
+      <h3>Shipment</h3>
+      <p>${esc([order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "Vehicle")}</p>
+      <p class="muted small">${esc(order.transport_type)} trailer · ${esc(order.condition === "non-running" ? "not running" : "runs and drives")}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</p>
+      <p class="muted small">Price ${money(order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
+      ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
+    </div>
+    <div class="card">
+      <h3>Progress</h3>
+      <ul class="timeline">${timeline}</ul>
+    </div>
+  </div>
+
+  ${
+    invoices.length
+      ? `<h2 class="section-title">Invoices</h2><table class="table"><thead><tr><th>Number</th><th>Amount</th><th>Status</th><th>Issued</th></tr></thead><tbody>${invoices
+          .map(
+            (invoice) =>
+              `<tr><td>${esc(invoice.number)}</td><td>${money(invoice.amount)}</td><td>${esc(invoice.status)}</td><td>${when(invoice.issued_at)}</td></tr>`,
+          )
+          .join("")}</tbody></table>`
+      : ""
+  }
+
+  <p class="muted small">Questions? Call ${esc(site.phone)} or email ${esc(site.email)} and quote ${esc(order.number)}.</p>
+</section>`,
+  });
+}
+
+export function adminOrdersPage(orders: OrderRow[], status: string): string {
+  const rows = orders
+    .map(
+      (order) => `<tr>
+      <td><a href="/admin/orders/${order.id}">${esc(order.number)}</a></td>
+      <td>${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_phone)}</span></td>
+      <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}</span></td>
+      <td>${money(order.price)}</td>
+      <td>${statusBadge(order.status)}</td>
+      <td class="muted small">${when(order.created_at)}</td>
+    </tr>`,
+    )
+    .join("");
+
+  return layout({
+    title: "Orders — Car Haul Specialist",
+    description: "Dispatch console.",
+    body: `
+<section class="wrap section">
+  <div class="admin-head">
+    <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
+    <nav class="admin-nav">
+      <a href="/admin"${status === "leads" ? ' class="active"' : ""}>Leads</a>
+      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>
+    </nav>
+  </div>
+  <div class="filter-row">
+    <a href="/admin/orders"${status === "all" ? ' class="chip active"' : ' class="chip"'}>All</a>
+    ${ORDER_STATUSES.map(
+      (value) => `<a href="/admin/orders?status=${value}"${status === value ? ' class="chip active"' : ' class="chip"'}>${esc(STATUS_LABELS[value])}</a>`,
+    ).join("")}
+  </div>
+  ${
+    orders.length === 0
+      ? `<p class="muted">No orders in this view.</p>`
+      : `<table class="table"><thead><tr><th>Order</th><th>Customer</th><th>Route</th><th>Price</th><th>Status</th><th>Created</th></tr></thead><tbody>${rows}</tbody></table>`
+  }
+</section>`,
+  });
+}
+
+export function adminOrderPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
+  const eventRows = events
+    .map(
+      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
+    )
+    .join("");
+
+  const invoiceRows = invoices
+    .map(
+      (invoice) => `<tr>
+      <td><a href="/admin/invoices/${invoice.id}">${esc(invoice.number)}</a></td>
+      <td>${money(invoice.amount)}</td>
+      <td>${esc(invoice.status)}</td>
+      <td class="muted small">${when(invoice.issued_at)}</td>
+      <td>${
+        invoice.status === "paid"
+          ? ""
+          : `<form method="post" action="/admin/invoices/${invoice.id}/paid"><button class="btn btn-ghost btn-small" type="submit">Mark paid</button></form>`
+      }</td>
+    </tr>`,
+    )
+    .join("");
+
+  return layout({
+    title: `${order.number} — Car Haul Specialist`,
+    description: "Order detail.",
+    body: `
+<section class="wrap section">
+  <div class="admin-head">
+    <div>
+      <p class="eyebrow"><a href="/admin/orders">Orders</a></p>
+      <h1 class="page-title">${esc(order.number)} ${statusBadge(order.status)}</h1>
+      <p class="muted small">Tracking link: <code>/track/${esc(order.token)}</code></p>
+    </div>
+    <div class="admin-user"><a class="btn btn-ghost" href="/track/${esc(order.token)}">Customer view</a></div>
+  </div>
+
+  <div class="cards two-up">
+    <div class="card">
+      <h3>Customer</h3>
+      <p>${esc(order.customer_name)}</p>
+      <p class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</p>
+      <h3 class="mt">Vehicle</h3>
+      <p>${esc([order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—")}</p>
+      <p class="muted small">VIN ${esc(order.vin ?? "—")} · ${esc(order.transport_type)} · ${esc(order.condition)}</p>
+    </div>
+    <div class="card">
+      <h3>Route</h3>
+      <p><strong>Pickup</strong><br>${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(order.origin_state ?? "")} ${esc(order.origin_zip)}</p>
+      <p class="muted small">${esc(order.origin_contact ?? "")} · ${esc(order.origin_phone ?? "")}</p>
+      <p><strong>Delivery</strong><br>${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(order.dest_state ?? "")} ${esc(order.dest_zip)}</p>
+      <p class="muted small">${esc(order.dest_contact ?? "")} · ${esc(order.dest_phone ?? "")}</p>
+      <p class="muted small">${order.distance_miles ? `${order.distance_miles.toLocaleString()} miles · ` : ""}${money(order.price)} · ready ${esc(order.ready_date ?? "—")}</p>
+    </div>
+  </div>
+
+  <div class="cards two-up mt">
+    <form class="card quote-form" method="post" action="/admin/orders/${order.id}/status">
+      <h3>Change status</h3>
+      <label class="field"><span>Status</span>
+        <select name="status">${ORDER_STATUSES.map(
+          (value) => `<option value="${value}"${order.status === value ? " selected" : ""}>${esc(STATUS_LABELS[value])}</option>`,
+        ).join("")}</select>
+      </label>
+      <label class="field"><span>Note</span><input name="note" placeholder="Optional"></label>
+      <button class="btn btn-accent" type="submit">Save status</button>
+    </form>
+
+    <form class="card quote-form" method="post" action="/admin/orders/${order.id}/carrier">
+      <h3>Assign carrier</h3>
+      <label class="field"><span>Carrier name</span><input name="carrier_name" required value="${esc(order.carrier_name ?? "")}"></label>
+      <div class="field-row">
+        <label class="field"><span>MC number</span><input name="carrier_mc" value="${esc(order.carrier_mc ?? "")}"></label>
+        <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
+      </div>
+      <button class="btn btn-accent" type="submit">Assign</button>
+    </form>
+  </div>
+
+  <div class="cards two-up mt">
+    <form class="card quote-form" method="post" action="/admin/orders/${order.id}/invoice">
+      <h3>Create invoice</h3>
+      <label class="field"><span>Description</span><input name="description" value="Vehicle transport ${esc(order.number)}"></label>
+      <div class="field-row">
+        <label class="field"><span>Amount (USD)</span><input name="amount" type="number" min="1" step="1" value="${order.price}" required></label>
+        <label class="field"><span>Due date</span><input name="due_at" type="date"></label>
+      </div>
+      <label class="field"><span>Note</span><input name="note"></label>
+      <button class="btn btn-accent" type="submit">Issue invoice</button>
+    </form>
+
+    <form class="card quote-form" method="post" action="/admin/orders/${order.id}/note">
+      <h3>Internal note</h3>
+      <label class="field"><span>Note</span><textarea name="note" rows="3" required></textarea></label>
+      <button class="btn btn-ghost" type="submit">Add note</button>
+    </form>
+  </div>
+
+  <h2 class="section-title mt">Invoices</h2>
+  ${
+    invoices.length === 0
+      ? `<p class="muted">No invoices yet.</p>`
+      : `<table class="table"><thead><tr><th>Number</th><th>Amount</th><th>Status</th><th>Issued</th><th></th></tr></thead><tbody>${invoiceRows}</tbody></table>`
+  }
+
+  <h2 class="section-title mt">History</h2>
+  <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${eventRows}</tbody></table>
+</section>`,
+  });
+}
+
+export function invoicePage(invoice: InvoiceRow, order: OrderRow): string {
+  return layout({
+    title: `${invoice.number} — Car Haul Specialist`,
+    description: `Invoice ${invoice.number}.`,
+    body: `
+<section class="wrap section prose">
+  <div class="invoice-head">
+    <div><p class="eyebrow">Invoice</p><h1 class="page-title">${esc(invoice.number)}</h1></div>
+    <button class="btn btn-ghost no-print" onclick="window.print()">Print</button>
+  </div>
+  <p class="muted small">Issued ${when(invoice.issued_at)}${invoice.due_at ? ` · due ${new Date(invoice.due_at).toLocaleDateString()}` : ""} · status ${esc(invoice.status)}</p>
+
+  <table class="table">
+    <tbody>
+      <tr><th>Billed to</th><td>${esc(order.customer_name)}<br>${esc(order.customer_email)}<br>${esc(order.customer_phone)}</td></tr>
+      <tr><th>Order</th><td>${esc(order.number)}</td></tr>
+      <tr><th>Route</th><td>${esc(order.origin_city ?? order.origin_zip)}, ${esc(order.origin_state ?? "")} → ${esc(order.dest_city ?? order.dest_zip)}, ${esc(order.dest_state ?? "")}</td></tr>
+      <tr><th>Vehicle</th><td>${esc([order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—")}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</td></tr>
+      <tr><th>Description</th><td>${esc(invoice.description)}</td></tr>
+      <tr><th>Amount</th><td><strong>${money(invoice.amount)}</strong></td></tr>
+    </tbody>
+  </table>
+  ${invoice.note ? `<p class="muted small">${esc(invoice.note)}</p>` : ""}
+  <p class="muted small">${esc(site.name)} · ${esc(site.mc)} · ${esc(site.dot)} · ${esc(site.phone)}</p>
+</section>`,
+  });
+}

@@ -285,6 +285,12 @@ export function quotePage(options: {
           <li><span>Deposit to book</span><span>$${result.deposit.toLocaleString()}</span></li>
         </ul>
         <p class="muted small">${result.estimated ? "This route used a regional estimate; dispatch will confirm the exact mileage." : "Mileage from ZIP centroids; final price is confirmed by dispatch."}</p>
+        <form method="post" action="/book">
+          ${(["name", "email", "phone", "origin_zip", "dest_zip", "transport_type", "vehicle_year", "vehicle_make", "vehicle_model", "condition", "available_date", "notes"] as const)
+            .map((key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`)
+            .join("")}
+          <button class="btn btn-accent btn-block" type="submit">Continue to booking</button>
+        </form>
         <p class="muted small">A dispatcher has your request and will reach out within one business hour.</p>
       </div>`
           : `<div class="price-card price-card-empty">
@@ -542,7 +548,9 @@ export function adminPage(leads: LeadRow[], email: string): string {
     body: `
 <section class="wrap section">
   <div class="admin-head">
-    <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Quote requests</h1></div>
+    <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Quote requests</h1>
+      <nav class="admin-nav"><a href="/admin" class="active">Leads</a><a href="/admin/orders">Orders</a></nav>
+    </div>
     <div class="admin-user"><span class="muted small">${esc(email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
   </div>
   ${leads.length === 0 ? `<p class="muted">No requests yet.</p>` : `<table class="table"><thead><tr><th>#</th><th>Customer</th><th>Route</th><th>Miles</th><th>Quote</th><th>Status</th><th>Received</th></tr></thead><tbody>${rows}</tbody></table>`}
