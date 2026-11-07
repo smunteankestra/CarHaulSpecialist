@@ -15,7 +15,27 @@ import {
   type OrderRow,
 } from "./orders";
 import { lookupZip, priceQuote, roadMiles, type TransportType, type VehicleCondition } from "./quote";
-import { adminOrderPage, adminOrdersPage, bookPage, invoicePage, trackPage, type BookValues } from "./views-order";
+import {
+  adminOrderPage,
+  adminOrdersPage,
+  adminUsersPage,
+  bookPage,
+  invoicePage,
+  trackPage,
+  type BookValues,
+} from "./views-order";
+import {
+  createUser,
+  findUserByEmail,
+  generatePassword,
+  isRole,
+  listUsers,
+  setActive,
+  setPassword,
+  touchLogin,
+  verifyPassword,
+  type UserRow,
+} from "./users";
 import {
   adminLoginPage,
   adminPage,
@@ -263,9 +283,16 @@ app.get("/contact", (c) => c.html(contactPage()));
 app.get("/terms", (c) => c.html(legalPage("terms")));
 app.get("/privacy", (c) => c.html(legalPage("privacy")));
 
-async function currentAdmin(c: { env: Bindings; req: { header: (name: string) => string | undefined } }, token: string | undefined) {
-  const email = await verifySession(c.env.SESSION_SECRET, token);
-  return email;
+async function sessionUser(c: {
+  env: Bindings;
+  req: { header: (name: string) => string | undefined };
+  get?: unknown;
+}): Promise<UserRow | null> {
+  const email = await verifySession(c.env.SESSION_SECRET, getCookie(c as never, SESSION_COOKIE));
+  if (!email) return null;
+  const user = await findUserByEmail(c.env.DB, email);
+  if (!user || !user.active) return null;
+  return user;
 }
 
 app.get("/admin/login", (c) => c.html(adminLoginPage()));
@@ -275,17 +302,25 @@ app.post("/admin/login", async (c) => {
   const email = String(body.email ?? "").trim().toLowerCase();
   const password = String(body.password ?? "");
 
-  const expectedEmail = (c.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
-  const expectedPassword = c.env.ADMIN_PASSWORD ?? "";
+  let user = await findUserByEmail(c.env.DB, email);
+  let authenticated = Boolean(user && user.active && (await verifyPassword(password, user)));
 
-  if (!expectedEmail || !expectedPassword) {
-    return c.html(adminLoginPage("Dispatch login is not configured yet."), 500);
+  // Bootstrap: the env credentials create the first admin account, then step aside.
+  if (!authenticated && !user) {
+    const expectedEmail = (c.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
+    const expectedPassword = c.env.ADMIN_PASSWORD ?? "";
+    if (expectedEmail && expectedPassword && email === expectedEmail && timingSafeEqual(password, expectedPassword)) {
+      user = await createUser(c.env.DB, { email, name: "Dispatch", role: "admin", password });
+      authenticated = true;
+    }
   }
-  if (email !== expectedEmail || !timingSafeEqual(password, expectedPassword)) {
+
+  if (!authenticated || !user) {
     return c.html(adminLoginPage("Wrong email or password."), 401);
   }
 
-  const token = await signSession(c.env.SESSION_SECRET, email);
+  await touchLogin(c.env.DB, user.id);
+  const token = await signSession(c.env.SESSION_SECRET, user.email);
   setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "Lax",
@@ -302,8 +337,8 @@ app.post("/admin/logout", (c) => {
 });
 
 app.get("/admin", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const { results } = await c.env.DB.prepare(
     `SELECT id, name, email, phone, origin_zip, dest_zip, transport_type, condition,
@@ -311,12 +346,12 @@ app.get("/admin", async (c) => {
        FROM leads ORDER BY id DESC LIMIT 100`,
   ).all<LeadRow>();
 
-  return c.html(adminPage(results, email));
+  return c.html(adminPage(results, user.email, user.role === "admin"));
 });
 
 app.get("/admin/orders", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const status = c.req.query("status") ?? "all";
   const filtered = status !== "all" && isOrderStatus(status);
@@ -325,12 +360,12 @@ app.get("/admin/orders", async (c) => {
     : c.env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 200");
   const { results } = await statement.all<OrderRow>();
 
-  return c.html(adminOrdersPage(results, status));
+  return c.html(adminOrdersPage(results, status, user.role === "admin"));
 });
 
 app.get("/admin/orders/:id", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const id = Number(c.req.param("id"));
   const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
@@ -345,21 +380,21 @@ app.get("/admin/orders/:id", async (c) => {
 });
 
 app.post("/admin/orders/:id/status", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const id = Number(c.req.param("id"));
   const body = await c.req.parseBody();
   const status = String(body.status ?? "");
   if (!isOrderStatus(status)) return c.redirect(`/admin/orders/${id}`, 303);
 
-  await setStatus(c.env.DB, id, status, email, String(body.note ?? ""));
+  await setStatus(c.env.DB, id, status, user.email, String(body.note ?? ""));
   return c.redirect(`/admin/orders/${id}`, 303);
 });
 
 app.post("/admin/orders/:id/carrier", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const id = Number(c.req.param("id"));
   const body = await c.req.parseBody();
@@ -370,25 +405,25 @@ app.post("/admin/orders/:id/carrier", async (c) => {
     c.env.DB,
     id,
     { name, mc: String(body.carrier_mc ?? "").trim(), phone: String(body.carrier_phone ?? "").trim() },
-    email,
+    user.email,
   );
   return c.redirect(`/admin/orders/${id}`, 303);
 });
 
 app.post("/admin/orders/:id/note", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const id = Number(c.req.param("id"));
   const body = await c.req.parseBody();
   const note = String(body.note ?? "").trim();
-  if (note) await addNote(c.env.DB, id, note, email);
+  if (note) await addNote(c.env.DB, id, note, user.email);
   return c.redirect(`/admin/orders/${id}`, 303);
 });
 
 app.post("/admin/orders/:id/invoice", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const id = Number(c.req.param("id"));
   const body = await c.req.parseBody();
@@ -407,26 +442,26 @@ app.post("/admin/orders/:id/invoice", async (c) => {
       dueAt: dueAt && Number.isFinite(dueAt) ? dueAt : null,
       note: String(body.note ?? "").trim(),
     },
-    email,
+    user.email,
   );
   return c.redirect(`/admin/orders/${id}`, 303);
 });
 
 app.post("/admin/invoices/:id/paid", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const id = Number(c.req.param("id"));
   const invoice = await c.env.DB.prepare("SELECT * FROM invoices WHERE id = ?").bind(id).first<InvoiceRow>();
   if (!invoice) return c.html(notFoundPage(), 404);
 
-  await markInvoicePaid(c.env.DB, id, email);
+  await markInvoicePaid(c.env.DB, id, user.email);
   return c.redirect(`/admin/orders/${invoice.order_id}`, 303);
 });
 
 app.get("/admin/invoices/:id", async (c) => {
-  const email = await currentAdmin(c, getCookie(c, SESSION_COOKIE));
-  if (!email) return c.redirect("/admin/login", 303);
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
 
   const id = Number(c.req.param("id"));
   const invoice = await c.env.DB.prepare("SELECT * FROM invoices WHERE id = ?").bind(id).first<InvoiceRow>();
@@ -436,6 +471,60 @@ app.get("/admin/invoices/:id", async (c) => {
   if (!order) return c.html(notFoundPage(), 404);
 
   return c.html(invoicePage(invoice, order));
+});
+
+app.get("/admin/users", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  if (user.role !== "admin") return c.html(notFoundPage(), 404);
+
+  return c.html(adminUsersPage(await listUsers(c.env.DB), user));
+});
+
+app.post("/admin/users", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  if (user.role !== "admin") return c.html(notFoundPage(), 404);
+
+  const body = await c.req.parseBody();
+  const email = String(body.email ?? "").trim().toLowerCase();
+  const name = String(body.name ?? "").trim();
+  const role = String(body.role ?? "dispatcher");
+  const password = String(body.password ?? "").trim() || generatePassword();
+
+  if (!EMAIL_PATTERN.test(email) || !isRole(role)) {
+    return c.html(adminUsersPage(await listUsers(c.env.DB), user), 400);
+  }
+
+  await createUser(c.env.DB, { email, name, role, password });
+  return c.html(adminUsersPage(await listUsers(c.env.DB), user, { email, password, kind: "created" }));
+});
+
+app.post("/admin/users/:id/reset", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  if (user.role !== "admin") return c.html(notFoundPage(), 404);
+
+  const id = Number(c.req.param("id"));
+  const target = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<UserRow>();
+  if (!target) return c.html(notFoundPage(), 404);
+
+  const password = generatePassword();
+  await setPassword(c.env.DB, id, password);
+  return c.html(adminUsersPage(await listUsers(c.env.DB), user, { email: target.email, password, kind: "reset" }));
+});
+
+app.post("/admin/users/:id/active", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  if (user.role !== "admin") return c.html(notFoundPage(), 404);
+
+  const id = Number(c.req.param("id"));
+  if (id === user.id) return c.redirect("/admin/users", 303);
+
+  const body = await c.req.parseBody();
+  await setActive(c.env.DB, id, String(body.active ?? "1") === "1");
+  return c.redirect("/admin/users", 303);
 });
 
 app.notFound((c) => c.html(notFoundPage(), 404));

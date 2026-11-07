@@ -1,4 +1,5 @@
 import { esc, layout, site } from "./views";
+import { ROLE_LABELS, type Role, type UserRow } from "./users";
 import {
   CUSTOMER_STAGES,
   ORDER_STATUSES,
@@ -192,7 +193,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
   });
 }
 
-export function adminOrdersPage(orders: OrderRow[], status: string): string {
+export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = false): string {
   const rows = orders
     .map(
       (order) => `<tr>
@@ -215,7 +216,7 @@ export function adminOrdersPage(orders: OrderRow[], status: string): string {
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
     <nav class="admin-nav">
       <a href="/admin"${status === "leads" ? ' class="active"' : ""}>Leads</a>
-      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>
+      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}
     </nav>
   </div>
   <div class="filter-row">
@@ -368,6 +369,94 @@ export function invoicePage(invoice: InvoiceRow, order: OrderRow): string {
   </table>
   ${invoice.note ? `<p class="muted small">${esc(invoice.note)}</p>` : ""}
   <p class="muted small">${esc(site.name)} · ${esc(site.mc)} · ${esc(site.dot)} · ${esc(site.phone)}</p>
+</section>`,
+  });
+}
+
+export function adminUsersPage(
+  users: UserRow[],
+  viewer: UserRow,
+  flash?: { email: string; password: string; kind: "created" | "reset" },
+): string {
+  const rows = users
+    .map(
+      (user) => `<tr>
+      <td>${esc(user.email)}${user.id === viewer.id ? ' <span class="muted small">(you)</span>' : ""}</td>
+      <td>${esc(user.name ?? "—")}</td>
+      <td>${esc(ROLE_LABELS[user.role as Role] ?? user.role)}</td>
+      <td>${user.active ? '<span class="badge badge-delivered">Active</span>' : '<span class="badge badge-cancelled">Disabled</span>'}</td>
+      <td class="muted small">${user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "never"}</td>
+      <td>
+        <form method="post" action="/admin/users/${user.id}/reset" class="inline-form">
+          <button class="btn btn-ghost btn-small" type="submit">New password</button>
+        </form>
+        ${
+          user.id === viewer.id
+            ? ""
+            : `<form method="post" action="/admin/users/${user.id}/active" class="inline-form">
+                 <input type="hidden" name="active" value="${user.active ? "0" : "1"}">
+                 <button class="btn btn-ghost btn-small" type="submit">${user.active ? "Disable" : "Enable"}</button>
+               </form>`
+        }
+      </td>
+    </tr>`,
+    )
+    .join("");
+
+  return layout({
+    title: "Staff accounts — Car Haul Specialist",
+    description: "Dispatch console.",
+    body: `
+<section class="wrap section">
+  <div class="admin-head">
+    <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Staff accounts</h1>
+      <nav class="admin-nav">
+        <a href="/admin">Leads</a>
+        <a href="/admin/orders">Orders</a>
+        <a href="/admin/users" class="active">Staff</a>
+      </nav>
+    </div>
+    <div class="admin-user"><span class="muted small">${esc(viewer.email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
+  </div>
+
+  ${
+    flash
+      ? `<div class="flash">
+           <strong>${flash.kind === "created" ? "Account created" : "Password reset"} for ${esc(flash.email)}</strong>
+           <p>Temporary password: <code class="password">${esc(flash.password)}</code></p>
+           <p class="muted small">Give it to them now — it is not shown again. They can change it after signing in.</p>
+         </div>`
+      : ""
+  }
+
+  <div class="cards two-up">
+    <form class="card quote-form" method="post" action="/admin/users">
+      <h3>Add a staff account</h3>
+      <label class="field"><span>Email *</span><input name="email" type="email" required></label>
+      <label class="field"><span>Name</span><input name="name"></label>
+      <label class="field"><span>Role</span>
+        <select name="role">
+          <option value="dispatcher">Dispatcher — orders only</option>
+          <option value="admin">Admin — orders and staff accounts</option>
+        </select>
+      </label>
+      <label class="field"><span>Password</span><input name="password" placeholder="Leave blank to generate one"></label>
+      <button class="btn btn-accent" type="submit">Create account</button>
+    </form>
+
+    <div class="card">
+      <h3>What each role can do</h3>
+      <p class="muted small"><strong>Dispatcher</strong> — see leads, orders, change status, assign carriers, issue invoices.</p>
+      <p class="muted small"><strong>Admin</strong> — everything above, plus create staff accounts, reset passwords and disable access.</p>
+      <p class="muted small">Accounts are disabled, never deleted, so their name stays on past orders.</p>
+    </div>
+  </div>
+
+  <h2 class="section-title mt">Accounts</h2>
+  <table class="table">
+    <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
 </section>`,
   });
 }
