@@ -14,7 +14,7 @@
     {
       "binding": "DB",
       "database_name": "car-haul-specialist",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "d5cf99d3-f7b9-4a86-8336-8b022250cd66",
       "migrations_dir": "migrations"
     }
   ]
