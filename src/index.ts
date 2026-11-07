@@ -16,6 +16,7 @@ import {
 } from "./orders";
 import { lookupZip, priceQuote, roadMiles, type TransportType, type VehicleCondition } from "./quote";
 import {
+  accountPage,
   adminOrderPage,
   adminOrdersPage,
   adminUsersPage,
@@ -525,6 +526,35 @@ app.post("/admin/users/:id/active", async (c) => {
   const body = await c.req.parseBody();
   await setActive(c.env.DB, id, String(body.active ?? "1") === "1");
   return c.redirect("/admin/users", 303);
+});
+
+app.get("/admin/account", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  return c.html(accountPage(user));
+});
+
+app.post("/admin/account", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const body = await c.req.parseBody();
+  const current = String(body.current ?? "");
+  const next = String(body.next ?? "");
+  const confirm = String(body.confirm ?? "");
+
+  if (!(await verifyPassword(current, user))) {
+    return c.html(accountPage(user, undefined, "That current password is not right."), 401);
+  }
+  if (next.length < 10) {
+    return c.html(accountPage(user, undefined, "Use at least 10 characters."), 400);
+  }
+  if (next !== confirm) {
+    return c.html(accountPage(user, undefined, "The two new passwords do not match."), 400);
+  }
+
+  await setPassword(c.env.DB, user.id, next);
+  return c.html(accountPage(user, "Password updated."));
 });
 
 app.notFound((c) => c.html(notFoundPage(), 404));

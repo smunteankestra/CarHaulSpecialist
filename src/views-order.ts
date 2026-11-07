@@ -216,7 +216,7 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
     <nav class="admin-nav">
       <a href="/admin"${status === "leads" ? ' class="active"' : ""}>Leads</a>
-      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}
+      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
     </nav>
   </div>
   <div class="filter-row">
@@ -414,6 +414,7 @@ export function adminUsersPage(
         <a href="/admin">Leads</a>
         <a href="/admin/orders">Orders</a>
         <a href="/admin/users" class="active">Staff</a>
+        <a href="/admin/account">Account</a>
       </nav>
     </div>
     <div class="admin-user"><span class="muted small">${esc(viewer.email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
@@ -457,6 +458,31 @@ export function adminUsersPage(
     <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
+</section>`,
+  });
+}
+
+export function accountPage(user: UserRow, message?: string, error?: string): string {
+  return layout({
+    title: "Your account — Car Haul Specialist",
+    description: "Change your password.",
+    body: `
+<section class="wrap section narrow-wrap">
+  <div class="admin-head">
+    <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Your account</h1></div>
+  </div>
+  <p class="muted small">${esc(user.email)} · ${esc(ROLE_LABELS[user.role as Role] ?? user.role)}</p>
+
+  ${message ? `<div class="flash"><strong>${esc(message)}</strong></div>` : ""}
+  ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
+
+  <form class="quote-form" method="post" action="/admin/account">
+    <label class="field"><span>Current password</span><input name="current" type="password" required autocomplete="current-password"></label>
+    <label class="field"><span>New password</span><input name="next" type="password" required minlength="10" autocomplete="new-password"></label>
+    <label class="field"><span>Confirm new password</span><input name="confirm" type="password" required minlength="10" autocomplete="new-password"></label>
+    <button class="btn btn-accent" type="submit">Update password</button>
+    <p class="form-note">At least 10 characters. You stay signed in on this device.</p>
+  </form>
 </section>`,
   });
 }
