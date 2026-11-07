@@ -1,0 +1,114 @@
+export interface PricingRules {
+  openPerMile: number;
+  openMin: number;
+  enclosedPerMile: number;
+  enclosedMin: number;
+  inopFee: number;
+  oversizeFee: number;
+  depositPercent: number;
+}
+
+export const DEFAULT_RULES: PricingRules = {
+  openPerMile: 0.95,
+  openMin: 450,
+  enclosedPerMile: 1.35,
+  enclosedMin: 650,
+  inopFee: 150,
+  oversizeFee: 200,
+  depositPercent: 20,
+};
+
+export type TransportType = "open" | "enclosed";
+export type VehicleCondition = "running" | "non-running";
+
+export interface Place {
+  zip: string;
+  city: string;
+  state: string;
+  lat: number;
+  lng: number;
+}
+
+interface ZippopotamPlace {
+  "place name": string;
+  "state abbreviation": string;
+  latitude: string;
+  longitude: string;
+}
+
+/** Look up a US ZIP through zippopotam.us; returns null when unknown or unreachable. */
+export async function lookupZip(zip: string): Promise<Place | null> {
+  const cleaned = zip.trim().slice(0, 5);
+  if (!/^\d{5}$/.test(cleaned)) return null;
+
+  try {
+    const response = await fetch(`https://api.zippopotam.us/us/${cleaned}`, {
+      signal: AbortSignal.timeout(3000),
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { places?: ZippopotamPlace[] };
+    const place = payload.places?.[0];
+    if (!place) return null;
+    return {
+      zip: cleaned,
+      city: place["place name"],
+      state: place["state abbreviation"],
+      lat: Number(place.latitude),
+      lng: Number(place.longitude),
+    };
+  } catch {
+    return null;
+  }
+}
+
+const EARTH_RADIUS_MILES = 3958.8;
+
+export function haversineMiles(a: Place, b: Place): number {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
+}
+
+/** Road distance runs longer than the straight line; 1.2 is the usual planning factor. */
+export function roadMiles(a: Place, b: Place): number {
+  return Math.round(haversineMiles(a, b) * 1.2);
+}
+
+export interface QuoteBreakdown {
+  base: number;
+  conditionFee: number;
+  total: number;
+  deposit: number;
+  minimumApplied: boolean;
+}
+
+export function priceQuote(
+  distanceMiles: number,
+  transport: TransportType,
+  condition: VehicleCondition,
+  oversize: boolean,
+  rules: PricingRules = DEFAULT_RULES,
+): QuoteBreakdown {
+  const perMile = transport === "enclosed" ? rules.enclosedPerMile : rules.openPerMile;
+  const minimum = transport === "enclosed" ? rules.enclosedMin : rules.openMin;
+
+  const raw = distanceMiles * perMile;
+  const minimumApplied = raw < minimum;
+  const base = Math.round(minimumApplied ? minimum : raw);
+  const conditionFee = condition === "non-running" ? rules.inopFee : 0;
+  const sizeFee = oversize ? rules.oversizeFee : 0;
+  const total = base + conditionFee + sizeFee;
+
+  return {
+    base,
+    conditionFee: conditionFee + sizeFee,
+    total,
+    deposit: Math.round((total * rules.depositPercent) / 100),
+    minimumApplied,
+  };
+}

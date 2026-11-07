@@ -1,0 +1,3 @@
+SESSION_SECRET=replace-with-64-hex
+ADMIN_EMAIL=dispatch@carhaulspecialist.com
+ADMIN_PASSWORD=replace-with-a-strong-password
