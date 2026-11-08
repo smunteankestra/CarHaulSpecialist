@@ -317,6 +317,31 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   });
 })();
 </script>
+<script>
+(function () {
+  function formatPhone(value) {
+    if (value.trim().startsWith("+")) return value;
+    var digits = value.replace(/\D/g, "");
+    if (digits.length === 11 && digits.charAt(0) === "1") digits = digits.slice(1);
+    digits = digits.slice(0, 10);
+    if (digits.length === 0) return "";
+    if (digits.length <= 3) return "(" + digits;
+    if (digits.length <= 6) return "(" + digits.slice(0, 3) + ") " + digits.slice(3);
+    return "(" + digits.slice(0, 3) + ") " + digits.slice(3, 6) + "-" + digits.slice(6);
+  }
+  var selector = 'input[name="phone"], input[name="origin_phone"], input[name="dest_phone"], input[name="customer_phone"], input[name="carrier_phone"], input[name="carrier_company_phone"], input[autocomplete="tel"]';
+  document.querySelectorAll(selector).forEach(function (input) {
+    input.addEventListener("input", function () {
+      var formatted = formatPhone(input.value);
+      if (formatted !== input.value) input.value = formatted;
+    });
+    input.addEventListener("blur", function () {
+      var formatted = formatPhone(input.value);
+      if (formatted !== input.value) input.value = formatted;
+    });
+  });
+})();
+</script>
 </body>
 </html>`;
 }
