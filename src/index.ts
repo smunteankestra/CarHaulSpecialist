@@ -295,6 +295,14 @@ app.post("/quote", async (c) => {
     "quoted",
   );
 
+  if (leadId) {
+    await c.env.DB.prepare(
+      "INSERT INTO order_photos (order_id, photo_key, created_at) SELECT ?, photo_key, created_at FROM lead_photos WHERE lead_id = ?",
+    )
+      .bind(quoteOrder.id, leadId)
+      .run();
+  }
+
   notify(
     c,
     `New quote\n${values.name} · ${values.phone}\n${origin.city}, ${stateName(origin.state)} → ${destination.city}, ${stateName(destination.state)}\n${distance.toLocaleString()} mi · ${transport} · $${breakdown.total.toLocaleString()}\n${new URL(c.req.url).origin}/admin/orders#order-${quoteOrder.id}`,
