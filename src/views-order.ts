@@ -94,15 +94,6 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
   </div>
 </section>
 
-<section class="band">
-  <div class="wrap trust-row">
-    <div><strong>No card required</strong><span>Book now, pay on delivery</span></div>
-    <div><strong>Vetted carriers</strong><span>Active insurance checked before assignment</span></div>
-    <div><strong>Real dispatcher</strong><span>A person owns your order start to finish</span></div>
-    <div><strong>7 days</strong><span>Dispatch availability</span></div>
-  </div>
-</section>
-
 <section class="wrap section">
   <div class="book-layout">
     <div class="book-form-card">
