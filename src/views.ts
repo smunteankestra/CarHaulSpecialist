@@ -507,19 +507,43 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     var upload = input.closest(".photo-upload");
     var preview = upload ? upload.querySelector(".photo-preview") : null;
     if (!preview) return;
+    var count = upload.querySelector(".photo-count");
+    var error = upload.querySelector(".photo-error");
     var urls = [];
-    input.addEventListener("change", function () {
+
+    function isSupported(file) {
+      var type = file.type.toLowerCase();
+      var name = file.name.toLowerCase();
+      return (
+        type === "image/jpeg" ||
+        type === "image/png" ||
+        type === "image/webp" ||
+        type === "image/heic" ||
+        type === "image/heif" ||
+        name.endsWith(".jpg") ||
+        name.endsWith(".jpeg") ||
+        name.endsWith(".png") ||
+        name.endsWith(".webp") ||
+        name.endsWith(".heic") ||
+        name.endsWith(".heif")
+      );
+    }
+
+    function isHeic(file) {
+      var type = file.type.toLowerCase();
+      var name = file.name.toLowerCase();
+      return type === "image/heic" || type === "image/heif" || name.endsWith(".heic") || name.endsWith(".heif");
+    }
+
+    function render(files) {
       urls.forEach(function (url) { URL.revokeObjectURL(url); });
       urls = [];
       preview.innerHTML = "";
-      var files = Array.prototype.slice.call(input.files || []).slice(0, 5);
       files.forEach(function (file) {
         var tile = document.createElement("div");
         tile.className = "photo-thumb";
         tile.title = file.name;
-        var name = file.name.toLowerCase();
-        var isHeic = /heic|heif/i.test(file.type) || name.endsWith(".heic") || name.endsWith(".heif");
-        if (!isHeic && file.type.indexOf("image/") === 0) {
+        if (!isHeic(file) && file.type.indexOf("image/") === 0) {
           var img = document.createElement("img");
           var url = URL.createObjectURL(file);
           urls.push(url);
@@ -530,12 +554,49 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
         } else {
           var fallback = document.createElement("span");
           fallback.className = "photo-thumb-fallback";
-          fallback.textContent = isHeic ? "HEIC" : "IMG";
+          fallback.textContent = isHeic(file) ? "HEIC" : "IMG";
           tile.appendChild(fallback);
         }
         preview.appendChild(tile);
       });
       preview.hidden = files.length === 0;
+      if (count) {
+        count.hidden = files.length === 0;
+        count.textContent = files.length + " of 5 photos selected";
+      }
+    }
+
+    input.addEventListener("change", function () {
+      var selected = Array.prototype.slice.call(input.files || []);
+      var valid = [];
+      var errors = [];
+      selected.forEach(function (file) {
+        if (!isSupported(file)) {
+          errors.push(file.name + " is not a JPEG, PNG, WebP or HEIC image.");
+        } else if (file.size > 10 * 1024 * 1024) {
+          errors.push(file.name + " is larger than 10 MB.");
+        } else {
+          valid.push(file);
+        }
+      });
+      if (valid.length > 5) {
+        errors.push("You can upload up to 5 photos. Only the first 5 will be used.");
+        valid = valid.slice(0, 5);
+      }
+      if (valid.length !== selected.length) {
+        try {
+          var transfer = new DataTransfer();
+          valid.forEach(function (file) { transfer.items.add(file); });
+          input.files = transfer.files;
+        } catch (e) {
+          // Older browser: keep the selection and let the server validate.
+        }
+      }
+      if (error) {
+        error.hidden = errors.length === 0;
+        error.textContent = errors.join(" ");
+      }
+      render(valid);
     });
   });
 })();
@@ -666,6 +727,8 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
         <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
       </label>
       <div class="photo-preview" hidden></div>
+      <p class="photo-count muted small" hidden></p>
+      <p class="photo-error form-error" role="alert" hidden></p>
     </div>
   </div>
 

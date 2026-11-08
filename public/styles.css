@@ -2184,3 +2184,11 @@ main {
   letter-spacing: 0.04em;
   color: var(--muted);
 }
+
+.photo-count {
+  margin: 0.45rem 0 0;
+}
+
+.photo-error {
+  margin: 0.45rem 0 0;
+}

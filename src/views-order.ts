@@ -183,6 +183,8 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
           <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
         </label>
         <div class="photo-preview" hidden></div>
+        <p class="photo-count muted small" hidden></p>
+        <p class="photo-error form-error" role="alert" hidden></p>
       </div>
 
       <button class="btn btn-accent btn-block" type="submit">Submit booking request</button>
