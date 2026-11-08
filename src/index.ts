@@ -11,6 +11,7 @@ import {
   createOrder,
   isOrderStatus,
   markInvoicePaid,
+  STATUS_LABELS,
   setStatus,
   type InvoiceRow,
   type OrderEventRow,
@@ -68,6 +69,29 @@ interface Bindings {
   SESSION_SECRET: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
+}
+
+async function sendTelegram(env: Bindings, text: string): Promise<void> {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 3900), disable_web_page_preview: true }),
+  });
+}
+
+function notify(
+  c: { env: Bindings; executionCtx?: { waitUntil: (promise: Promise<unknown>) => void } },
+  text: string,
+): void {
+  const promise = sendTelegram(c.env, text).catch(() => {});
+  try {
+    c.executionCtx?.waitUntil(promise);
+  } catch {
+    // Local dev may not expose executionCtx; the notification is best-effort.
+  }
 }
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -226,6 +250,10 @@ app.post("/quote", async (c) => {
   }
 
   if (!breakdown || !origin || !destination || distance === null) {
+    notify(
+      c,
+      `New quote request (needs pricing)\n${values.name} · ${values.phone}\n${values.origin_zip} → ${values.dest_zip}\n${new URL(c.req.url).origin}${leadId ? `/admin#quote-${leadId}` : "/admin"}`,
+    );
     return c.html(
       quotePage({
         values,
@@ -265,6 +293,11 @@ app.post("/quote", async (c) => {
       notes: values.notes ?? "",
     },
     "quoted",
+  );
+
+  notify(
+    c,
+    `New quote\n${values.name} · ${values.phone}\n${origin.city}, ${stateName(origin.state)} → ${destination.city}, ${stateName(destination.state)}\n${distance.toLocaleString()} mi · ${transport} · $${breakdown.total.toLocaleString()}\n${new URL(c.req.url).origin}/admin/orders#order-${quoteOrder.id}`,
   );
 
   return c.html(
@@ -470,6 +503,11 @@ app.post("/book/submit", async (c) => {
       )
       .run();
   }
+
+  notify(
+    c,
+    `${quotedOrder ? "Order confirmed" : "New order"}\n${order.number} · ${order.customer_name}\n${order.origin_zip} → ${order.dest_zip}\n$${order.price.toLocaleString()}\n${new URL(c.req.url).origin}/admin/orders#order-${order.id}`,
+  );
 
   return c.redirect(`/track/${order.token}?new=1`, 303);
 });
@@ -826,6 +864,7 @@ app.post("/admin/orders/:id/status", async (c) => {
   const deliveryNote = deliveryEta ? `Delivery ETA ${when(deliveryEta)}` : "";
   const deliveredNote = deliveredAt ? `Delivered ${when(deliveredAt)}` : "";
   const paidNote = paidAmount !== null ? `Paid $${paidAmount.toLocaleString()}${paymentMethod ? ` via ${paymentMethod}` : ""}` : "";
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
 
   await setStatus(
     c.env.DB,
@@ -840,6 +879,13 @@ app.post("/admin/orders/:id/status", async (c) => {
     paidAmount,
     paymentMethod,
   );
+  if (order) {
+    const fromLabel = isOrderStatus(order.status) ? STATUS_LABELS[order.status] : order.status;
+    notify(
+      c,
+      `Order ${order.number} status\n${fromLabel} → ${STATUS_LABELS[status]}\nby ${user.email}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
+    );
+  }
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });
 
@@ -1041,6 +1087,11 @@ app.post("/admin/orders/:id/edit", async (c) => {
     .bind(id, changes.join("; "), user.email, now)
     .run();
 
+  notify(
+    c,
+    `Order ${old.number} edited\nby ${user.email}\n${changes.join("; ")}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
+  );
+
   return c.redirect(redirectTo, 303);
 });
 
@@ -1051,6 +1102,7 @@ app.post("/admin/orders/:id/carrier", async (c) => {
   const id = Number(c.req.param("id"));
   const body = await c.req.parseBody();
   const name = String(body.carrier_name ?? "").trim();
+  const mc = String(body.carrier_mc ?? "").trim();
   if (!name) return c.redirect(`/admin/orders/${id}`, 303);
 
   await assignCarrier(
@@ -1058,7 +1110,7 @@ app.post("/admin/orders/:id/carrier", async (c) => {
     id,
     {
       name,
-      mc: String(body.carrier_mc ?? "").trim(),
+      mc,
       companyPhone: String(body.carrier_company_phone ?? "").trim(),
       email: String(body.carrier_email ?? "").trim(),
       driverName: String(body.driver_name ?? "").trim(),
@@ -1066,6 +1118,13 @@ app.post("/admin/orders/:id/carrier", async (c) => {
     },
     user.email,
   );
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (order) {
+    notify(
+      c,
+      `Carrier assigned\n${order.number} · ${name}${mc ? ` (${mc})` : ""}\nby ${user.email}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
+    );
+  }
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });
 
