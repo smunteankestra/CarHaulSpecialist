@@ -150,7 +150,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   function iso(date) { return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()); }
   function format(date) { return MONTHS[date.getMonth()] + "/" + pad(date.getDate()) + "/" + date.getFullYear(); }
   function parse(value) {
-    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    var match = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(value);
     return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
   }
   var today = new Date();
@@ -166,8 +166,9 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     var next = root.querySelector(".date-next");
     var todayBtn = root.querySelector(".date-today");
     var clearBtn = root.querySelector(".date-clear");
+    var allowPast = root.getAttribute("data-allow-past") === "true";
     var selected = parse(input.value);
-    if (selected && selected < today) { selected = null; input.value = ""; }
+    if (!allowPast && selected && selected < today) { selected = null; input.value = ""; }
     var view = selected ? new Date(selected.getFullYear(), selected.getMonth(), 1) : new Date(today.getFullYear(), today.getMonth(), 1);
 
     function updateLabel() {
@@ -191,7 +192,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
           btn.type = "button";
           btn.className = "date-day";
           btn.textContent = String(day);
-          if (date < today) {
+          if (!allowPast && date < today) {
             btn.disabled = true;
             btn.classList.add("is-past");
           }
@@ -208,7 +209,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
         })(d);
       }
       var previousLast = new Date(view.getFullYear(), view.getMonth(), 0);
-      prev.disabled = previousLast < today;
+      prev.disabled = !allowPast && previousLast < today;
     }
 
     function open() {
@@ -335,9 +336,9 @@ export interface QuoteFormValues {
   notes?: string;
 }
 
-export function datePicker(name: string, value: string): string {
+export function datePicker(name: string, value: string, allowPast = false): string {
   const label = value ? dateOnly(value) : "Select a date";
-  return `<div class="date-picker" data-date-picker>
+  return `<div class="date-picker" data-date-picker data-allow-past="${allowPast ? "true" : "false"}">
   <input type="hidden" name="${esc(name)}" value="${esc(value)}">
   <button type="button" class="date-trigger" aria-haspopup="dialog" aria-expanded="false">
     <span class="date-value">${esc(label)}</span>

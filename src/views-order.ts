@@ -484,7 +484,7 @@ function orderEditForm(order: OrderRow, next: string): string {
             <option value="">Select method</option>
             ${methods.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
           </select></td></tr>
-          <tr><th>Ready date</th><td><input name="ready_date" type="date" value="${esc(order.ready_date ?? "")}"></td></tr>
+          <tr><th>Ready date</th><td>${datePicker("ready_date", order.ready_date ?? "", true)}</td></tr>
           <tr><th>Distance</th><td><input name="distance_miles" type="number" min="0" value="${order.distance_miles ?? ""}" placeholder="Miles"></td></tr>
           <tr><th>Price</th><td><input name="price" type="number" min="0" value="${order.price}" placeholder="USD"></td></tr>
           <tr><th>Carrier</th><td><div class="edit-stack">
@@ -895,7 +895,7 @@ export function adminOrderPage(
       <label class="field"><span>Description</span><input name="description" value="Vehicle transport ${esc(order.number)}"></label>
       <div class="field-row">
         <label class="field"><span>Amount (USD)</span><input name="amount" type="number" min="1" step="1" value="${order.price}" required></label>
-        <label class="field"><span>Due date</span><input name="due_at" type="date"></label>
+        <div class="field"><span>Due date</span>${datePicker("due_at", "")}</div>
       </div>
       <label class="field"><span>Note</span><input name="note"></label>
       <button class="btn btn-accent" type="submit">Issue invoice</button>
