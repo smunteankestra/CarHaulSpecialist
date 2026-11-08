@@ -338,6 +338,130 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   });
 })();
 </script>
+<script>
+(function () {
+  var selects = document.querySelectorAll('select[name="transport_type"], select[name="condition"]');
+  if (!selects.length) return;
+
+  function closeAll() {
+    Array.prototype.forEach.call(document.querySelectorAll(".pretty-select.is-open"), function (wrapper) {
+      wrapper.classList.remove("is-open");
+      var list = wrapper.querySelector(".pretty-select-list");
+      var trigger = wrapper.querySelector(".pretty-select-trigger");
+      if (list) list.hidden = true;
+      if (trigger) trigger.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  Array.prototype.forEach.call(selects, function (select) {
+    var wrapper = document.createElement("div");
+    wrapper.className = "pretty-select";
+    var trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "pretty-select-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-label", select.name === "condition" ? "Vehicle condition" : "Transport");
+    var value = document.createElement("span");
+    value.className = "pretty-select-value";
+    var chevron = document.createElement("span");
+    chevron.className = "pretty-select-chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    trigger.appendChild(value);
+    trigger.appendChild(chevron);
+
+    var list = document.createElement("ul");
+    list.className = "pretty-select-list";
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+
+    function update() {
+      var option = select.options[select.selectedIndex] || select.options[0];
+      value.textContent = option ? option.text : "";
+      Array.prototype.forEach.call(list.children, function (item) {
+        var selected = item.getAttribute("data-value") === select.value;
+        item.classList.toggle("is-selected", selected);
+        item.setAttribute("aria-selected", selected ? "true" : "false");
+      });
+    }
+
+    function close() {
+      list.hidden = true;
+      wrapper.classList.remove("is-open");
+      trigger.setAttribute("aria-expanded", "false");
+    }
+
+    function open() {
+      closeAll();
+      list.hidden = false;
+      wrapper.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+      var selected = list.querySelector(".is-selected") || list.firstElementChild;
+      if (selected) selected.focus();
+    }
+
+    Array.prototype.forEach.call(select.options, function (option) {
+      var item = document.createElement("li");
+      item.className = "pretty-select-option";
+      item.setAttribute("role", "option");
+      item.setAttribute("data-value", option.value);
+      item.tabIndex = -1;
+      item.textContent = option.text;
+      item.addEventListener("click", function () {
+        select.value = option.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        update();
+        close();
+        trigger.focus();
+      });
+      list.appendChild(item);
+    });
+
+    trigger.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (list.hidden) open(); else close();
+    });
+    trigger.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        if (list.hidden) open();
+      } else if (event.key === "Escape") {
+        close();
+      }
+    });
+    list.addEventListener("keydown", function (event) {
+      var items = Array.prototype.slice.call(list.children);
+      var index = items.indexOf(document.activeElement);
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        var next = items[Math.min(items.length - 1, index + 1)];
+        if (next) next.focus();
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        var prev = items[Math.max(0, index - 1)];
+        if (prev) prev.focus();
+      } else if (event.key === "Enter" && document.activeElement !== trigger) {
+        event.preventDefault();
+        document.activeElement.click();
+      } else if (event.key === "Escape") {
+        close();
+        trigger.focus();
+      }
+    });
+    document.addEventListener("click", function (event) {
+      if (!wrapper.contains(event.target)) close();
+    });
+
+    select.parentNode.insertBefore(wrapper, select.nextSibling);
+    select.classList.add("pretty-select-native");
+    select.setAttribute("tabindex", "-1");
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(list);
+    update();
+  });
+})();
+</script>
 </body>
 </html>`;
 }
@@ -413,21 +537,21 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
   </div>
 
   <div class="field-row">
-    <label class="field">
+    <div class="field">
       <span>Transport</span>
-      <select name="transport_type">
+      <select name="transport_type" aria-label="Transport">
         <option value="open"${values.transport_type !== "enclosed" ? " selected" : ""}>Open trailer</option>
         <option value="enclosed"${values.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
       </select>
-    </label>
-    <label class="field">
+    </div>
+    <div class="field">
       <span>Vehicle condition</span>
-      <select name="condition">
+      <select name="condition" aria-label="Vehicle condition">
         <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
         <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" || condition === "non-running" ? " selected" : ""}>Inoperable (steer and roll)</option>
         <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
       </select>
-    </label>
+    </div>
     <div class="field">
       <span>Ready date</span>
       ${datePicker("available_date", values.available_date ?? "")}

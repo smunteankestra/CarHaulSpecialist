@@ -1982,3 +1982,114 @@ main {
 .edit-set input {
   width: auto;
 }
+
+/* custom transport/condition dropdowns */
+.pretty-select {
+  position: relative;
+  width: 100%;
+}
+
+.pretty-select-native {
+  display: none;
+}
+
+.pretty-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.62rem 0.7rem;
+  border: 1px solid #d7e0e8;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.pretty-select-trigger:hover {
+  border-color: #b9c7d4;
+  background: #fbfdff;
+}
+
+.pretty-select-trigger:focus-visible,
+.pretty-select.is-open .pretty-select-trigger {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(242, 106, 27, 0.18);
+}
+
+.pretty-select-value {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.pretty-select-chevron {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #5b7186;
+  transition: transform 0.15s ease;
+}
+
+.pretty-select.is-open .pretty-select-chevron {
+  transform: rotate(180deg);
+}
+
+.pretty-select-list {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #e3eaf0;
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(12, 35, 56, 0.18);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.pretty-select-option {
+  padding: 0.55rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+  line-height: 1.3;
+}
+
+.pretty-select-option:hover,
+.pretty-select-option:focus {
+  background: #fff2e8;
+  color: var(--accent);
+}
+
+.pretty-select-option.is-selected {
+  background: #fff2e8;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.pretty-select-option.is-selected::after {
+  content: "✓";
+  float: right;
+  margin-left: 0.5rem;
+}
+
+.pretty-select-list {
+  right: auto;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 2rem));
+}

@@ -127,19 +127,19 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       </div>
       <div class="field-row">
         <label class="field"><span>VIN</span><input name="vin" maxlength="17" value="${v("vin")}" placeholder="17 characters"></label>
-        <label class="field"><span>Transport</span>
-          <select name="transport_type">
+        <div class="field"><span>Transport</span>
+          <select name="transport_type" aria-label="Transport">
             <option value="open"${values.transport_type !== "enclosed" ? " selected" : ""}>Open trailer</option>
             <option value="enclosed"${values.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
           </select>
-        </label>
-        <label class="field"><span>Vehicle condition</span>
-          <select name="condition">
+        </div>
+        <div class="field"><span>Vehicle condition</span>
+          <select name="condition" aria-label="Vehicle condition">
             <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
             <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" || condition === "non-running" ? " selected" : ""}>Inoperable (steer and roll)</option>
             <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
           </select>
-        </label>
+        </div>
       </div>
 
       <a class="btn btn-accent btn-inline" href="/book" target="_blank" rel="noopener">Add another vehicle</a>
