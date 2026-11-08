@@ -76,6 +76,8 @@ After the rename cutover, use `npm run deploy`. The first deploy under `bondauto
 
 For automatic deploys, connect the GitHub repository in the Cloudflare dashboard: Workers & Pages → Create → Connect to Git → pick the repo. Build command `npm install`; use deploy command `npm run deploy:live` until the rename cutover.
 
+The live Worker is **`bondautotransport`** at https://bondautotransport.muntean2stefan.workers.dev. The old `car-haul-specialist` Worker remains deployed for rollback (`npm run deploy:live`). D1 cannot be renamed in place, so the database keeps the `car-haul-specialist` name; both Workers share it.
+
 ### Custom domain
 
 `bondautotransport.com` is not yet a zone in this Cloudflare account; it currently resolves to Wix. To serve the Worker on it, add the site in Cloudflare, switch the registrar to the assigned nameservers, recreate the existing DNS records (including the Google Workspace MX and SPF records), then add `bondautotransport.com` and `www` as Custom Domains on the Worker.
@@ -96,3 +98,32 @@ For automatic deploys, connect the GitHub repository in the Cloudflare dashboard
 Phase 1 of the plan: public site, quote engine, lead capture, staff console.
 
 Not built yet: booking form → order, customer portal, carrier management, documents (bill of lading, contracts), invoices, payments, email notifications. See the roadmap in the project plan.
+
+## Website chat → Telegram
+
+The floating chat on public pages posts to `POST /api/chat`. Messages are stored in the `chat_messages` table and forwarded to Telegram when both secrets are set:
+
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN --name bondautotransport
+npx wrangler secret put TELEGRAM_CHAT_ID --name bondautotransport
+```
+
+Create the bot with @BotFather, then use its token and the destination chat ID. Without the secrets, messages are still stored but not forwarded. The chat is hidden on `/admin`.
+
+## Moving to bondautotransport.com
+
+The domain is currently on Wix nameservers (`ns12/ns13.wixdns.net`) and is not in this Cloudflare account. The cutover needs the registrar, not just code:
+
+1. Add `bondautotransport.com` as a zone in Cloudflare.
+2. Recreate the email records before switching nameservers:
+   - MX `10 aspmx.l.google.com` (Google Workspace)
+   - TXT `v=spf1 include:_spf.google.com ~all`
+   - TXT `google-site-verification=qJebw3aJF0rXDs2b0c1qfVv-pELrYUR6tk-wQJ6bZrs`
+   - Any DKIM/DMARC records shown in the Google Workspace admin console (none were publicly visible at the last check).
+3. Change the nameservers at the registrar to the pair Cloudflare assigns.
+4. Attach `bondautotransport.com` and `www.bondautotransport.com` as Worker custom domains.
+5. Verify inbound email before and after the switch.
+
+Business details imported from the live Wix site: **MGV Advisors LLC DBA Bond Auto Transport**, San Diego, CA 92122, (858) 699-4828, operations@bondautotransport.com, **MC #1647505**, **DOT #4250470**.
+
+Customer contacts/leads live in the Wix backend. Export them from Wix (Contacts / Forms) as CSV to import into the D1 `leads` table; they are not reachable without Wix credentials.

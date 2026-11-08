@@ -1,3 +1,5 @@
 SESSION_SECRET=replace-with-64-hex
 ADMIN_EMAIL=operations@bondautotransport.com
 ADMIN_PASSWORD=replace-with-a-strong-password
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=

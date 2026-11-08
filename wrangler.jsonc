@@ -1,7 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // New Worker name. Set SESSION_SECRET, ADMIN_EMAIL and ADMIN_PASSWORD for it
-  // after the first deploy; the old car-haul-specialist Worker keeps running.
+  // Live Worker: bondautotransport. The old car-haul-specialist Worker stays
+  // deployed for rollback. D1 cannot be renamed in place, so the database keeps
+  // the car-haul-specialist name and both Workers share it.
   "name": "bondautotransport",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",

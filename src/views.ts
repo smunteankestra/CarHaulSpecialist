@@ -4,13 +4,15 @@ import { stateName } from "./states.ts";
 
 export const site = {
   name: "Bond Auto Transport",
+  legalName: "MGV Advisors LLC DBA Bond Auto Transport",
   url: "https://bondautotransport.com",
   tagline: "A stronger bond for every shipment.",
   phone: "(858) 699-4828",
   email: "operations@bondautotransport.com",
+  address: "San Diego, CA 92122",
   hours: "Seven days a week",
-  mc: "MC #000000",
-  dot: "DOT #000000",
+  mc: "MC #1647505",
+  dot: "DOT #4250470",
 };
 
 export function esc(value: unknown): string {
@@ -115,7 +117,8 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     <div>
       <p class="footer-brand">Bond Auto Transport</p>
       <p class="muted">${esc(site.tagline)}</p>
-      <p class="muted small">${esc(site.mc)} · ${esc(site.dot)}</p>
+      <p class="muted small">${esc(site.legalName)}</p>
+      <p class="muted small">${esc(site.address)} · ${esc(site.mc)} · ${esc(site.dot)}</p>
     </div>
     <div>
       <p class="footer-heading">Services</p>
@@ -251,6 +254,65 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
       if (event.key === "Escape") close();
     });
     updateLabel();
+  });
+})();
+</script>
+<div class="chat-widget" id="chat-widget" hidden>
+  <button class="chat-toggle" type="button" aria-label="Open chat" aria-expanded="false">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+    Chat with us
+  </button>
+  <div class="chat-panel" role="dialog" aria-label="Chat with Bond Auto Transport" hidden>
+    <div class="chat-head">
+      <div><strong>Chat with dispatch</strong><span class="chat-sub">We reply as soon as we can.</span></div>
+      <button class="chat-close" type="button" aria-label="Close chat">×</button>
+    </div>
+    <form class="chat-form">
+      <label>Name<input name="name" required maxlength="100" autocomplete="name"></label>
+      <label>Email or phone<input name="contact" maxlength="200" autocomplete="email"></label>
+      <label>Message<textarea name="message" rows="3" required maxlength="2000"></textarea></label>
+      <input class="chat-honeypot" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button class="btn btn-accent btn-block" type="submit">Send message</button>
+      <p class="chat-status" role="status"></p>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  if (location.pathname.startsWith("/admin")) return;
+  var widget = document.getElementById("chat-widget");
+  if (!widget) return;
+  widget.hidden = false;
+  var toggle = widget.querySelector(".chat-toggle");
+  var panel = widget.querySelector(".chat-panel");
+  var close = widget.querySelector(".chat-close");
+  var form = widget.querySelector(".chat-form");
+  var status = widget.querySelector(".chat-status");
+  function open() { panel.hidden = false; toggle.setAttribute("aria-expanded", "true"); }
+  function closePanel() { panel.hidden = true; toggle.setAttribute("aria-expanded", "false"); }
+  toggle.addEventListener("click", function () { if (panel.hidden) open(); else closePanel(); });
+  close.addEventListener("click", closePanel);
+  document.addEventListener("keydown", function (event) { if (event.key === "Escape") closePanel(); });
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    var data = Object.fromEntries(new FormData(form).entries());
+    status.textContent = "Sending…";
+    try {
+      var response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(Object.assign({}, data, { page: location.pathname })),
+      });
+      var result = await response.json();
+      if (result.ok) {
+        status.textContent = "Thanks — dispatch will reply shortly.";
+        form.reset();
+      } else {
+        status.textContent = result.error || "Could not send. Please call us.";
+      }
+    } catch (error) {
+      status.textContent = "Could not send. Please call us.";
+    }
   });
 })();
 </script>
@@ -772,7 +834,7 @@ export function faqPage(): string {
 export function contactPage(): string {
   return layout({
     title: "Contact dispatch — Bond Auto Transport",
-    description: "Call or email the dispatch desk. We answer Monday to Saturday, 8am to 8pm ET.",
+    description: "Call, email or message the dispatch desk. We answer seven days a week.",
     canonical: "/contact",
     body: `
 <section class="wrap section">
@@ -781,6 +843,7 @@ export function contactPage(): string {
     <div class="card"><h3>Phone</h3><p><a href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">${esc(site.phone)}</a></p><p class="muted small">${esc(site.hours)}</p></div>
     <div class="card"><h3>Email</h3><p><a href="mailto:${esc(site.email)}">${esc(site.email)}</a></p><p class="muted small">We reply within one business hour.</p></div>
     <div class="card"><h3>Quote first</h3><p><a href="/quote">Get an instant price</a></p><p class="muted small">Fastest route to a booking.</p></div>
+    <div class="card"><h3>Company</h3><p>${esc(site.legalName)}</p><p class="muted small">${esc(site.address)} · ${esc(site.mc)} · ${esc(site.dot)}</p></div>
   </div>
 </section>`,
   });
@@ -795,6 +858,7 @@ export function legalPage(kind: "terms" | "privacy"): string {
     body: `
 <section class="wrap section prose">
   <h1 class="page-title">${isTerms ? "Terms of service" : "Privacy policy"}</h1>
+  <p class="muted small">Operated by ${esc(site.legalName)}, ${esc(site.address)}. ${esc(site.mc)} · ${esc(site.dot)}. ${esc(site.phone)} · ${esc(site.email)}.</p>
   <p class="muted small">Placeholder draft. This must be reviewed by your counsel before launch.</p>
   ${isTerms
         ? `<h2>Quotes</h2><p>Quotes are estimates based on the route and vehicle described. A dispatcher confirms the final price before booking.</p>

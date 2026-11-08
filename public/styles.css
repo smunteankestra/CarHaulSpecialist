@@ -1498,3 +1498,128 @@ a.card:hover {
 .sort-link.active {
   color: var(--accent);
 }
+
+/* chat widget */
+.chat-widget {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 80;
+  font-size: 0.9rem;
+}
+
+.chat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(242, 106, 27, 0.35);
+}
+
+.chat-toggle:hover {
+  background: #d95a12;
+}
+
+.chat-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.6rem);
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  background: #fff;
+  border: 1px solid #e3eaf0;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(11, 22, 32, 0.25);
+  padding: 1rem;
+}
+
+.chat-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.7rem;
+}
+
+.chat-head strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.chat-sub {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.chat-close {
+  border: 0;
+  background: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.chat-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.chat-form label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.chat-form input,
+.chat-form textarea {
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid #d8e2ec;
+  border-radius: 8px;
+  font: inherit;
+  color: var(--text);
+  background: #fff;
+}
+
+.chat-form input:focus,
+.chat-form textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(242, 106, 27, 0.14);
+}
+
+.chat-honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.chat-status {
+  margin: 0;
+  min-height: 1.1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+@media (max-width: 520px) {
+  .chat-widget {
+    right: 0.8rem;
+    bottom: 0.8rem;
+  }
+
+  .chat-panel {
+    width: calc(100vw - 1.6rem);
+  }
+}

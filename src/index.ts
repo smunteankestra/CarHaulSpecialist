@@ -66,6 +66,8 @@ interface Bindings {
   ADMIN_EMAIL: string;
   ADMIN_PASSWORD: string;
   SESSION_SECRET: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 }
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -508,6 +510,43 @@ async function sessionUser(c: {
   if (!user || !user.active) return null;
   return user;
 }
+
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== "object") return c.json({ ok: false, error: "Invalid request." }, 400);
+
+  const data = body as Record<string, unknown>;
+  if (String(data.website ?? "").trim()) return c.json({ ok: true });
+
+  const name = String(data.name ?? "").trim().slice(0, 100);
+  const contact = String(data.contact ?? "").trim().slice(0, 200);
+  const message = String(data.message ?? "").trim().slice(0, 2000);
+  const page = String(data.page ?? "").trim().slice(0, 300);
+  if (!name || !message) return c.json({ ok: false, error: "Name and message are required." }, 400);
+
+  const now = Date.now();
+  await c.env.DB.prepare(
+    "INSERT INTO chat_messages (name, contact, message, page, created_at) VALUES (?, ?, ?, ?, ?)",
+  )
+    .bind(name, contact || null, message, page || null, now)
+    .run();
+
+  const token = c.env.TELEGRAM_BOT_TOKEN;
+  const chatId = c.env.TELEGRAM_CHAT_ID;
+  if (token && chatId) {
+    const text = `New website chat\nName: ${name}\nContact: ${contact || "—"}\nPage: ${page || "—"}\n\n${message}`;
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
+    });
+    if (!response.ok) {
+      return c.json({ ok: false, error: "Could not send the message right now. Please call us." }, 502);
+    }
+  }
+
+  return c.json({ ok: true });
+});
 
 app.get("/admin/login", (c) => c.html(adminLoginPage()));
 
