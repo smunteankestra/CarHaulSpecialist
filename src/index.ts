@@ -206,6 +206,7 @@ app.post("/quote", async (c) => {
   return c.html(
     quotePage({
       values,
+      leadId: leadId ?? undefined,
       result: {
         origin: `${origin.city}, ${stateName(origin.state)}`,
         destination: `${destination.city}, ${stateName(destination.state)}`,
@@ -285,8 +286,9 @@ app.post("/book/submit", async (c) => {
     return invalid("We could not price that route automatically. Call dispatch and we will book it by hand.");
   }
 
+  const leadId = values.lead_id ? Number(values.lead_id) : null;
   const order = await createOrder(c.env.DB, {
-    leadId: values.lead_id ? Number(values.lead_id) : null,
+    leadId,
     customerName: values.name,
     customerEmail: values.email,
     customerPhone: values.phone,
@@ -313,6 +315,46 @@ app.post("/book/submit", async (c) => {
     price,
     notes: values.notes ?? "",
   });
+
+  if (leadId) {
+    await c.env.DB.prepare(
+      `UPDATE leads
+          SET name = ?, email = ?, phone = ?,
+              origin_zip = ?, origin_city = COALESCE(NULLIF(?, ''), origin_city),
+              origin_state = COALESCE(NULLIF(?, ''), origin_state),
+              dest_zip = ?, dest_city = COALESCE(NULLIF(?, ''), dest_city),
+              dest_state = COALESCE(NULLIF(?, ''), dest_state),
+              transport_type = ?, vehicle_year = COALESCE(NULLIF(?, ''), vehicle_year),
+              vehicle_make = COALESCE(NULLIF(?, ''), vehicle_make),
+              vehicle_model = COALESCE(NULLIF(?, ''), vehicle_model),
+              condition = ?, available_date = COALESCE(NULLIF(?, ''), available_date),
+              distance_miles = ?, price_estimate = ?, price_is_estimate = 0,
+              notes = COALESCE(NULLIF(?, ''), notes), status = 'confirmed'
+        WHERE id = ?`,
+    )
+      .bind(
+        values.name,
+        values.email,
+        values.phone,
+        values.origin_zip ?? "",
+        values.origin_city ?? "",
+        stateCode(values.origin_state ?? ""),
+        values.dest_zip ?? "",
+        values.dest_city ?? "",
+        stateCode(values.dest_state ?? ""),
+        values.transport_type === "enclosed" ? "enclosed" : "open",
+        values.vehicle_year ?? "",
+        values.vehicle_make ?? "",
+        values.vehicle_model ?? "",
+        parseCondition(values.condition ?? "running"),
+        values.ready_date ?? "",
+        distance,
+        price,
+        values.notes ?? "",
+        leadId,
+      )
+      .run();
+  }
 
   return c.redirect(`/track/${order.token}?new=1`, 303);
 });

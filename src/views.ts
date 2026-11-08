@@ -318,6 +318,7 @@ function transitEstimate(distance: number): string {
 
 export function quotePage(options: {
   values: QuoteFormValues;
+  leadId?: number;
   result?: {
     origin: string;
     destination: string;
@@ -333,22 +334,23 @@ export function quotePage(options: {
   const result = options.result;
 
   if (result) {
-    const hidden = ([
-      "name",
-      "email",
-      "phone",
-      "origin_zip",
-      "dest_zip",
-      "transport_type",
-      "vehicle_year",
-      "vehicle_make",
-      "vehicle_model",
-      "condition",
-      "available_date",
-      "notes",
-    ] as const)
-      .map((key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`)
-      .join("");
+    const hidden = [
+      options.leadId ? `<input type="hidden" name="lead_id" value="${options.leadId}">` : "",
+      ...([
+        "name",
+        "email",
+        "phone",
+        "origin_zip",
+        "dest_zip",
+        "transport_type",
+        "vehicle_year",
+        "vehicle_make",
+        "vehicle_model",
+        "condition",
+        "available_date",
+        "notes",
+      ] as const).map((key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`),
+    ].join("");
     const vehicle =
       [options.values.vehicle_year, options.values.vehicle_make, options.values.vehicle_model]
         .filter(Boolean)
