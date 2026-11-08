@@ -144,8 +144,8 @@ if (location.pathname.indexOf('/admin') !== 0) {
     </div>
     <div>
       <p class="footer-heading">Services</p>
-      <a href="/services/open">Open transport</a>
-      <a href="/services/enclosed">Enclosed transport</a>
+      <a href="/open-vehicle-transport">Open transport</a>
+      <a href="/enclosed-vehicle-transport">Enclosed transport</a>
       <a href="/services/expedited">Expedited pickup</a>
       <a href="/services/door-to-door">Door to door</a>
       <a href="/transport-options">Transport options</a>
@@ -943,8 +943,8 @@ export function homePage(): string {
 <section class="wrap section">
   <h2 class="section-title">What we move</h2>
   <div class="cards">
-    <a class="card" href="/services/open"><h3>Open transport</h3><p>The default for daily drivers and dealer inventory. Best price per mile.</p></a>
-    <a class="card" href="/services/enclosed"><h3>Enclosed transport</h3><p>Hard-sided trailers for classics, exotics and anything you would not park outside.</p></a>
+    <a class="card" href="/open-vehicle-transport"><h3>Open transport</h3><p>The default for daily drivers and dealer inventory. Best price per mile.</p></a>
+    <a class="card" href="/enclosed-vehicle-transport"><h3>Enclosed transport</h3><p>Hard-sided trailers for classics, exotics and anything you would not park outside.</p></a>
     <a class="card" href="/services/expedited"><h3>Expedited pickup</h3><p>When the vehicle has to move this week and waiting for a full load is not an option.</p></a>
     <a class="card" href="/services/door-to-door"><h3>Door to door</h3><p>Residential pickup and delivery where the truck can legally reach.</p></a>
   </div>
@@ -1187,13 +1187,13 @@ const SERVICE_PAGES: Record<string, { title: string; intro: string; points: stri
   },
 };
 
-export function servicePage(slug: string): string | null {
+export function servicePage(slug: string, canonical = `/services/${slug}`): string | null {
   const page = SERVICE_PAGES[slug];
   if (!page) return null;
   return layout({
     title: `${page.title} — Bond Auto Transport`,
     description: page.intro.slice(0, 155),
-    canonical: `/services/${slug}`,
+    canonical,
     body: `
 <section class="wrap section">
   <p class="eyebrow">Service</p>

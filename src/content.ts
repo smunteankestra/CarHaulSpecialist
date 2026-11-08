@@ -183,4 +183,18 @@ export const LEGACY_PAGES: Record<string, LegacyPage> = {
       },
     ],
   },
+  "app-landing-page": {
+    title: "Bond Auto Transport app",
+    description: "Book and track your vehicle shipment from your phone.",
+    intro: "Book and track your vehicle shipment from your phone.",
+    sections: [
+      {
+        heading: "Ship from your phone",
+        paragraphs: [
+          "Get a quote, book and track your vehicle with Bond Auto Transport.",
+          "Prefer to talk? Call dispatch at (858) 699-4828 — seven days a week.",
+        ],
+      },
+    ],
+  },
 };

@@ -70,9 +70,9 @@ import {
 const SITEMAP_PATHS = [
   "/",
   "/get-quote",
-  "/quote",
-  "/services/open",
-  "/services/enclosed",
+  "/booking-form",
+  "/open-vehicle-transport",
+  "/enclosed-vehicle-transport",
   "/services/expedited",
   "/services/door-to-door",
   "/how-it-works",
@@ -86,6 +86,7 @@ const SITEMAP_PATHS = [
   "/transport-options",
   "/blog",
   ...BLOG_POSTS.map((post) => `/post/${post.slug}`),
+  "/app-landing-page",
   "/terms",
   "/privacy",
 ];
@@ -407,8 +408,16 @@ async function priceFor(values: BookValues): Promise<{ distance: number | null; 
   return { distance, price: priceQuote(distance, transport, condition, false).total };
 }
 
-app.get("/quote", (c) => c.html(bookPage({}, null)));
-app.get("/book", (c) => c.redirect("/quote", 301));
+app.get("/booking-form", (c) => c.html(bookPage({}, null)));
+app.get("/quote", (c) => c.redirect("/get-quote", 301));
+app.get("/book", (c) => c.redirect("/booking-form", 301));
+
+app.post("/booking-form", async (c) => {
+  const values = bookValuesFrom(await c.req.formData());
+  values.ready_date = futureDate(values.ready_date);
+  const { price } = await priceFor(values);
+  return c.html(bookPage(values, price));
+});
 
 app.post("/quote", async (c) => {
   const values = bookValuesFrom(await c.req.formData());
@@ -579,7 +588,10 @@ app.get("/track/:token", async (c) => {
 });
 
 app.get("/services/:slug", (c) => {
-  const page = servicePage(c.req.param("slug"));
+  const slug = c.req.param("slug");
+  if (slug === "open") return c.redirect("/open-vehicle-transport", 301);
+  if (slug === "enclosed") return c.redirect("/enclosed-vehicle-transport", 301);
+  const page = servicePage(slug);
   return page ? c.html(page) : c.html(notFoundPage(), 404);
 });
 
@@ -601,10 +613,8 @@ app.get("/post/:slug", (c) => {
   return post ? c.html(blogPostPage(post)) : c.html(notFoundPage(), 404);
 });
 
-app.get("/booking-form", (c) => c.redirect("/quote", 301));
-app.get("/enclosed-vehicle-transport", (c) => c.redirect("/services/enclosed", 301));
-app.get("/open-vehicle-transport", (c) => c.redirect("/services/open", 301));
-app.get("/app-landing-page", (c) => c.redirect("/", 301));
+app.get("/open-vehicle-transport", (c) => c.html(servicePage("open", "/open-vehicle-transport") ?? notFoundPage()));
+app.get("/enclosed-vehicle-transport", (c) => c.html(servicePage("enclosed", "/enclosed-vehicle-transport") ?? notFoundPage()));
 
 app.get("/sitemap.xml", (c) => {
   const lastmod = new Date().toISOString().slice(0, 10);
