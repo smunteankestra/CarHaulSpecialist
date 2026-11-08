@@ -338,7 +338,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
 (function () {
   function formatPhone(value) {
     if (value.trim().startsWith("+")) return value;
-    var digits = value.replace(/\D/g, "");
+    var digits = value.replace(/\\D/g, "");
     if (digits.length === 11 && digits.charAt(0) === "1") digits = digits.slice(1);
     digits = digits.slice(0, 10);
     if (digits.length === 0) return "";
@@ -348,6 +348,28 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   }
   var selector = 'input[name="phone"], input[name="origin_phone"], input[name="dest_phone"], input[name="customer_phone"], input[name="carrier_phone"], input[name="carrier_company_phone"], input[autocomplete="tel"]';
   document.querySelectorAll(selector).forEach(function (input) {
+    input.addEventListener("input", function () {
+      if (input.value.trim().startsWith("+")) return;
+      var caret = input.selectionStart;
+      var digitsBefore = (input.value.slice(0, caret).match(/\\d/g) || []).length;
+      var formatted = formatPhone(input.value);
+      if (formatted === input.value) return;
+      input.value = formatted;
+      var position = 0;
+      var count = 0;
+      if (digitsBefore > 0) {
+        for (var i = 0; i < formatted.length; i++) {
+          if (/\\d/.test(formatted.charAt(i))) {
+            count++;
+            if (count === digitsBefore) {
+              position = i + 1;
+              break;
+            }
+          }
+        }
+      }
+      input.setSelectionRange(position, position);
+    });
     input.addEventListener("blur", function () {
       var formatted = formatPhone(input.value);
       if (formatted !== input.value) input.value = formatted;
