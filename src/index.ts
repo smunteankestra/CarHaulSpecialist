@@ -16,6 +16,7 @@ import {
   type OrderRow,
 } from "./orders.ts";
 import { lookupZip, parseCondition, priceQuote, roadMiles, type TransportType } from "./quote.ts";
+import { stateCode, stateName } from "./states.ts";
 import {
   accountPage,
   adminOrderPage,
@@ -202,8 +203,8 @@ app.post("/quote", async (c) => {
     quotePage({
       values,
       result: {
-        origin: `${origin.city}, ${origin.state}`,
-        destination: `${destination.city}, ${destination.state}`,
+        origin: `${origin.city}, ${stateName(origin.state)}`,
+        destination: `${destination.city}, ${stateName(destination.state)}`,
         distance,
         transport: transport === "enclosed" ? "Enclosed trailer" : "Open trailer",
         total: breakdown.total,
@@ -271,7 +272,6 @@ app.post("/book/submit", async (c) => {
   if (!ZIP_PATTERN.test(values.origin_zip ?? "") || !ZIP_PATTERN.test(values.dest_zip ?? "")) {
     return invalid("Both ZIP codes must be five digits.");
   }
-  if (!values.origin_street || !values.dest_street) return invalid("Both street addresses are required.");
   if (!values.origin_contact || !values.origin_phone || !values.dest_contact || !values.dest_phone) {
     return invalid("A contact name and phone are required at both ends.");
   }
@@ -294,13 +294,13 @@ app.post("/book/submit", async (c) => {
     vin: values.vin ?? "",
     originStreet: values.origin_street ?? "",
     originCity: values.origin_city ?? "",
-    originState: (values.origin_state ?? "").toUpperCase(),
+    originState: stateCode(values.origin_state ?? ""),
     originZip: values.origin_zip ?? "",
     originContact: values.origin_contact ?? "",
     originPhone: values.origin_phone ?? "",
     destStreet: values.dest_street ?? "",
     destCity: values.dest_city ?? "",
-    destState: (values.dest_state ?? "").toUpperCase(),
+    destState: stateCode(values.dest_state ?? ""),
     destZip: values.dest_zip ?? "",
     destContact: values.dest_contact ?? "",
     destPhone: values.dest_phone ?? "",

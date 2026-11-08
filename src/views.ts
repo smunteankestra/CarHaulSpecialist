@@ -1,5 +1,6 @@
 import { LEAD_STATUSES, LEAD_STATUS_LABELS, type LeadStatus } from "./leads.ts";
 import { conditionLabel } from "./quote.ts";
+import { stateName } from "./states.ts";
 
 export const site = {
   name: "Bond Auto Transport",
@@ -587,7 +588,7 @@ function leadStatusBadge(status: string): string {
 }
 
 function placeLabel(city: string | null, state: string | null, zip: string): string {
-  const label = [city, state].filter(Boolean).join(", ");
+  const label = [city, state ? stateName(state) : null].filter(Boolean).join(", ");
   return label ? `${esc(label)} ${esc(zip)}` : esc(zip);
 }
 

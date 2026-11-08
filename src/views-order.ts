@@ -1,5 +1,6 @@
 import { esc, dateOnly, layout, money, site, when } from "./views.ts";
 import { conditionLabel } from "./quote.ts";
+import { US_STATES, stateCode, stateName } from "./states.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
   CUSTOMER_STAGES,
@@ -37,6 +38,13 @@ export interface BookValues {
   ready_date?: string;
   notes?: string;
   lead_id?: string;
+}
+
+function stateOptions(selected: string | undefined): string {
+  const current = stateCode(selected);
+  return `<option value="">Select state</option>${US_STATES.map(
+    ([code, name]) => `<option value="${code}"${current === code ? " selected" : ""}>${name}</option>`,
+  ).join("")}`;
 }
 
 export function bookPage(values: BookValues, price: number | null, error?: string): string {
@@ -95,9 +103,9 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
 
       <h3 class="form-section">Pickup</h3>
       <div class="field-row">
-        <label class="field"><span>Street address *</span><input name="origin_street" required value="${v("origin_street")}" autocomplete="street-address"></label>
+        <label class="field"><span>Street address</span><input name="origin_street" value="${v("origin_street")}" autocomplete="street-address"></label>
         <label class="field"><span>City</span><input name="origin_city" value="${v("origin_city")}"></label>
-        <label class="field"><span>State</span><input name="origin_state" maxlength="2" value="${v("origin_state")}"></label>
+        <label class="field"><span>State</span><select name="origin_state">${stateOptions(values.origin_state)}</select></label>
         <label class="field"><span>ZIP *</span><input name="origin_zip" inputmode="numeric" maxlength="5" required value="${v("origin_zip")}"></label>
       </div>
       <div class="field-row">
@@ -107,9 +115,9 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
 
       <h3 class="form-section">Delivery</h3>
       <div class="field-row">
-        <label class="field"><span>Street address *</span><input name="dest_street" required value="${v("dest_street")}"></label>
+        <label class="field"><span>Street address</span><input name="dest_street" value="${v("dest_street")}"></label>
         <label class="field"><span>City</span><input name="dest_city" value="${v("dest_city")}"></label>
-        <label class="field"><span>State</span><input name="dest_state" maxlength="2" value="${v("dest_state")}"></label>
+        <label class="field"><span>State</span><select name="dest_state">${stateOptions(values.dest_state)}</select></label>
         <label class="field"><span>ZIP *</span><input name="dest_zip" inputmode="numeric" maxlength="5" required value="${v("dest_zip")}"></label>
       </div>
       <div class="field-row">
@@ -168,7 +176,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
 <section class="wrap section">
   <p class="eyebrow">Shipment</p>
   <h1 class="page-title">${esc(order.number)} ${statusBadge(order.status)}</h1>
-  <p class="muted">${esc(order.origin_city ?? order.origin_zip)}, ${esc(order.origin_state ?? "")} → ${esc(order.dest_city ?? order.dest_zip)}, ${esc(order.dest_state ?? "")}</p>
+  <p class="muted">${esc(order.origin_city ?? order.origin_zip)}, ${esc(stateName(order.origin_state))} → ${esc(order.dest_city ?? order.dest_zip)}, ${esc(stateName(order.dest_state))}</p>
 
   <div class="cards two-up">
     <div class="card">
@@ -212,9 +220,9 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Customer", `${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</span>`)}
       ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${esc(conditionLabel(order.condition))}</span>`)}
       ${row("VIN", esc(order.vin ?? ""))}
-      ${row("Pickup address", `${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(order.origin_state ?? "")} ${esc(order.origin_zip)}`)}
+      ${row("Pickup address", `${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(stateName(order.origin_state))} ${esc(order.origin_zip)}`)}
       ${row("Pickup contact", `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`)}
-      ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(order.dest_state ?? "")} ${esc(order.dest_zip)}`)}
+      ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(stateName(order.dest_state))} ${esc(order.dest_zip)}`)}
       ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
       ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
@@ -435,7 +443,7 @@ export function invoicePage(invoice: InvoiceRow, order: OrderRow): string {
     <tbody>
       <tr><th>Billed to</th><td>${esc(order.customer_name)}<br>${esc(order.customer_email)}<br>${esc(order.customer_phone)}</td></tr>
       <tr><th>Order</th><td>${esc(order.number)}</td></tr>
-      <tr><th>Route</th><td>${esc(order.origin_city ?? order.origin_zip)}, ${esc(order.origin_state ?? "")} → ${esc(order.dest_city ?? order.dest_zip)}, ${esc(order.dest_state ?? "")}</td></tr>
+      <tr><th>Route</th><td>${esc(order.origin_city ?? order.origin_zip)}, ${esc(stateName(order.origin_state))} → ${esc(order.dest_city ?? order.dest_zip)}, ${esc(stateName(order.dest_state))}</td></tr>
       <tr><th>Vehicle</th><td>${esc([order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—")}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</td></tr>
       <tr><th>Description</th><td>${esc(invoice.description)}</td></tr>
       <tr><th>Amount</th><td><strong>${money(invoice.amount)}</strong></td></tr>
