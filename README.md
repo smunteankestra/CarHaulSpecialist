@@ -1,4 +1,4 @@
-# Car Haul Specialist
+# Bond Auto Transport
 
 Vehicle transport website and dispatch console. Public marketing site with an instant quote engine, plus a staff console for quote requests.
 
@@ -58,8 +58,9 @@ Distance comes from ZIP centroids looked up through `zippopotam.us`, then multip
 
 ## Deploy
 
+The production Worker is named `bondautotransport`. It still binds the existing D1 database `car-haul-specialist`, because Cloudflare D1 does not support renaming a database in place.
+
 ```bash
-npx wrangler d1 create car-haul-specialist     # copy the database_id into wrangler.jsonc
 npx wrangler d1 execute car-haul-specialist --remote --file=migrations/0001_init.sql
 npx wrangler secret put SESSION_SECRET
 npx wrangler secret put ADMIN_EMAIL
@@ -67,7 +68,13 @@ npx wrangler secret put ADMIN_PASSWORD
 npm run deploy
 ```
 
+The first deploy under the new Worker name creates a fresh Worker, so its secrets must be set again. The old `car-haul-specialist` Worker keeps running until you delete it.
+
 For automatic deploys, connect the GitHub repository in the Cloudflare dashboard: Workers & Pages → Create → Connect to Git → pick the repo. Build command `npm install`, deploy command `npx wrangler deploy`.
+
+### Custom domain
+
+`bondautotransport.com` is not yet a zone in this Cloudflare account; it currently resolves to Wix. To serve the Worker on it, add the site in Cloudflare, switch the registrar to the assigned nameservers, recreate the existing DNS records (including the Google Workspace MX and SPF records), then add `bondautotransport.com` and `www` as Custom Domains on the Worker.
 
 ## Routes
 

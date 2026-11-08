@@ -45,7 +45,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
     .join("");
 
   return layout({
-    title: "Book your transport — Car Haul Specialist",
+    title: "Book your transport — Bond Auto Transport",
     description: "Confirm the addresses, contacts and vehicle details so dispatch can assign a carrier.",
     canonical: "/book",
     body: `
@@ -151,7 +151,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
   }).join("");
 
   return layout({
-    title: `${order.number} — Car Haul Specialist`,
+    title: `${order.number} — Bond Auto Transport`,
     description: `Status of shipment ${order.number}.`,
     body: `
 <section class="wrap section">
@@ -273,7 +273,7 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
     .join("");
 
   return layout({
-    title: "Orders — Car Haul Specialist",
+    title: "Orders — Bond Auto Transport",
     description: "Dispatch console.",
     body: `
 <section class="wrap section" id="orders">
@@ -328,7 +328,7 @@ export function adminOrderPage(
     .join("");
 
   return layout({
-    title: `${order.number} — Car Haul Specialist`,
+    title: `${order.number} — Bond Auto Transport`,
     description: "Order detail.",
     body: `
 <section class="wrap section">
@@ -410,7 +410,7 @@ export function adminOrderPage(
 
 export function invoicePage(invoice: InvoiceRow, order: OrderRow): string {
   return layout({
-    title: `${invoice.number} — Car Haul Specialist`,
+    title: `${invoice.number} — Bond Auto Transport`,
     description: `Invoice ${invoice.number}.`,
     body: `
 <section class="wrap section prose">
@@ -466,7 +466,7 @@ export function adminUsersPage(
     .join("");
 
   return layout({
-    title: "Staff accounts — Car Haul Specialist",
+    title: "Staff accounts — Bond Auto Transport",
     description: "Dispatch console.",
     body: `
 <section class="wrap section">
@@ -525,7 +525,7 @@ export function adminUsersPage(
 
 export function accountPage(user: UserRow, message?: string, error?: string): string {
   return layout({
-    title: "Your account — Car Haul Specialist",
+    title: "Your account — Bond Auto Transport",
     description: "Change your password.",
     body: `
 <section class="wrap section narrow-wrap">

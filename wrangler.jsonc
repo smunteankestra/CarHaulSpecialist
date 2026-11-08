@@ -1,6 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "car-haul-specialist",
+  // New Worker name. Set SESSION_SECRET, ADMIN_EMAIL and ADMIN_PASSWORD for it
+  // after the first deploy; the old car-haul-specialist Worker keeps running.
+  "name": "bondautotransport",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "preview_urls": false,
@@ -14,6 +16,7 @@
   "d1_databases": [
     {
       "binding": "DB",
+      // D1 cannot be renamed in place; this is the existing production database.
       "database_name": "car-haul-specialist",
       "database_id": "d5cf99d3-f7b9-4a86-8336-8b022250cd66",
       "migrations_dir": "migrations"

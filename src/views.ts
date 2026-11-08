@@ -1,11 +1,12 @@
 import { LEAD_STATUSES, LEAD_STATUS_LABELS, type LeadStatus } from "./leads.ts";
 
 export const site = {
-  name: "Car Haul Specialist",
-  tagline: "Vehicle transport, dispatched properly.",
-  phone: "(000) 000-0000",
-  email: "dispatch@carhaulspecialist.com",
-  hours: "Monday to Saturday, 8am – 8pm ET",
+  name: "Bond Auto Transport",
+  url: "https://bondautotransport.com",
+  tagline: "A stronger bond for every shipment.",
+  phone: "(858) 699-4828",
+  email: "operations@bondautotransport.com",
+  hours: "Seven days a week",
   mc: "MC #000000",
   dot: "DOT #000000",
 };
@@ -34,6 +35,7 @@ const NAV = [
 ];
 
 export function layout(options: { title: string; description: string; body: string; canonical?: string }): string {
+  const canonicalUrl = options.canonical ? new URL(options.canonical, site.url).toString() : null;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -41,7 +43,7 @@ export function layout(options: { title: string; description: string; body: stri
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(options.title)}</title>
 <meta name="description" content="${esc(options.description)}">
-${options.canonical ? `<link rel="canonical" href="${esc(options.canonical)}">` : ""}
+${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
 <link rel="stylesheet" href="/styles.css">
 <script type="application/ld+json">${JSON.stringify({
     "@context": "https://schema.org",
@@ -51,13 +53,13 @@ ${options.canonical ? `<link rel="canonical" href="${esc(options.canonical)}">` 
     telephone: site.phone,
     email: site.email,
     areaServed: "United States",
-    url: options.canonical ?? "/",
+    url: canonicalUrl ?? site.url,
   })}</script>
 </head>
 <body>
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="brand" href="/">Car Haul <span>Specialist</span></a>
+    <a class="brand" href="/">Bond <span>Auto Transport</span></a>
     <nav class="nav">
       ${NAV.map((item) => `<a href="${item.href}">${esc(item.label)}</a>`).join("")}
     </nav>
@@ -68,7 +70,7 @@ ${options.canonical ? `<link rel="canonical" href="${esc(options.canonical)}">` 
 <footer class="site-footer">
   <div class="wrap footer-grid">
     <div>
-      <p class="footer-brand">Car Haul Specialist</p>
+      <p class="footer-brand">Bond Auto Transport</p>
       <p class="muted">${esc(site.tagline)}</p>
       <p class="muted small">${esc(site.mc)} · ${esc(site.dot)}</p>
     </div>
@@ -192,7 +194,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
 
 export function homePage(): string {
   return layout({
-    title: "Car Haul Specialist — vehicle transport with a real dispatch desk",
+    title: "Bond Auto Transport — vehicle transport with a real dispatch desk",
     description:
       "Instant vehicle shipping estimates for open and enclosed transport. Nationwide pickup, vetted carriers, and a dispatch team you can actually reach.",
     canonical: "/",
@@ -272,7 +274,7 @@ export function quotePage(options: {
 }): string {
   const result = options.result;
   return layout({
-    title: "Get a vehicle shipping quote — Car Haul Specialist",
+    title: "Get a vehicle shipping quote — Bond Auto Transport",
     description: "Instant open and enclosed vehicle transport pricing from your pickup and delivery ZIP codes.",
     canonical: "/quote",
     body: `
@@ -367,7 +369,7 @@ export function servicePage(slug: string): string | null {
   const page = SERVICE_PAGES[slug];
   if (!page) return null;
   return layout({
-    title: `${page.title} — Car Haul Specialist`,
+    title: `${page.title} — Bond Auto Transport`,
     description: page.intro.slice(0, 155),
     canonical: `/services/${slug}`,
     body: `
@@ -388,7 +390,7 @@ export function servicePage(slug: string): string | null {
 
 export function howItWorksPage(): string {
   return layout({
-    title: "How vehicle shipping works — Car Haul Specialist",
+    title: "How vehicle shipping works — Bond Auto Transport",
     description: "What happens between your quote and your car arriving: dispatch, carrier assignment, pickup inspection and delivery.",
     canonical: "/how-it-works",
     body: `
@@ -407,7 +409,7 @@ export function howItWorksPage(): string {
 
 export function pricingPage(): string {
   return layout({
-    title: "Vehicle transport pricing — Car Haul Specialist",
+    title: "Vehicle transport pricing — Bond Auto Transport",
     description: "How vehicle shipping is priced: distance, trailer type, condition and season, with the fees we charge and why.",
     canonical: "/pricing",
     body: `
@@ -440,7 +442,7 @@ const FAQS = [
 
 export function faqPage(): string {
   return layout({
-    title: "Vehicle transport FAQ — Car Haul Specialist",
+    title: "Vehicle transport FAQ — Bond Auto Transport",
     description: "Answers on pickup times, insurance, non-running vehicles, multiple cars and payment.",
     canonical: "/faq",
     body: `
@@ -455,7 +457,7 @@ export function faqPage(): string {
 
 export function contactPage(): string {
   return layout({
-    title: "Contact dispatch — Car Haul Specialist",
+    title: "Contact dispatch — Bond Auto Transport",
     description: "Call or email the dispatch desk. We answer Monday to Saturday, 8am to 8pm ET.",
     canonical: "/contact",
     body: `
@@ -473,7 +475,7 @@ export function contactPage(): string {
 export function legalPage(kind: "terms" | "privacy"): string {
   const isTerms = kind === "terms";
   return layout({
-    title: `${isTerms ? "Terms of service" : "Privacy policy"} — Car Haul Specialist`,
+    title: `${isTerms ? "Terms of service" : "Privacy policy"} — Bond Auto Transport`,
     description: isTerms ? "Terms covering quotes, bookings, deposits and claims." : "What we collect, why, and how to have it removed.",
     canonical: `/${kind}`,
     body: `
@@ -494,7 +496,7 @@ export function legalPage(kind: "terms" | "privacy"): string {
 
 export function notFoundPage(): string {
   return layout({
-    title: "Page not found — Car Haul Specialist",
+    title: "Page not found — Bond Auto Transport",
     description: "That page does not exist.",
     body: `<section class="wrap section"><h1 class="page-title">That page moved.</h1><p class="lede narrow">Try the quote form, or call dispatch on ${esc(site.phone)}.</p><a class="btn btn-accent" href="/quote">Get a price</a></section>`,
   });
@@ -527,7 +529,7 @@ export interface LeadRow {
 
 export function adminLoginPage(error?: string): string {
   return layout({
-    title: "Dispatch login — Car Haul Specialist",
+    title: "Dispatch login — Bond Auto Transport",
     description: "Staff sign in.",
     body: `
 <section class="wrap section narrow-wrap">
@@ -606,7 +608,7 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false): str
     .join("");
 
   return layout({
-    title: "Leads — Car Haul Specialist",
+    title: "Leads — Bond Auto Transport",
     description: "Dispatch console.",
     body: `
 <section class="wrap section" id="quotes">
