@@ -309,6 +309,13 @@ export function homePage(): string {
   });
 }
 
+function transitEstimate(distance: number): string {
+  if (distance < 300) return "1–2 days";
+  if (distance < 800) return "2–4 days";
+  if (distance < 1500) return "3–5 days";
+  return "5–7 days";
+}
+
 export function quotePage(options: {
   values: QuoteFormValues;
   result?: {
@@ -324,6 +331,131 @@ export function quotePage(options: {
   error?: string;
 }): string {
   const result = options.result;
+
+  if (result) {
+    const hidden = ([
+      "name",
+      "email",
+      "phone",
+      "origin_zip",
+      "dest_zip",
+      "transport_type",
+      "vehicle_year",
+      "vehicle_make",
+      "vehicle_model",
+      "condition",
+      "available_date",
+      "notes",
+    ] as const)
+      .map((key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`)
+      .join("");
+    const vehicle =
+      [options.values.vehicle_year, options.values.vehicle_make, options.values.vehicle_model]
+        .filter(Boolean)
+        .join(" ") || "Vehicle";
+
+    return layout({
+      title: "Your quote — Bond Auto Transport",
+      description: `Your ${result.transport.toLowerCase()} quote from ${result.origin} to ${result.destination}.`,
+      canonical: "/quote",
+      body: `
+<section class="wrap section">
+  <div class="summary-grid">
+    <div class="summary-main">
+      <p class="eyebrow">Your quote</p>
+      <h1 class="page-title">Your price is ready.</h1>
+
+      <div class="summary-notice">
+        <strong>No payment is required to book.</strong>
+        <p>A dispatcher reviews every quote and confirms the carrier and pickup window before anything is charged.</p>
+      </div>
+
+      <div class="summary-meta">
+        <span>Service type<strong>Door to door</strong></span>
+        <span>Insurance<strong>Carrier cargo included</strong></span>
+        <span>Transport<strong>${esc(result.transport)}</strong></span>
+      </div>
+
+      <div class="summary-price-card">
+        <div class="summary-price-head">
+          <p class="eyebrow">Your quoted price</p>
+          <span class="badge badge-confirmed">No card required</span>
+        </div>
+        <p class="summary-price">${money(result.total)}</p>
+        <p class="muted small">${esc(result.origin)} → ${esc(result.destination)} · ${result.distance.toLocaleString()} miles</p>
+        <ul class="breakdown">
+          <li><span>Base rate</span><span>$${esc(result.breakdown)}</span></li>
+          <li><span>Deposit to reserve</span><span>${money(result.deposit)}</span></li>
+          <li><span>Due now</span><span>$0</span></li>
+        </ul>
+        <form method="post" action="/book">
+          ${hidden}
+          <button class="btn btn-accent btn-block" type="submit">Continue to booking</button>
+        </form>
+        <p class="muted small">No card is charged now. Dispatch confirms the carrier and pickup window first.</p>
+      </div>
+
+      <div class="summary-help">
+        <p><strong>Not sure about the exact date?</strong> You can change the pickup date when you book or when dispatch calls.</p>
+        <p class="muted">Or call dispatch at <a href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">${esc(site.phone)}</a> — seven days a week.</p>
+      </div>
+
+      <div class="summary-trust">
+        <div><strong>Licensed &amp; bonded</strong><span>MC and DOT authority on file</span></div>
+        <div><strong>Vetted carriers</strong><span>Active insurance checked before assignment</span></div>
+        <div><strong>No hidden line items</strong><span>The quote shows the base rate and deposit</span></div>
+      </div>
+
+      <div class="summary-next">
+        <h2 class="section-title">What happens next</h2>
+        <ol class="steps">
+          <li><span class="step-num">1</span><h3>Confirm the details</h3><p>Add both addresses and a contact at each end.</p></li>
+          <li><span class="step-num">2</span><h3>Dispatch finds the carrier</h3><p>We confirm the pickup window and the carrier before anything is charged.</p></li>
+          <li><span class="step-num">3</span><h3>Track it to the door</h3><p>You get the carrier, the driver contact and status updates until delivery.</p></li>
+        </ol>
+      </div>
+    </div>
+
+    <aside class="summary-side">
+      <h2 class="summary-side-title">Details</h2>
+
+      <div class="summary-card">
+        <h3>Booking summary</h3>
+        <dl class="summary-rows">
+          <div><dt>Distance</dt><dd>${result.distance.toLocaleString()} miles</dd></div>
+          <div><dt>Pickup</dt><dd>${esc(options.values.origin_zip ?? "")} · ${esc(result.origin)}</dd></div>
+          <div><dt>Delivery</dt><dd>${esc(options.values.dest_zip ?? "")} · ${esc(result.destination)}</dd></div>
+          <div><dt>Transport</dt><dd>${esc(result.transport)}</dd></div>
+          <div><dt>Ready date</dt><dd>${options.values.available_date ? esc(dateOnly(options.values.available_date)) : "Flexible"}</dd></div>
+          <div><dt>Transit estimate</dt><dd>${transitEstimate(result.distance)}</dd></div>
+        </dl>
+      </div>
+
+      <div class="summary-card">
+        <h3>Vehicle</h3>
+        <dl class="summary-rows">
+          <div><dt>Vehicle</dt><dd>${esc(vehicle)}</dd></div>
+          <div><dt>Condition</dt><dd>${conditionTag(options.values.condition ?? "running")}</dd></div>
+        </dl>
+      </div>
+
+      <div class="summary-card">
+        <h3>Price details</h3>
+        <div class="summary-due">
+          <div><span class="muted small">Due now</span><strong>$0</strong></div>
+          <p class="muted small">You won't pay until dispatch confirms the carrier and pickup window.</p>
+        </div>
+        <dl class="summary-rows">
+          <div><dt>Total due</dt><dd><strong>${money(result.total)}</strong></dd></div>
+          <div><dt>Deposit to reserve</dt><dd>${money(result.deposit)}</dd></div>
+        </dl>
+      </div>
+    </aside>
+  </div>
+</section>`,
+    });
+  }
+
   return layout({
     title: "Get a vehicle shipping quote — Bond Auto Transport",
     description: "Instant open and enclosed vehicle transport pricing from your pickup and delivery ZIP codes.",
@@ -334,35 +466,17 @@ export function quotePage(options: {
   <div class="quote-layout">
     <div>${quoteForm(options.values, options.error)}</div>
     <aside class="quote-side">
-      ${result
-        ? `<div class="price-card">
-        <p class="eyebrow">Your estimate</p>
-        <p class="price">$${result.total.toLocaleString()}</p>
-        <p class="muted small">${esc(result.origin)} → ${esc(result.destination)} · ${result.distance.toLocaleString()} miles · ${esc(result.transport)}</p>
-        <ul class="breakdown">
-          <li><span>Base</span><span>$${result.breakdown}</span></li>
-          <li><span>Deposit to book</span><span>$${result.deposit.toLocaleString()}</span></li>
-        </ul>
-        <p class="muted small">${result.estimated ? "This route used a regional estimate; dispatch will confirm the exact mileage." : "Mileage from ZIP centroids; final price is confirmed by dispatch."}</p>
-        <form method="post" action="/book">
-          ${(["name", "email", "phone", "origin_zip", "dest_zip", "transport_type", "vehicle_year", "vehicle_make", "vehicle_model", "condition", "available_date", "notes"] as const)
-          .map((key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`)
-          .join("")}
-          <button class="btn btn-accent btn-block" type="submit">Continue to booking</button>
-        </form>
-        <p class="muted small">A dispatcher has your request and will reach out within one business hour.</p>
-      </div>`
-        : `<div class="price-card price-card-empty">
+      <div class="price-card price-card-empty">
         <p class="eyebrow">How pricing works</p>
         <ul class="breakdown">
           <li><span>Open trailer</span><span>from $0.95 / mile</span></li>
           <li><span>Enclosed trailer</span><span>from $1.35 / mile</span></li>
-          <li><span>Not running</span><span>+ $150</span></li>
-          <li><span>Minimum</span><span>$450 open · $650 enclosed</span></li>
+          <li><span>Inoperable (steer and roll)</span><span>+ $150</span></li>
+          <li><span>Inoperable (no steer/roll/keys)</span><span>+ $250</span></li>
+          <li><span>Minimum</span><span>from $125 open · $175 enclosed</span></li>
         </ul>
-        <p class="muted small">Prices are per vehicle, door to door, before any optional services.</p>
-      </div>`
-      }
+        <p class="muted small">Local minimums step up with distance. Prices are per vehicle, door to door, before any optional services.</p>
+      </div>
     </aside>
   </div>
 </section>`,
