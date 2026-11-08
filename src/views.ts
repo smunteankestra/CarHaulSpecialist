@@ -215,7 +215,11 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     function positionPopover() {
       var rect = root.getBoundingClientRect();
       var width = Math.min(300, window.innerWidth - 32);
-      root.classList.toggle("align-right", rect.left + width > window.innerWidth - 12);
+      var container = root.closest(".hero-card, .card, .modal-card");
+      var bounds = container ? container.getBoundingClientRect() : { left: 0, right: window.innerWidth };
+      var alignRight = rect.left + width > bounds.right - 12;
+      var alignLeft = rect.right - width < bounds.left + 12;
+      root.classList.toggle("align-right", alignRight && !alignLeft);
     }
 
     function open() {
