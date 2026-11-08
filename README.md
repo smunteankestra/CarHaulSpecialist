@@ -66,19 +66,15 @@ Apply `migrations/0004_lead_photo.sql` before deploying. KV is used because R2 i
 
 ## Deploy
 
-The production Worker is named `bondautotransport`. It still binds the existing D1 database `car-haul-specialist`, because Cloudflare D1 does not support renaming a database in place.
+The live Worker is still `car-haul-specialist`; it holds the production secrets and binds the D1 database of the same name. `wrangler.jsonc` names the eventual target `bondautotransport`, and Cloudflare D1 does not support renaming a database in place.
 
 ```bash
-npx wrangler d1 execute car-haul-specialist --remote --file=migrations/0001_init.sql
-npx wrangler secret put SESSION_SECRET
-npx wrangler secret put ADMIN_EMAIL
-npx wrangler secret put ADMIN_PASSWORD
-npm run deploy
+npm run deploy:live    # updates car-haul-specialist in place, keeping its secrets
 ```
 
-The first deploy under the new Worker name creates a fresh Worker, so its secrets must be set again. The old `car-haul-specialist` Worker keeps running until you delete it.
+After the rename cutover, use `npm run deploy`. The first deploy under `bondautotransport` creates a fresh Worker, so set `SESSION_SECRET`, `ADMIN_EMAIL` and `ADMIN_PASSWORD` for it first. The old Worker keeps running until you delete it.
 
-For automatic deploys, connect the GitHub repository in the Cloudflare dashboard: Workers & Pages → Create → Connect to Git → pick the repo. Build command `npm install`, deploy command `npx wrangler deploy`.
+For automatic deploys, connect the GitHub repository in the Cloudflare dashboard: Workers & Pages → Create → Connect to Git → pick the repo. Build command `npm install`; use deploy command `npm run deploy:live` until the rename cutover.
 
 ### Custom domain
 

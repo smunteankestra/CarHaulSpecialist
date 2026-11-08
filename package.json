@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:live": "wrangler deploy --name car-haul-specialist",
     "check": "tsc --noEmit",
     "db:local": "wrangler d1 execute car-haul-specialist --local --file=migrations/0001_init.sql",
     "test": "node --test tests/*.test.ts"
