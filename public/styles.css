@@ -1002,3 +1002,8 @@ a.card:hover {
 .btn-inline {
   justify-self: start;
 }
+
+.condition-alert {
+  color: #b42318;
+  font-weight: 700;
+}

@@ -47,6 +47,12 @@ export function dateOnly(value: string | number | null): string {
   return year && month && day ? `${month}/${day}/${year}` : value;
 }
 
+/** Highlight inoperable vehicles in dispatch views. */
+export function conditionTag(condition: string): string {
+  const label = conditionLabel(condition);
+  return condition === "running" ? esc(label) : `<strong class="condition-alert">${esc(label)}</strong>`;
+}
+
 const NAV = [
   { href: "/services/open", label: "Open transport" },
   { href: "/services/enclosed", label: "Enclosed transport" },
@@ -612,7 +618,7 @@ function leadModal(lead: LeadRow, photos: LeadPhotoRow[]): string {
     <table class="table detail-table"><tbody>
       ${row("Customer", `${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span>`)}
       ${row("Route", `${placeLabel(lead.origin_city, lead.origin_state, lead.origin_zip)} → ${placeLabel(lead.dest_city, lead.dest_state, lead.dest_zip)}`)}
-      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(lead.transport_type)} trailer · ${esc(conditionLabel(lead.condition))}</span>`)}
+      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(lead.transport_type)} trailer · ${conditionTag(lead.condition)}</span>`)}
       ${row("Ready date", esc(dateOnly(lead.available_date)))}
       ${row("Distance", lead.distance_miles ? `${lead.distance_miles.toLocaleString()} miles` : "")}
       ${row("Quote", lead.price_estimate ? `<strong>${money(lead.price_estimate)}</strong>` : "")}
@@ -655,7 +661,7 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false, phot
       <td><a class="row-link" href="#quote-${lead.id}">${lead.id}</a></td>
       <td>${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span>${photoCount ? `<br><span class="muted small">${photoCount} photo${photoCount === 1 ? "" : "s"}</span>` : ""
         }</td>
-      <td>${esc(lead.origin_zip)} → ${esc(lead.dest_zip)}<br><span class="muted small">${esc(lead.transport_type)} · ${esc(conditionLabel(lead.condition))}</span></td>
+      <td>${esc(lead.origin_zip)} → ${esc(lead.dest_zip)}<br><span class="muted small">${esc(lead.transport_type)} · ${conditionTag(lead.condition)}</span></td>
       <td>${lead.distance_miles ? `${lead.distance_miles.toLocaleString()} mi` : "—"}</td>
       <td>${lead.price_estimate ? money(lead.price_estimate) : "—"}</td>
       <td>${leadStatusBadge(lead.status)}</td>

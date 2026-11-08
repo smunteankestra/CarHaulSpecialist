@@ -1,4 +1,4 @@
-import { esc, dateOnly, layout, money, site, when } from "./views.ts";
+import { esc, conditionTag, dateOnly, layout, money, site, when } from "./views.ts";
 import { conditionLabel } from "./quote.ts";
 import { US_STATES, stateCode, stateName } from "./states.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
@@ -218,7 +218,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Created", when(order.created_at))}
       ${row("Last updated", when(order.updated_at))}
       ${row("Customer", `${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</span>`)}
-      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${esc(conditionLabel(order.condition))}</span>`)}
+      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${conditionTag(order.condition)}</span>`)}
       ${row("VIN", esc(order.vin ?? ""))}
       ${row("Pickup address", `${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(stateName(order.origin_state))} ${esc(order.origin_zip)}`)}
       ${row("Pickup contact", `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`)}
