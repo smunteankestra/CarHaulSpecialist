@@ -15,7 +15,8 @@ test("every status has a label", () => {
 
 test("the quote pipeline starts new and covers the delivery lifecycle", () => {
   assert.equal(LEAD_STATUSES[0], "new");
-  for (const status of ["confirmed", "assigned", "picked_up", "in_transit", "delivered", "closed", "cancelled"]) {
+  for (const status of ["confirmed", "assigned", "picked_up", "delivered", "closed", "cancelled"]) {
     assert.ok(isLeadStatus(status), status);
   }
+  assert.equal(isLeadStatus("in_transit"), false);
 });
