@@ -84,6 +84,12 @@ app.get("/", (c) => c.html(homePage()));
 
 app.get("/quote", (c) => c.html(quotePage({ values: {} })));
 
+/** Accept only a valid date today or later. */
+function futureDate(value: string | undefined): string {
+  const today = new Date().toISOString().slice(0, 10);
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= today ? value : "";
+}
+
 app.post("/quote", async (c) => {
   const form = await c.req.formData();
   const field = (name: string) => String(form.get(name) ?? "").trim();
@@ -101,6 +107,8 @@ app.post("/quote", async (c) => {
     available_date: field("available_date"),
     notes: field("notes"),
   };
+
+  values.available_date = futureDate(values.available_date);
 
   const invalid = (message: string) => c.html(quotePage({ values, error: message }), 400);
 
@@ -304,6 +312,7 @@ app.get("/book", (c) => c.html(bookPage({}, null)));
 
 app.post("/book", async (c) => {
   const values = bookValuesFrom(await c.req.formData());
+  values.ready_date = futureDate(values.ready_date);
   const { price } = await priceFor(values);
   return c.html(bookPage(values, price));
 });
@@ -311,6 +320,7 @@ app.post("/book", async (c) => {
 app.post("/book/submit", async (c) => {
   const form = await c.req.formData();
   const values = bookValuesFrom(form);
+  values.ready_date = futureDate(values.ready_date);
   const invalid = (message: string) => c.html(bookPage(values, null, message), 400);
 
   if (!values.name || !values.email || !values.phone) return invalid("Name, email and phone are required.");

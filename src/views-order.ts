@@ -1,4 +1,4 @@
-import { esc, MONTH_NAMES, conditionTag, dateOnly, layout, money, site, when } from "./views.ts";
+import { esc, MONTH_NAMES, conditionTag, dateOnly, datePicker, layout, money, site, when } from "./views.ts";
 import { US_STATES, stateCode, stateName } from "./states.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
@@ -169,7 +169,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
 
       <h3 class="form-section">Schedule</h3>
       <div class="field-row">
-        <label class="field"><span>Ready date</span><input name="ready_date" type="date" value="${v("ready_date")}"></label>
+        <div class="field"><span>Ready date</span>${datePicker("ready_date", values.ready_date ?? "")}</div>
         <label class="field"><span>Anything we should know?</span><textarea name="notes" rows="2">${v("notes")}</textarea></label>
       </div>
 

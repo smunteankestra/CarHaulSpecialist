@@ -140,6 +140,120 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     </div>
   </div>
 </footer>
+<script>
+(function () {
+  var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function iso(date) { return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()); }
+  function format(date) { return MONTHS[date.getMonth()] + "/" + pad(date.getDate()) + "/" + date.getFullYear(); }
+  function parse(value) {
+    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
+  }
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  document.querySelectorAll("[data-date-picker]").forEach(function (root) {
+    var input = root.querySelector("input[type=hidden]");
+    var trigger = root.querySelector(".date-trigger");
+    var valueEl = root.querySelector(".date-value");
+    var grid = root.querySelector(".date-grid");
+    var title = root.querySelector(".date-title");
+    var prev = root.querySelector(".date-prev");
+    var next = root.querySelector(".date-next");
+    var todayBtn = root.querySelector(".date-today");
+    var clearBtn = root.querySelector(".date-clear");
+    var selected = parse(input.value);
+    if (selected && selected < today) { selected = null; input.value = ""; }
+    var view = selected ? new Date(selected.getFullYear(), selected.getMonth(), 1) : new Date(today.getFullYear(), today.getMonth(), 1);
+
+    function updateLabel() {
+      valueEl.textContent = selected ? format(selected) : "Select a date";
+    }
+
+    function render() {
+      title.textContent = MONTHS[view.getMonth()] + " " + view.getFullYear();
+      grid.innerHTML = "";
+      var start = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
+      var days = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+      for (var i = 0; i < start; i++) {
+        var blank = document.createElement("span");
+        blank.className = "date-day is-empty";
+        grid.appendChild(blank);
+      }
+      for (var d = 1; d <= days; d++) {
+        (function (day) {
+          var date = new Date(view.getFullYear(), view.getMonth(), day);
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "date-day";
+          btn.textContent = String(day);
+          if (date < today) {
+            btn.disabled = true;
+            btn.classList.add("is-past");
+          }
+          if (selected && iso(date) === iso(selected)) btn.classList.add("is-selected");
+          if (iso(date) === iso(today)) btn.classList.add("is-today");
+          btn.addEventListener("click", function () {
+            selected = date;
+            input.value = iso(date);
+            updateLabel();
+            close();
+            trigger.focus();
+          });
+          grid.appendChild(btn);
+        })(d);
+      }
+      var previousLast = new Date(view.getFullYear(), view.getMonth(), 0);
+      prev.disabled = previousLast < today;
+    }
+
+    function open() {
+      root.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+      render();
+    }
+    function close() {
+      root.classList.remove("is-open");
+      trigger.setAttribute("aria-expanded", "false");
+    }
+
+    trigger.addEventListener("click", function () {
+      if (root.classList.contains("is-open")) close();
+      else open();
+    });
+    prev.addEventListener("click", function () {
+      view.setMonth(view.getMonth() - 1);
+      render();
+    });
+    next.addEventListener("click", function () {
+      view.setMonth(view.getMonth() + 1);
+      render();
+    });
+    todayBtn.addEventListener("click", function () {
+      selected = new Date(today);
+      input.value = iso(today);
+      updateLabel();
+      close();
+      trigger.focus();
+    });
+    clearBtn.addEventListener("click", function () {
+      selected = null;
+      input.value = "";
+      updateLabel();
+      close();
+      trigger.focus();
+    });
+    document.addEventListener("click", function (event) {
+      if (!root.contains(event.target)) close();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") close();
+    });
+    updateLabel();
+  });
+})();
+</script>
 </body>
 </html>`;
 }
@@ -157,6 +271,30 @@ export interface QuoteFormValues {
   condition?: string;
   available_date?: string;
   notes?: string;
+}
+
+export function datePicker(name: string, value: string): string {
+  const label = value ? dateOnly(value) : "Select a date";
+  return `<div class="date-picker" data-date-picker>
+  <input type="hidden" name="${esc(name)}" value="${esc(value)}">
+  <button type="button" class="date-trigger" aria-haspopup="dialog" aria-expanded="false">
+    <span class="date-value">${esc(label)}</span>
+    <svg class="date-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
+  </button>
+  <div class="date-popover" role="dialog" aria-label="Choose a date">
+    <div class="date-head">
+      <button type="button" class="date-nav date-prev" aria-label="Previous month">‹</button>
+      <strong class="date-title"></strong>
+      <button type="button" class="date-nav date-next" aria-label="Next month">›</button>
+    </div>
+    <div class="date-weekdays">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => `<span>${day}</span>`).join("")}</div>
+    <div class="date-grid"></div>
+    <div class="date-foot">
+      <button type="button" class="date-today">Today</button>
+      <button type="button" class="date-clear">Clear</button>
+    </div>
+  </div>
+</div>`;
 }
 
 export function quoteForm(values: QuoteFormValues = {}, error?: string): string {
@@ -206,10 +344,10 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
         <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
       </select>
     </label>
-    <label class="field">
+    <div class="field">
       <span>Ready date</span>
-      <input name="available_date" type="date" value="${v("available_date")}">
-    </label>
+      ${datePicker("available_date", values.available_date ?? "")}
+    </div>
   </div>
 
   <div class="field-row">
