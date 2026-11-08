@@ -716,7 +716,7 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
   ).join("")}</div>
     </form>
 
-    ${order.status === "quoted" || order.status === "cancelled" || order.status === "assigned" || order.status === "paid" ? "" : `    <h3 class="section-title mt">Assign carrier</h3>
+    ${order.status === "confirmed" ? `    <h3 class="section-title mt">Assign carrier</h3>
     <form class="quote-form" method="post" action="/admin/orders/${order.id}/carrier">
       <input type="hidden" name="next" value="${esc(anchor)}">
       <div class="field-row">
@@ -732,7 +732,7 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
         <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
       </div>
       <button class="btn btn-accent" type="submit">Assign carrier</button>
-    </form>`}
+    </form>` : ""}
 
     <div class="modal-actions mt">
       <a class="btn btn-ghost" href="/admin/orders/${order.id}">Open full record</a>
@@ -912,7 +912,7 @@ export function adminOrderPage(
       <button class="btn btn-accent" type="submit">Save status</button>
     </form>
 
-    ${order.status === "quoted" || order.status === "cancelled" || order.status === "assigned" || order.status === "paid" ? "" : `    <form class="card quote-form" method="post" action="/admin/orders/${order.id}/carrier">
+    ${order.status === "confirmed" ? `    <form class="card quote-form" method="post" action="/admin/orders/${order.id}/carrier">
       <h3>Assign carrier</h3>
       <label class="field"><span>Company</span><input name="carrier_name" required value="${esc(order.carrier_name ?? "")}"></label>
       <div class="field-row">
@@ -925,7 +925,7 @@ export function adminOrderPage(
       </div>
       <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
       <button class="btn btn-accent" type="submit">Assign carrier</button>
-    </form>`}
+    </form>` : ""}
   </div>
 
   <div class="cards two-up mt">
