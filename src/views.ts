@@ -416,7 +416,7 @@ if (location.pathname.indexOf('/admin') !== 0) {
 </script>
 <script>
 (function () {
-  var selects = document.querySelectorAll('select[name="transport_type"], select[name="condition"]');
+  var selects = document.querySelectorAll('select[name="transport_type"], select[name="condition"], select[name="vehicle_type"]');
   if (!selects.length) return;
 
   function closeAll() {
@@ -437,7 +437,8 @@ if (location.pathname.indexOf('/admin') !== 0) {
     trigger.className = "pretty-select-trigger";
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", "false");
-    trigger.setAttribute("aria-label", select.name === "condition" ? "Vehicle condition" : "Transport");
+    var labels = { transport_type: "Transport", condition: "Vehicle condition", vehicle_type: "Vehicle type" };
+    trigger.setAttribute("aria-label", labels[select.name] || "Select");
     var value = document.createElement("span");
     value.className = "pretty-select-value";
     var chevron = document.createElement("span");
@@ -1172,7 +1173,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     <div class="field-row">
       <label class="field">
         <span>Vehicle type</span>
-        <select class="vehicle-select" data-vehicle-type>
+        <select class="vehicle-select" name="vehicle_type" data-vehicle-type>
           <option value="car">Car / Truck / SUV</option>
           <option value="motorcycle">Motorcycle</option>
         </select>
@@ -1188,28 +1189,28 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     </div>
 
     <div class="field-row">
-      <label class="field">
+      <div class="field">
         <span>Make</span>
         <div class="vehicle-combobox" data-vehicle-make>
-          <input class="vehicle-combobox-input" type="text" autocomplete="off" placeholder="Type to filter makes" data-vehicle-make-input value="${v("vehicle_make")}" disabled>
+          <input class="vehicle-combobox-input" type="text" autocomplete="off" aria-label="Make" placeholder="Type to filter makes" data-vehicle-make-input value="${v("vehicle_make")}" disabled>
           <button class="vehicle-combobox-toggle" type="button" aria-label="Show makes" data-vehicle-make-toggle disabled>
             <span class="vehicle-combobox-chevron" aria-hidden="true"></span>
           </button>
           <ul class="vehicle-combobox-list" role="listbox" data-vehicle-make-list hidden></ul>
         </div>
         <input type="hidden" name="vehicle_make" data-vehicle-make-value value="${v("vehicle_make")}">
-      </label>
-      <label class="field">
+      </div>
+      <div class="field">
         <span>Model</span>
         <div class="vehicle-combobox" data-vehicle-model>
-          <input class="vehicle-combobox-input" type="text" autocomplete="off" placeholder="Type to filter models" data-vehicle-model-input value="${v("vehicle_model")}" disabled>
+          <input class="vehicle-combobox-input" type="text" autocomplete="off" aria-label="Model" placeholder="Type to filter models" data-vehicle-model-input value="${v("vehicle_model")}" disabled>
           <button class="vehicle-combobox-toggle" type="button" aria-label="Show models" data-vehicle-model-toggle disabled>
             <span class="vehicle-combobox-chevron" aria-hidden="true"></span>
           </button>
           <ul class="vehicle-combobox-list" role="listbox" data-vehicle-model-list hidden></ul>
         </div>
         <input type="hidden" name="vehicle_model" data-vehicle-model-value value="${v("vehicle_model")}">
-      </label>
+      </div>
     </div>
 
     <div class="field">
