@@ -851,178 +851,229 @@ if (location.pathname.indexOf('/admin') !== 0) {
   Array.prototype.forEach.call(document.querySelectorAll("[data-vehicle-catalog]"), function (root) {
     var type = root.querySelector("[data-vehicle-type]");
     var year = root.querySelector("[data-vehicle-year]");
-    var make = root.querySelector("[data-vehicle-make]");
-    var model = root.querySelector("[data-vehicle-model]");
-    var makeCustom = root.querySelector("[data-vehicle-make-custom]");
-    var modelCustom = root.querySelector("[data-vehicle-model-custom]");
+    var makeInput = root.querySelector("[data-vehicle-make-input]");
+    var makeToggle = root.querySelector("[data-vehicle-make-toggle]");
+    var makeList = root.querySelector("[data-vehicle-make-list]");
     var makeValue = root.querySelector("[data-vehicle-make-value]");
+    var modelInput = root.querySelector("[data-vehicle-model-input]");
+    var modelToggle = root.querySelector("[data-vehicle-model-toggle]");
+    var modelList = root.querySelector("[data-vehicle-model-list]");
     var modelValue = root.querySelector("[data-vehicle-model-value]");
-    if (!type || !year || !make || !model || !makeCustom || !modelCustom || !makeValue || !modelValue) return;
+    if (!type || !year || !makeInput || !makeToggle || !makeList || !makeValue || !modelInput || !modelToggle || !modelList || !modelValue) return;
 
-    var selectedMake = makeValue.value || "";
-    var selectedModel = modelValue.value || "";
+    var makes = [];
+    var models = [];
+    var makeSelected = makeValue.value || "";
+    var modelSelected = modelValue.value || "";
     var modelRequest = 0;
 
-    function setOptions(select, values, placeholder) {
-      select.innerHTML = "";
-      var blank = document.createElement("option");
-      blank.value = "";
-      blank.textContent = placeholder;
-      select.appendChild(blank);
-      var custom = document.createElement("option");
-      custom.value = "__custom__";
-      custom.textContent = "Custom / Other";
-      select.appendChild(custom);
-      values.forEach(function (value) {
-        var option = document.createElement("option");
-        option.value = value;
-        option.textContent = value;
-        select.appendChild(option);
-      });
-    }
+    function createCombobox(input, toggle, list, hidden, getValues, onSelect) {
+      var active = -1;
+      var current = hidden.value || "";
 
-    function hasOption(select, value) {
-      return Array.prototype.some.call(select.options, function (option) {
-        return option.value === value;
-      });
-    }
-
-    function applyMake(value) {
-      if (value && hasOption(make, value)) {
-        make.value = value;
-        makeCustom.hidden = true;
-        makeValue.value = value;
-      } else if (value) {
-        make.value = "__custom__";
-        makeCustom.hidden = false;
-        makeCustom.value = value;
-        makeValue.value = value;
-      } else {
-        make.value = "";
-        makeCustom.hidden = true;
-        makeValue.value = "";
+      function filtered(query) {
+        var q = query.trim().toLowerCase();
+        var values = getValues();
+        if (!q) return values.slice(0, 50);
+        var starts = [];
+        var contains = [];
+        for (var i = 0; i < values.length; i++) {
+          var value = values[i];
+          var lower = value.toLowerCase();
+          if (lower.indexOf(q) === 0) starts.push(value);
+          else if (lower.indexOf(q) > 0) contains.push(value);
+        }
+        return starts.concat(contains).slice(0, 50);
       }
+
+      function render(query) {
+        list.innerHTML = "";
+        var q = query.trim();
+        var values = filtered(q);
+        var exact = false;
+        for (var i = 0; i < values.length; i++) {
+          if (values[i].toLowerCase() === q.toLowerCase()) { exact = true; break; }
+        }
+        if (q && !exact) {
+          var custom = document.createElement("li");
+          custom.className = "vehicle-combobox-option is-custom";
+          custom.textContent = 'Use "' + q + '" as custom';
+          custom.setAttribute("role", "option");
+          custom.addEventListener("mousedown", function (event) { event.preventDefault(); });
+          custom.addEventListener("click", function () { select(q); });
+          list.appendChild(custom);
+        }
+        values.forEach(function (value) {
+          var item = document.createElement("li");
+          item.className = "vehicle-combobox-option";
+          if (value === current) item.classList.add("is-selected");
+          item.textContent = value;
+          item.setAttribute("role", "option");
+          item.addEventListener("mousedown", function (event) { event.preventDefault(); });
+          item.addEventListener("click", function () { select(value); });
+          list.appendChild(item);
+        });
+        if (!list.children.length) {
+          var empty = document.createElement("li");
+          empty.className = "vehicle-combobox-empty";
+          empty.textContent = "No matches — type a custom value";
+          list.appendChild(empty);
+        }
+        list.hidden = false;
+        active = -1;
+      }
+
+      function select(value) {
+        current = value || "";
+        hidden.value = current;
+        input.value = current;
+        list.hidden = true;
+        onSelect(current);
+      }
+
+      function open() {
+        if (input.disabled) return;
+        render(input.value);
+      }
+
+      input.addEventListener("focus", open);
+      input.addEventListener("click", open);
+      input.addEventListener("input", function () {
+        hidden.value = "";
+        current = "";
+        render(input.value);
+        onSelect("");
+      });
+      input.addEventListener("keydown", function (event) {
+        var options = Array.prototype.slice.call(list.querySelectorAll(".vehicle-combobox-option"));
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          if (list.hidden) render(input.value);
+          options = Array.prototype.slice.call(list.querySelectorAll(".vehicle-combobox-option"));
+          active = Math.min(options.length - 1, active + 1);
+          options.forEach(function (item, index) { item.classList.toggle("is-active", index === active); });
+          if (options[active]) options[active].scrollIntoView({ block: "nearest" });
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          options = Array.prototype.slice.call(list.querySelectorAll(".vehicle-combobox-option"));
+          active = Math.max(0, active - 1);
+          options.forEach(function (item, index) { item.classList.toggle("is-active", index === active); });
+          if (options[active]) options[active].scrollIntoView({ block: "nearest" });
+        } else if (event.key === "Enter") {
+          if (!list.hidden && options[active]) {
+            event.preventDefault();
+            options[active].click();
+          }
+        } else if (event.key === "Escape") {
+          list.hidden = true;
+        }
+      });
+      input.addEventListener("blur", function () {
+        setTimeout(function () {
+          list.hidden = true;
+          var value = input.value.trim();
+          if (value && !current) select(value);
+        }, 120);
+      });
+      toggle.addEventListener("click", function () {
+        if (input.disabled) return;
+        input.focus();
+        open();
+      });
+      list.addEventListener("mousedown", function (event) { event.preventDefault(); });
+
+      return {
+        setCurrent: function (value) {
+          current = value || "";
+          hidden.value = current;
+          input.value = current;
+        },
+        enable: function (enabled) {
+          input.disabled = !enabled;
+          toggle.disabled = !enabled;
+        },
+        clear: function () {
+          current = "";
+          hidden.value = "";
+          input.value = "";
+          list.hidden = true;
+        }
+      };
     }
 
-    function applyModel(value) {
-      if (value && hasOption(model, value)) {
-        model.value = value;
-        modelCustom.hidden = true;
-        modelValue.value = value;
-      } else if (value) {
-        model.value = "__custom__";
-        modelCustom.hidden = false;
-        modelCustom.value = value;
-        modelValue.value = value;
-      } else {
-        model.value = "";
-        modelCustom.hidden = true;
-        modelValue.value = "";
-      }
+    function clearModels() {
+      models = [];
+      modelBox.clear();
+      modelBox.enable(false);
     }
+
+    var makeBox = createCombobox(makeInput, makeToggle, makeList, makeValue, function () { return makes; }, function (value) {
+      makeSelected = value;
+      modelSelected = "";
+      modelBox.clear();
+      if (value) loadModels(); else clearModels();
+    });
+
+    var modelBox = createCombobox(modelInput, modelToggle, modelList, modelValue, function () { return models; }, function (value) {
+      modelSelected = value;
+    });
 
     function loadMakes() {
-      make.disabled = true;
-      model.disabled = true;
+      makeBox.enable(false);
+      modelBox.enable(false);
       var typeValue = type.value || "car";
       fetch("/api/vehicles/makes?type=" + encodeURIComponent(typeValue))
         .then(function (response) { return response.ok ? response.json() : { makes: [] }; })
         .then(function (data) {
-          setOptions(make, data.makes || [], "Select make");
-          make.disabled = false;
-          applyMake(selectedMake);
-          loadModels();
+          makes = data.makes || [];
+          makeBox.enable(true);
+          makeBox.setCurrent(makeSelected);
+          if (makeSelected) loadModels(); else clearModels();
         })
         .catch(function () {
-          setOptions(make, [], "Select make");
-          make.disabled = false;
-          applyMake(selectedMake);
-          loadModels();
+          makes = [];
+          makeBox.enable(true);
+          makeBox.setCurrent(makeSelected);
+          clearModels();
         });
     }
 
     function loadModels() {
-      var makeKey = make.value === "__custom__" ? "" : make.value;
+      var makeKey = makeSelected;
       var yearValue = year.value;
       var request = ++modelRequest;
-      if (!makeKey) {
-        setOptions(model, [], "Select model");
-        model.disabled = false;
-        applyModel(selectedModel);
-        return;
-      }
-      model.disabled = true;
+      if (!makeKey) { clearModels(); return; }
+      modelBox.enable(false);
       var url = "/api/vehicles/models?make=" + encodeURIComponent(makeKey);
       if (yearValue) url += "&year=" + encodeURIComponent(yearValue);
       fetch(url)
         .then(function (response) { return response.ok ? response.json() : { models: [] }; })
         .then(function (data) {
           if (request !== modelRequest) return;
-          setOptions(model, data.models || [], "Select model");
-          model.disabled = false;
-          applyModel(selectedModel);
-          selectedModel = "";
+          models = data.models || [];
+          modelBox.enable(true);
+          modelBox.setCurrent(modelSelected);
+          modelSelected = "";
         })
         .catch(function () {
           if (request !== modelRequest) return;
-          setOptions(model, [], "Select model");
-          model.disabled = false;
-          applyModel(selectedModel);
+          models = [];
+          modelBox.enable(true);
+          modelBox.setCurrent(modelSelected);
         });
     }
 
-    make.addEventListener("change", function () {
-      if (make.value === "__custom__") {
-        makeCustom.hidden = false;
-        makeCustom.focus();
-        makeValue.value = makeCustom.value;
-        setOptions(model, [], "Select model");
-        model.disabled = false;
-        applyModel("");
-      } else {
-        makeCustom.hidden = true;
-        makeValue.value = make.value;
-        selectedModel = "";
-        loadModels();
-      }
-    });
-
-    makeCustom.addEventListener("input", function () {
-      makeValue.value = makeCustom.value;
-      setOptions(model, [], "Select model");
-      model.disabled = false;
-      applyModel("");
-    });
-
-    model.addEventListener("change", function () {
-      if (model.value === "__custom__") {
-        modelCustom.hidden = false;
-        modelCustom.focus();
-        modelValue.value = modelCustom.value;
-      } else {
-        modelCustom.hidden = true;
-        modelValue.value = model.value;
-      }
-    });
-
-    modelCustom.addEventListener("input", function () {
-      modelValue.value = modelCustom.value;
-    });
-
     year.addEventListener("change", function () {
-      selectedModel = "";
+      modelSelected = "";
+      modelBox.clear();
       loadModels();
     });
 
     type.addEventListener("change", function () {
-      selectedMake = "";
-      selectedModel = "";
-      makeValue.value = "";
-      modelValue.value = "";
-      makeCustom.hidden = true;
-      modelCustom.hidden = true;
-      setOptions(model, [], "Select model");
-      model.disabled = true;
+      makeSelected = "";
+      modelSelected = "";
+      makeBox.clear();
+      modelBox.clear();
       loadMakes();
     });
 
@@ -1139,22 +1190,24 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     <div class="field-row">
       <label class="field">
         <span>Make</span>
-        <select class="vehicle-select" data-vehicle-make disabled>
-          <option value="">Select make</option>
-          <option value="__custom__">Custom / Other</option>
-          ${values.vehicle_make ? `<option value="${v("vehicle_make")}" selected>${v("vehicle_make")}</option>` : ""}
-        </select>
-        <input class="vehicle-custom" data-vehicle-make-custom value="${v("vehicle_make")}" placeholder="Type your make" hidden>
+        <div class="vehicle-combobox" data-vehicle-make>
+          <input class="vehicle-combobox-input" type="text" autocomplete="off" placeholder="Type to filter makes" data-vehicle-make-input value="${v("vehicle_make")}" disabled>
+          <button class="vehicle-combobox-toggle" type="button" aria-label="Show makes" data-vehicle-make-toggle disabled>
+            <span class="vehicle-combobox-chevron" aria-hidden="true"></span>
+          </button>
+          <ul class="vehicle-combobox-list" role="listbox" data-vehicle-make-list hidden></ul>
+        </div>
         <input type="hidden" name="vehicle_make" data-vehicle-make-value value="${v("vehicle_make")}">
       </label>
       <label class="field">
         <span>Model</span>
-        <select class="vehicle-select" data-vehicle-model disabled>
-          <option value="">Select model</option>
-          <option value="__custom__">Custom / Other</option>
-          ${values.vehicle_model ? `<option value="${v("vehicle_model")}" selected>${v("vehicle_model")}</option>` : ""}
-        </select>
-        <input class="vehicle-custom" data-vehicle-model-custom value="${v("vehicle_model")}" placeholder="Type your model" hidden>
+        <div class="vehicle-combobox" data-vehicle-model>
+          <input class="vehicle-combobox-input" type="text" autocomplete="off" placeholder="Type to filter models" data-vehicle-model-input value="${v("vehicle_model")}" disabled>
+          <button class="vehicle-combobox-toggle" type="button" aria-label="Show models" data-vehicle-model-toggle disabled>
+            <span class="vehicle-combobox-chevron" aria-hidden="true"></span>
+          </button>
+          <ul class="vehicle-combobox-list" role="listbox" data-vehicle-model-list hidden></ul>
+        </div>
         <input type="hidden" name="vehicle_model" data-vehicle-model-value value="${v("vehicle_model")}">
       </label>
     </div>
