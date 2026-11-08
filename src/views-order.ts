@@ -406,7 +406,7 @@ function orderEditForm(order: OrderRow, next: string): string {
               <input name="vehicle_make" value="${esc(order.vehicle_make ?? "")}" placeholder="Make">
               <input name="vehicle_model" value="${esc(order.vehicle_model ?? "")}" placeholder="Model">
             </div>
-            <div class="edit-grid">
+            <div class="edit-grid edit-grid-stack">
               <select name="transport_type">
                 <option value="open"${order.transport_type === "enclosed" ? "" : " selected"}>Open trailer</option>
                 <option value="enclosed"${order.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
