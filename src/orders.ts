@@ -149,7 +149,7 @@ export async function createOrder(db: D1Database, input: NewOrder): Promise<Orde
           origin_street, origin_city, origin_state, origin_zip, origin_contact, origin_phone,
           dest_street, dest_city, dest_state, dest_zip, dest_contact, dest_phone,
           ready_date, distance_miles, price, status, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'quoted', ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)`,
     )
     .bind(
       "pending",

@@ -16,7 +16,7 @@ export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
   contacted: "Contacted",
-  quote_sent: "Quote sent",
+  quote_sent: "Quoted",
   confirmed: "Confirmed",
   assigned: "Carrier assigned",
   picked_up: "Picked up",

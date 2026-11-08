@@ -137,13 +137,15 @@ app.post("/quote", async (c) => {
   }
 
   let leadId: number | null = null;
+  const leadStatus = breakdown ? "quote_sent" : "new";
+
   try {
     const inserted = await c.env.DB.prepare(
       `INSERT INTO leads
          (name, email, phone, origin_zip, origin_city, origin_state, dest_zip, dest_city, dest_state,
           transport_type, vehicle_year, vehicle_make, vehicle_model, condition, available_date,
           distance_miles, price_estimate, price_is_estimate, notes, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'new', ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
     )
       .bind(
         values.name,
@@ -164,6 +166,7 @@ app.post("/quote", async (c) => {
         distance,
         breakdown?.total ?? null,
         values.notes || null,
+        leadStatus,
         Date.now(),
       )
       .run();
