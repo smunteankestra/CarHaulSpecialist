@@ -685,15 +685,40 @@ app.get("/admin/order-photos/:id", async (c) => {
   });
 });
 
+const ORDER_SORTS: Record<string, string> = {
+  order: "number",
+  customer: "customer_name",
+  route: "origin_zip",
+  price: "price",
+  status: `CASE status
+    WHEN 'quoted' THEN 1
+    WHEN 'confirmed' THEN 2
+    WHEN 'assigned' THEN 3
+    WHEN 'picked_up' THEN 4
+    WHEN 'delivered' THEN 5
+    WHEN 'paid' THEN 6
+    WHEN 'cancelled' THEN 7
+    ELSE 8
+  END`,
+  created: "created_at",
+};
+
 app.get("/admin/orders", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.redirect("/admin/login", 303);
 
   const status = c.req.query("status") ?? "all";
+  const sort = c.req.query("sort") ?? "created";
+  const dir = c.req.query("dir") === "asc" ? "asc" : "desc";
   const filtered = status !== "all" && isOrderStatus(status);
+  const direction = dir === "asc" ? "ASC" : "DESC";
+  const orderBy =
+    sort === "route"
+      ? `origin_zip ${direction}, dest_zip ${direction}`
+      : `${ORDER_SORTS[sort] ?? "created_at"} ${direction}`;
   const statement = filtered
-    ? c.env.DB.prepare("SELECT * FROM orders WHERE status = ? ORDER BY id DESC LIMIT 200").bind(status)
-    : c.env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 200");
+    ? c.env.DB.prepare(`SELECT * FROM orders WHERE status = ? ORDER BY ${orderBy} LIMIT 200`).bind(status)
+    : c.env.DB.prepare(`SELECT * FROM orders ORDER BY ${orderBy} LIMIT 200`);
   const { results } = await statement.all<OrderRow>();
 
   const photos = results.length
@@ -706,7 +731,7 @@ app.get("/admin/orders", async (c) => {
       ).results
     : [];
 
-  return c.html(adminOrdersPage(results, status, user.role === "admin", photos));
+  return c.html(adminOrdersPage(results, status, user.role === "admin", photos, sort, dir));
 });
 
 app.get("/admin/orders/:id", async (c) => {

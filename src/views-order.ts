@@ -550,6 +550,8 @@ export function adminOrdersPage(
   status: string,
   isAdmin = false,
   photos: OrderPhotoRow[] = [],
+  sort = "created",
+  dir = "desc",
 ): string {
   const photosByOrder = new Map<number, OrderPhotoRow[]>();
   for (const photo of photos) {
@@ -557,6 +559,25 @@ export function adminOrdersPage(
     if (list) list.push(photo);
     else photosByOrder.set(photo.order_id, [photo]);
   }
+
+  const sortLink = (key: string, label: string) => {
+    const active = sort === key;
+    const nextDir = active && dir === "asc" ? "desc" : "asc";
+    const arrow = active ? (dir === "asc" ? " ▲" : " ▼") : "";
+    const params = new URLSearchParams();
+    if (status !== "all") params.set("status", status);
+    params.set("sort", key);
+    params.set("dir", nextDir);
+    return `<a class="sort-link${active ? " active" : ""}" href="/admin/orders?${params.toString()}">${esc(label)}${arrow}</a>`;
+  };
+  const filterHref = (value: string) => {
+    const params = new URLSearchParams();
+    if (value !== "all") params.set("status", value);
+    if (sort !== "created") params.set("sort", sort);
+    if (dir !== "desc") params.set("dir", dir);
+    const query = params.toString();
+    return `/admin/orders${query ? `?${query}` : ""}`;
+  };
 
   const rows = orders
     .map(
@@ -584,14 +605,22 @@ export function adminOrdersPage(
     </nav>
   </div>
   <div class="filter-row">
-    <a href="/admin/orders"${status === "all" ? ' class="chip active"' : ' class="chip"'}>All</a>
+    <a href="${filterHref("all")}"${status === "all" ? ' class="chip active"' : ' class="chip"'}>All</a>
     ${ORDER_STATUSES.map(
-      (value) => `<a href="/admin/orders?status=${value}"${status === value ? ' class="chip active"' : ' class="chip"'}>${esc(STATUS_LABELS[value])}</a>`,
+      (value) => `<a href="${filterHref(value)}"${status === value ? ' class="chip active"' : ' class="chip"'}>${esc(STATUS_LABELS[value])}</a>`,
     ).join("")}
   </div>
   ${orders.length === 0
         ? `<p class="muted">No orders in this view.</p>`
-        : `<table class="table rows-clickable"><thead><tr><th>Order</th><th>Customer</th><th>Route</th><th>Price</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : `<table class="table rows-clickable"><thead><tr>
+      <th>${sortLink("order", "Order")}</th>
+      <th>${sortLink("customer", "Customer")}</th>
+      <th>${sortLink("route", "Route")}</th>
+      <th>${sortLink("price", "Price")}</th>
+      <th>${sortLink("status", "Status")}</th>
+      <th>${sortLink("created", "Created")}</th>
+      <th></th>
+    </tr></thead><tbody>${rows}</tbody></table>`
       }
   ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [])).join("")}
 </section>`,
