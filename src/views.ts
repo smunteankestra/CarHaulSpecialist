@@ -849,85 +849,181 @@ if (location.pathname.indexOf('/admin') !== 0) {
 <script>
 (function () {
   Array.prototype.forEach.call(document.querySelectorAll("[data-vehicle-catalog]"), function (root) {
+    var type = root.querySelector("[data-vehicle-type]");
     var year = root.querySelector("[data-vehicle-year]");
     var make = root.querySelector("[data-vehicle-make]");
     var model = root.querySelector("[data-vehicle-model]");
-    if (!year || !make || !model) return;
+    var makeCustom = root.querySelector("[data-vehicle-make-custom]");
+    var modelCustom = root.querySelector("[data-vehicle-model-custom]");
+    var makeValue = root.querySelector("[data-vehicle-make-value]");
+    var modelValue = root.querySelector("[data-vehicle-model-value]");
+    if (!type || !year || !make || !model || !makeCustom || !modelCustom || !makeValue || !modelValue) return;
 
-    var selectedMake = make.getAttribute("data-selected") || "";
-    var selectedModel = model.getAttribute("data-selected") || "";
+    var selectedMake = makeValue.value || "";
+    var selectedModel = modelValue.value || "";
     var modelRequest = 0;
 
-    function setOptions(select, values, placeholder, selected) {
-      var current = selected || select.value;
+    function setOptions(select, values, placeholder) {
       select.innerHTML = "";
       var blank = document.createElement("option");
       blank.value = "";
       blank.textContent = placeholder;
       select.appendChild(blank);
-      var found = false;
+      var custom = document.createElement("option");
+      custom.value = "__custom__";
+      custom.textContent = "Custom / Other";
+      select.appendChild(custom);
       values.forEach(function (value) {
         var option = document.createElement("option");
         option.value = value;
         option.textContent = value;
-        if (value === current) {
-          option.selected = true;
-          found = true;
-        }
         select.appendChild(option);
       });
-      if (current && !found) {
-        var extra = document.createElement("option");
-        extra.value = current;
-        extra.textContent = current;
-        extra.selected = true;
-        select.appendChild(extra);
+    }
+
+    function hasOption(select, value) {
+      return Array.prototype.some.call(select.options, function (option) {
+        return option.value === value;
+      });
+    }
+
+    function applyMake(value) {
+      if (value && hasOption(make, value)) {
+        make.value = value;
+        makeCustom.hidden = true;
+        makeValue.value = value;
+      } else if (value) {
+        make.value = "__custom__";
+        makeCustom.hidden = false;
+        makeCustom.value = value;
+        makeValue.value = value;
+      } else {
+        make.value = "";
+        makeCustom.hidden = true;
+        makeValue.value = "";
+      }
+    }
+
+    function applyModel(value) {
+      if (value && hasOption(model, value)) {
+        model.value = value;
+        modelCustom.hidden = true;
+        modelValue.value = value;
+      } else if (value) {
+        model.value = "__custom__";
+        modelCustom.hidden = false;
+        modelCustom.value = value;
+        modelValue.value = value;
+      } else {
+        model.value = "";
+        modelCustom.hidden = true;
+        modelValue.value = "";
       }
     }
 
     function loadMakes() {
       make.disabled = true;
-      fetch("/api/vehicles/makes")
+      model.disabled = true;
+      var typeValue = type.value || "car";
+      fetch("/api/vehicles/makes?type=" + encodeURIComponent(typeValue))
         .then(function (response) { return response.ok ? response.json() : { makes: [] }; })
         .then(function (data) {
-          setOptions(make, data.makes || [], "Select make", selectedMake);
+          setOptions(make, data.makes || [], "Select make");
           make.disabled = false;
+          applyMake(selectedMake);
           loadModels();
         })
-        .catch(function () { make.disabled = false; });
+        .catch(function () {
+          setOptions(make, [], "Select make");
+          make.disabled = false;
+          applyMake(selectedMake);
+          loadModels();
+        });
     }
 
     function loadModels() {
-      var makeValue = make.value;
+      var makeKey = make.value === "__custom__" ? "" : make.value;
       var yearValue = year.value;
       var request = ++modelRequest;
-      if (!makeValue) {
-        setOptions(model, [], "Select model", "");
-        model.disabled = true;
+      if (!makeKey) {
+        setOptions(model, [], "Select model");
+        model.disabled = false;
+        applyModel(selectedModel);
         return;
       }
       model.disabled = true;
-      var url = "/api/vehicles/models?make=" + encodeURIComponent(makeValue);
+      var url = "/api/vehicles/models?make=" + encodeURIComponent(makeKey);
       if (yearValue) url += "&year=" + encodeURIComponent(yearValue);
       fetch(url)
         .then(function (response) { return response.ok ? response.json() : { models: [] }; })
         .then(function (data) {
           if (request !== modelRequest) return;
-          setOptions(model, data.models || [], "Select model", selectedModel);
+          setOptions(model, data.models || [], "Select model");
           model.disabled = false;
+          applyModel(selectedModel);
           selectedModel = "";
         })
-        .catch(function () { if (request === modelRequest) model.disabled = false; });
+        .catch(function () {
+          if (request !== modelRequest) return;
+          setOptions(model, [], "Select model");
+          model.disabled = false;
+          applyModel(selectedModel);
+        });
     }
 
     make.addEventListener("change", function () {
-      selectedMake = make.value;
-      selectedModel = "";
-      loadModels();
+      if (make.value === "__custom__") {
+        makeCustom.hidden = false;
+        makeCustom.focus();
+        makeValue.value = makeCustom.value;
+        setOptions(model, [], "Select model");
+        model.disabled = false;
+        applyModel("");
+      } else {
+        makeCustom.hidden = true;
+        makeValue.value = make.value;
+        selectedModel = "";
+        loadModels();
+      }
     });
+
+    makeCustom.addEventListener("input", function () {
+      makeValue.value = makeCustom.value;
+      setOptions(model, [], "Select model");
+      model.disabled = false;
+      applyModel("");
+    });
+
+    model.addEventListener("change", function () {
+      if (model.value === "__custom__") {
+        modelCustom.hidden = false;
+        modelCustom.focus();
+        modelValue.value = modelCustom.value;
+      } else {
+        modelCustom.hidden = true;
+        modelValue.value = model.value;
+      }
+    });
+
+    modelCustom.addEventListener("input", function () {
+      modelValue.value = modelCustom.value;
+    });
+
     year.addEventListener("change", function () {
       selectedModel = "";
       loadModels();
+    });
+
+    type.addEventListener("change", function () {
+      selectedMake = "";
+      selectedModel = "";
+      makeValue.value = "";
+      modelValue.value = "";
+      makeCustom.hidden = true;
+      modelCustom.hidden = true;
+      setOptions(model, [], "Select model");
+      model.disabled = true;
+      loadMakes();
     });
 
     loadMakes();
@@ -1024,6 +1120,13 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
   <section class="quote-step" data-step="2" data-vehicle-catalog hidden>
     <div class="field-row">
       <label class="field">
+        <span>Vehicle type</span>
+        <select class="vehicle-select" data-vehicle-type>
+          <option value="car">Car / Truck / SUV</option>
+          <option value="motorcycle">Motorcycle</option>
+        </select>
+      </label>
+      <label class="field">
         <span>Vehicle year</span>
         <select name="vehicle_year" class="vehicle-select" data-vehicle-year>
           <option value="">Select year</option>
@@ -1031,19 +1134,28 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
           ${values.vehicle_year && !VEHICLE_YEARS.includes(values.vehicle_year) ? `<option value="${v("vehicle_year")}" selected>${v("vehicle_year")}</option>` : ""}
         </select>
       </label>
+    </div>
+
+    <div class="field-row">
       <label class="field">
         <span>Make</span>
-        <select name="vehicle_make" class="vehicle-select" data-vehicle-make data-selected="${v("vehicle_make")}" disabled>
+        <select class="vehicle-select" data-vehicle-make disabled>
           <option value="">Select make</option>
+          <option value="__custom__">Custom / Other</option>
           ${values.vehicle_make ? `<option value="${v("vehicle_make")}" selected>${v("vehicle_make")}</option>` : ""}
         </select>
+        <input class="vehicle-custom" data-vehicle-make-custom value="${v("vehicle_make")}" placeholder="Type your make" hidden>
+        <input type="hidden" name="vehicle_make" data-vehicle-make-value value="${v("vehicle_make")}">
       </label>
       <label class="field">
         <span>Model</span>
-        <select name="vehicle_model" class="vehicle-select" data-vehicle-model data-selected="${v("vehicle_model")}" disabled>
+        <select class="vehicle-select" data-vehicle-model disabled>
           <option value="">Select model</option>
+          <option value="__custom__">Custom / Other</option>
           ${values.vehicle_model ? `<option value="${v("vehicle_model")}" selected>${v("vehicle_model")}</option>` : ""}
         </select>
+        <input class="vehicle-custom" data-vehicle-model-custom value="${v("vehicle_model")}" placeholder="Type your model" hidden>
+        <input type="hidden" name="vehicle_model" data-vehicle-model-value value="${v("vehicle_model")}">
       </label>
     </div>
 

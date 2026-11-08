@@ -2449,3 +2449,11 @@ main {
   background-image: none;
   padding-right: 0.65rem;
 }
+
+.vehicle-custom {
+  margin-top: 0.45rem;
+}
+
+.vehicle-custom[hidden] {
+  display: none;
+}

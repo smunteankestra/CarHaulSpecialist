@@ -645,14 +645,16 @@ async function sessionUser(c: {
 }
 
 app.get("/api/vehicles/makes", async (c) => {
+  const requested = String(c.req.query("type") ?? "car").trim();
+  const vehicleType = requested === "motorcycle" ? "motorcycle" : "car";
   const cache = caches.default;
-  const cacheKey = new Request("https://vehicle-catalog.internal/makes");
+  const cacheKey = new Request(`https://vehicle-catalog.internal/makes?type=${vehicleType}`);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
   try {
     const response = await fetch(
-      "https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/car?format=json",
+      `https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/${vehicleType}?format=json`,
     );
     if (!response.ok) return c.json({ makes: [] }, 502);
     const data = (await response.json()) as { Results?: { MakeName?: string }[] };
