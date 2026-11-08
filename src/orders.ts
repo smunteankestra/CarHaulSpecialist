@@ -139,7 +139,7 @@ export interface InvoiceRow {
   note: string | null;
 }
 
-export async function createOrder(db: D1Database, input: NewOrder): Promise<OrderRow> {
+export async function createOrder(db: D1Database, input: NewOrder, status: OrderStatus = "confirmed"): Promise<OrderRow> {
   const now = Date.now();
   const year = new Date(now).getUTCFullYear();
 
@@ -151,7 +151,7 @@ export async function createOrder(db: D1Database, input: NewOrder): Promise<Orde
           origin_street, origin_city, origin_state, origin_zip, origin_contact, origin_phone,
           dest_street, dest_city, dest_state, dest_zip, dest_contact, dest_phone,
           ready_date, distance_miles, price, status, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       "pending",
@@ -181,6 +181,7 @@ export async function createOrder(db: D1Database, input: NewOrder): Promise<Orde
       input.readyDate || null,
       input.distanceMiles,
       input.price,
+      status,
       input.notes || null,
       now,
       now,
@@ -197,6 +198,82 @@ export async function createOrder(db: D1Database, input: NewOrder): Promise<Orde
 
   const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
   if (!order) throw new Error("order insert failed");
+  return order;
+}
+
+/** Update the quote order with the booking details and mark it confirmed. */
+export async function confirmOrder(
+  db: D1Database,
+  orderId: number,
+  input: NewOrder,
+  actor: string,
+): Promise<OrderRow> {
+  const now = Date.now();
+  await db
+    .prepare(
+      `UPDATE orders
+          SET lead_id = COALESCE(?, lead_id),
+              customer_name = ?, customer_email = ?, customer_phone = ?,
+              transport_type = ?, condition = ?,
+              vehicle_year = COALESCE(NULLIF(?, ''), vehicle_year),
+              vehicle_make = COALESCE(NULLIF(?, ''), vehicle_make),
+              vehicle_model = COALESCE(NULLIF(?, ''), vehicle_model),
+              vin = COALESCE(NULLIF(?, ''), vin),
+              origin_street = COALESCE(NULLIF(?, ''), origin_street),
+              origin_city = COALESCE(NULLIF(?, ''), origin_city),
+              origin_state = COALESCE(NULLIF(?, ''), origin_state),
+              origin_zip = ?,
+              origin_contact = COALESCE(NULLIF(?, ''), origin_contact),
+              origin_phone = COALESCE(NULLIF(?, ''), origin_phone),
+              dest_street = COALESCE(NULLIF(?, ''), dest_street),
+              dest_city = COALESCE(NULLIF(?, ''), dest_city),
+              dest_state = COALESCE(NULLIF(?, ''), dest_state),
+              dest_zip = ?,
+              dest_contact = COALESCE(NULLIF(?, ''), dest_contact),
+              dest_phone = COALESCE(NULLIF(?, ''), dest_phone),
+              ready_date = COALESCE(NULLIF(?, ''), ready_date),
+              distance_miles = ?, price = ?,
+              notes = COALESCE(NULLIF(?, ''), notes),
+              status = 'confirmed', updated_at = ?
+        WHERE id = ?`,
+    )
+    .bind(
+      input.leadId,
+      input.customerName,
+      input.customerEmail,
+      input.customerPhone,
+      input.transportType,
+      input.condition,
+      input.vehicleYear,
+      input.vehicleMake,
+      input.vehicleModel,
+      input.vin,
+      input.originStreet,
+      input.originCity,
+      input.originState,
+      input.originZip,
+      input.originContact,
+      input.originPhone,
+      input.destStreet,
+      input.destCity,
+      input.destState,
+      input.destZip,
+      input.destContact,
+      input.destPhone,
+      input.readyDate,
+      input.distanceMiles,
+      input.price,
+      input.notes,
+      now,
+      orderId,
+    )
+    .run();
+  await db
+    .prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'confirmed', ?, ?, ?)")
+    .bind(orderId, "Booking request submitted.", actor, now)
+    .run();
+  const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind(orderId).first<OrderRow>();
+  if (!order) throw new Error("order update failed");
   return order;
 }
 

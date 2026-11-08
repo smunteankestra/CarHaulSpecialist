@@ -13,6 +13,7 @@ import {
 } from "./orders.ts";
 
 export interface BookValues {
+  order_token?: string;
   name?: string;
   email?: string;
   phone?: string;
@@ -50,7 +51,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
   const v = (key: keyof BookValues) => esc(values[key] ?? "");
   const condition = values.condition || "running";
   const hidden = Object.entries(values)
-    .filter(([key]) => key === "lead_id")
+    .filter(([key]) => key === "lead_id" || key === "order_token")
     .map(([key, value]) => `<input type="hidden" name="${key}" value="${esc(value)}">`)
     .join("");
 
@@ -440,6 +441,7 @@ function orderDetailRows(order: OrderRow): string {
 
   return `
       ${row("Order", esc(order.number))}
+      ${row("Quote record", order.lead_id ? `<a href="/admin#quote-${order.lead_id}">#${order.lead_id}</a>` : "")}
       ${row("Status", statusBadge(order.status))}
       ${row("Created", when(order.created_at))}
       ${row("Last updated", when(order.updated_at))}
@@ -539,7 +541,6 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
     <nav class="admin-nav">
-      <a href="/admin"${status === "leads" ? ' class="active"' : ""}>Quotes</a>
       <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
     </nav>
   </div>
@@ -738,7 +739,6 @@ export function adminUsersPage(
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Staff accounts</h1>
       <nav class="admin-nav">
-        <a href="/admin">Quotes</a>
         <a href="/admin/orders">Orders</a>
         <a href="/admin/users" class="active">Staff</a>
         <a href="/admin/account">Account</a>

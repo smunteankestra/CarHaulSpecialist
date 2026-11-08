@@ -319,6 +319,7 @@ function transitEstimate(distance: number): string {
 export function quotePage(options: {
   values: QuoteFormValues;
   leadId?: number;
+  orderToken?: string;
   result?: {
     origin: string;
     destination: string;
@@ -336,6 +337,7 @@ export function quotePage(options: {
   if (result) {
     const hidden = [
       options.leadId ? `<input type="hidden" name="lead_id" value="${options.leadId}">` : "",
+      options.orderToken ? `<input type="hidden" name="order_token" value="${esc(options.orderToken)}">` : "",
       ...([
         "name",
         "email",
@@ -822,7 +824,7 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false, phot
 <section class="wrap section" id="quotes">
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Quote requests</h1>
-      <nav class="admin-nav"><a href="/admin" class="active">Quotes</a><a href="/admin/orders">Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a></nav>
+      <nav class="admin-nav"><a href="/admin/orders">Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a></nav>
     </div>
     <div class="admin-user"><span class="muted small">${esc(email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
   </div>

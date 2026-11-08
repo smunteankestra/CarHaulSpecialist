@@ -7,6 +7,7 @@ import {
   addNote,
   assignCarrier,
   createInvoice,
+  confirmOrder,
   createOrder,
   isOrderStatus,
   markInvoicePaid,
@@ -203,10 +204,44 @@ app.post("/quote", async (c) => {
     );
   }
 
+  const quoteOrder = await createOrder(
+    c.env.DB,
+    {
+      leadId,
+      customerName: values.name,
+      customerEmail: values.email,
+      customerPhone: values.phone,
+      transportType: transport,
+      condition,
+      vehicleYear: values.vehicle_year ?? "",
+      vehicleMake: values.vehicle_make ?? "",
+      vehicleModel: values.vehicle_model ?? "",
+      vin: "",
+      originStreet: "",
+      originCity: origin.city,
+      originState: origin.state,
+      originZip: values.origin_zip ?? "",
+      originContact: "",
+      originPhone: "",
+      destStreet: "",
+      destCity: destination.city,
+      destState: destination.state,
+      destZip: values.dest_zip ?? "",
+      destContact: "",
+      destPhone: "",
+      readyDate: values.available_date ?? "",
+      distanceMiles: distance,
+      price: breakdown.total,
+      notes: values.notes ?? "",
+    },
+    "quoted",
+  );
+
   return c.html(
     quotePage({
       values,
       leadId: leadId ?? undefined,
+      orderToken: quoteOrder.token,
       result: {
         origin: `${origin.city}, ${stateName(origin.state)}`,
         destination: `${destination.city}, ${stateName(destination.state)}`,
@@ -248,6 +283,7 @@ function bookValuesFrom(body: Record<string, unknown>): BookValues {
     ready_date: pick("ready_date") || String(body.available_date ?? "").trim(),
     notes: pick("notes"),
     lead_id: pick("lead_id"),
+    order_token: pick("order_token"),
   };
 }
 
@@ -287,7 +323,7 @@ app.post("/book/submit", async (c) => {
   }
 
   const leadId = values.lead_id ? Number(values.lead_id) : null;
-  const order = await createOrder(c.env.DB, {
+  const orderInput = {
     leadId,
     customerName: values.name,
     customerEmail: values.email,
@@ -314,7 +350,16 @@ app.post("/book/submit", async (c) => {
     distanceMiles: distance,
     price,
     notes: values.notes ?? "",
-  });
+  };
+
+  const quotedOrder = values.order_token
+    ? await c.env.DB.prepare("SELECT * FROM orders WHERE token = ?").bind(values.order_token).first<OrderRow>()
+    : null;
+
+  const order =
+    quotedOrder && quotedOrder.status === "quoted"
+      ? await confirmOrder(c.env.DB, quotedOrder.id, orderInput, "customer")
+      : quotedOrder ?? (await createOrder(c.env.DB, orderInput));
 
   if (leadId) {
     await c.env.DB.prepare(
@@ -429,7 +474,7 @@ app.post("/admin/login", async (c) => {
     maxAge: sessionMaxAge,
     secure: new URL(c.req.url).protocol === "https:",
   });
-  return c.redirect("/admin", 303);
+  return c.redirect("/admin/orders", 303);
 });
 
 app.post("/admin/logout", (c) => {
