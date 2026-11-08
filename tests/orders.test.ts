@@ -22,7 +22,7 @@ test("tracking tokens are long, hex and unique", () => {
 });
 
 test("only known statuses are accepted", () => {
-  assert.equal(isOrderStatus("in_transit"), true);
+  assert.equal(isOrderStatus("in_transit"), false);
   assert.equal(isOrderStatus("quoted"), true);
   assert.equal(isOrderStatus("paid"), true);
   assert.equal(isOrderStatus("requested"), false);
@@ -36,4 +36,5 @@ test("quoted is the first status and paid replaces closed", () => {
   assert.ok(ORDER_STATUSES.includes("paid"));
   assert.equal((ORDER_STATUSES as readonly string[]).includes("closed"), false);
   assert.equal((ORDER_STATUSES as readonly string[]).includes("requested"), false);
+  assert.equal((ORDER_STATUSES as readonly string[]).includes("in_transit"), false);
 });

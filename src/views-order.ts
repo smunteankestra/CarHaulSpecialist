@@ -290,10 +290,24 @@ function pickupEtaFields(order: OrderRow): string {
   });
 }
 
+function deliveryEtaFields(order: OrderRow): string {
+  return timeFields({
+    dateLabel: "Delivery ETA",
+    monthName: "delivery_eta_month",
+    dayName: "delivery_eta_day",
+    yearName: "delivery_eta_year",
+    hourName: "delivery_eta_hour",
+    minuteName: "delivery_eta_minute",
+    ampmName: "delivery_eta_ampm",
+    value: order.delivery_eta,
+    note: order.delivery_eta ? `Delivery ETA: ${when(order.delivery_eta)}` : "Choose the estimated delivery time in AM/PM.",
+  });
+}
+
 function statusTimeFields(order: OrderRow): string {
-  if (order.status === "quoted") return "";
+  if (order.status === "quoted" || order.status === "cancelled") return "";
   if (order.status === "confirmed" || order.status === "assigned") return pickupEtaFields(order);
-  return `${pickupFields(order)}${pickupEtaFields(order)}`;
+  return `${pickupFields(order)}${deliveryEtaFields(order)}`;
 }
 
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
@@ -354,7 +368,8 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       <p class="muted small">Price ${money(order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
       ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.driver_name ? ` · Driver: ${esc(order.driver_name)}` : ""}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
       ${order.picked_up_at ? `<p class="muted small">Picked up ${when(order.picked_up_at)}</p>` : ""}
-      ${order.pickup_eta ? `<p class="muted small">Pickup ETA ${when(order.pickup_eta)}</p>` : ""}
+      ${!["picked_up", "delivered", "paid"].includes(order.status) && order.pickup_eta ? `<p class="muted small">Pickup ETA ${when(order.pickup_eta)}</p>` : ""}
+      ${["picked_up", "delivered", "paid"].includes(order.status) && order.delivery_eta ? `<p class="muted small">Delivery ETA ${when(order.delivery_eta)}</p>` : ""}
     </div>
     <div class="card">
       <h3>Progress</h3>
@@ -407,6 +422,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
       ${row("Picked up at", order.picked_up_at ? when(order.picked_up_at) : "")}
       ${row("Pick up ETA", order.pickup_eta ? when(order.pickup_eta) : "")}
+      ${row("Delivery ETA", order.delivery_eta ? when(order.delivery_eta) : "")}
       ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
@@ -517,7 +533,7 @@ export function adminOrderPage(
 ): string {
   const eventRows = events
     .map(
-      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(event.kind === "requested" ? "Quoted" : isOrderStatus(event.kind) ? STATUS_LABELS[event.kind] : event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
+      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(event.kind === "requested" ? "Quoted" : event.kind === "in_transit" ? "Picked up" : isOrderStatus(event.kind) ? STATUS_LABELS[event.kind] : event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
     )
     .join("");
 

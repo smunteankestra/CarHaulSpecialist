@@ -3,7 +3,6 @@ export const ORDER_STATUSES = [
   "confirmed",
   "assigned",
   "picked_up",
-  "in_transit",
   "delivered",
   "paid",
   "cancelled",
@@ -16,7 +15,6 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   confirmed: "Confirmed",
   assigned: "Carrier assigned",
   picked_up: "Picked up",
-  in_transit: "In transit",
   delivered: "Delivered",
   paid: "Paid",
   cancelled: "Cancelled",
@@ -27,7 +25,7 @@ export function isOrderStatus(value: string): value is OrderStatus {
 }
 
 /** Statuses a customer should see in the timeline, in order. */
-export const CUSTOMER_STAGES: OrderStatus[] = ["quoted", "confirmed", "assigned", "picked_up", "in_transit", "delivered"];
+export const CUSTOMER_STAGES: OrderStatus[] = ["quoted", "confirmed", "assigned", "picked_up", "delivered"];
 
 export function orderNumber(id: number, year: number): string {
   return `CHS-${year}-${String(id).padStart(4, "0")}`;
@@ -113,6 +111,7 @@ export interface OrderRow {
   updated_at: number;
   picked_up_at: number | null;
   pickup_eta: number | null;
+  delivery_eta: number | null;
 }
 
 export interface OrderEventRow {
@@ -206,6 +205,7 @@ export async function setStatus(
   note: string,
   pickedUpAt: number | null = null,
   pickupEta: number | null = null,
+  deliveryEta: number | null = null,
 ): Promise<void> {
   const now = Date.now();
   const pickup = status === "picked_up" ? (pickedUpAt ?? now) : pickedUpAt;
@@ -213,10 +213,11 @@ export async function setStatus(
     .prepare(
       `UPDATE orders
           SET status = ?, picked_up_at = COALESCE(?, picked_up_at),
-              pickup_eta = COALESCE(?, pickup_eta), updated_at = ?
+              pickup_eta = COALESCE(?, pickup_eta), delivery_eta = COALESCE(?, delivery_eta),
+              updated_at = ?
         WHERE id = ?`,
     )
-    .bind(status, pickup, pickupEta, now, orderId)
+    .bind(status, pickup, pickupEta, deliveryEta, now, orderId)
     .run();
   await db
     .prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, ?, ?, ?, ?)")
