@@ -644,63 +644,85 @@ async function sessionUser(c: {
   return user;
 }
 
-app.get("/api/vehicles/makes", async (c) => {
-  const requested = String(c.req.query("type") ?? "car").trim();
-  const vehicleType = requested === "motorcycle" ? "motorcycle" : "car";
+type VehicleMake = { id: number; name: string };
+
+async function loadVehicleMakes(vehicleType: "car" | "motorcycle"): Promise<VehicleMake[]> {
   const cache = caches.default;
-  const cacheKey = new Request(`https://vehicle-catalog.internal/makes?type=${vehicleType}`);
+  const cacheKey = new Request(`https://vehicle-catalog.internal/makes-data?type=${vehicleType}`);
   const cached = await cache.match(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    const data = (await cached.json()) as { makes?: VehicleMake[] };
+    return data.makes ?? [];
+  }
 
   try {
     const response = await fetch(
       `https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/${vehicleType}?format=json`,
     );
-    if (!response.ok) return c.json({ makes: [] }, 502);
-    const data = (await response.json()) as { Results?: { MakeName?: string }[] };
+    if (!response.ok) return [];
+    const data = (await response.json()) as { Results?: { MakeId?: number; MakeName?: string }[] };
     const makes = Array.from(
-      new Set(
+      new Map(
         (data.Results ?? [])
-          .map((row) => row.MakeName?.trim())
-          .filter((name): name is string => Boolean(name)),
-      ),
-    ).sort((a, b) => a.localeCompare(b));
-    const result = c.json({ makes });
-    result.headers.set("Cache-Control", "public, max-age=86400");
-    c.executionCtx.waitUntil(cache.put(cacheKey, result.clone()));
-    return result;
+          .filter((row) => typeof row.MakeId === "number" && row.MakeName)
+          .map((row) => [row.MakeName!.trim().toLowerCase(), { id: row.MakeId!, name: row.MakeName!.trim() }]),
+      ).values(),
+    ).sort((a, b) => a.name.localeCompare(b.name));
+    const cachedResponse = new Response(JSON.stringify({ makes }), {
+      headers: { "content-type": "application/json", "Cache-Control": "public, max-age=86400" },
+    });
+    await cache.put(cacheKey, cachedResponse);
+    return makes;
   } catch {
-    return c.json({ makes: [] }, 502);
+    return [];
   }
+}
+
+app.get("/api/vehicles/makes", async (c) => {
+  const requested = String(c.req.query("type") ?? "car").trim();
+  const vehicleType = requested === "motorcycle" ? "motorcycle" : "car";
+  const makes = await loadVehicleMakes(vehicleType);
+  const result = c.json({ makes: makes.map((row) => row.name) });
+  result.headers.set("Cache-Control", "public, max-age=86400");
+  return result;
 });
 
 app.get("/api/vehicles/models", async (c) => {
   const make = String(c.req.query("make") ?? "").trim();
   const year = String(c.req.query("year") ?? "").trim();
+  const requested = String(c.req.query("type") ?? "car").trim();
+  const vehicleType = requested === "motorcycle" ? "motorcycle" : "car";
   if (!make) return c.json({ models: [] });
   if (year && !/^\d{4}$/.test(year)) return c.json({ models: [] }, 400);
 
+  const modelYear = year || String(new Date().getUTCFullYear());
   const cache = caches.default;
   const cacheKey = new Request(
-    `https://vehicle-catalog.internal/models?make=${encodeURIComponent(make.toLowerCase())}&year=${year}`,
+    `https://vehicle-catalog.internal/models?make=${encodeURIComponent(make.toLowerCase())}&year=${modelYear}&type=${vehicleType}`,
   );
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
+  const makes = await loadVehicleMakes(vehicleType);
+  const makeRow = makes.find((row) => row.name.toLowerCase() === make.toLowerCase());
+  if (!makeRow) return c.json({ models: [] });
+
+  const modelTypes = vehicleType === "motorcycle" ? ["motorcycle"] : ["car", "truck", "mpv"];
+
   try {
-    const url = year
-      ? `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}?format=json`
-      : `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMake/${encodeURIComponent(make)}?format=json`;
-    const response = await fetch(url);
-    if (!response.ok) return c.json({ models: [] }, 502);
-    const data = (await response.json()) as { Results?: { Model_Name?: string }[] };
-    const models = Array.from(
-      new Set(
-        (data.Results ?? [])
+    const results = await Promise.all(
+      modelTypes.map(async (modelType) => {
+        const response = await fetch(
+          `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeIdYear/makeId/${makeRow.id}/modelyear/${modelYear}/vehicletype/${modelType}?format=json`,
+        );
+        if (!response.ok) return [] as string[];
+        const data = (await response.json()) as { Results?: { Model_Name?: string }[] };
+        return (data.Results ?? [])
           .map((row) => row.Model_Name?.trim())
-          .filter((name): name is string => Boolean(name)),
-      ),
-    ).sort((a, b) => a.localeCompare(b));
+          .filter((name): name is string => Boolean(name));
+      }),
+    );
+    const models = Array.from(new Set(results.flat())).sort((a, b) => a.localeCompare(b));
     const result = c.json({ models });
     result.headers.set("Cache-Control", "public, max-age=86400");
     c.executionCtx.waitUntil(cache.put(cacheKey, result.clone()));

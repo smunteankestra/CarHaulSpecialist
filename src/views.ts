@@ -1045,7 +1045,7 @@ if (location.pathname.indexOf('/admin') !== 0) {
       var request = ++modelRequest;
       if (!makeKey) { clearModels(); return; }
       modelBox.enable(false);
-      var url = "/api/vehicles/models?make=" + encodeURIComponent(makeKey);
+      var url = "/api/vehicles/models?make=" + encodeURIComponent(makeKey) + "&type=" + encodeURIComponent(type.value || "car");
       if (yearValue) url += "&year=" + encodeURIComponent(yearValue);
       fetch(url)
         .then(function (response) { return response.ok ? response.json() : { models: [] }; })
