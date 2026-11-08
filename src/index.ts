@@ -644,6 +644,70 @@ async function sessionUser(c: {
   return user;
 }
 
+app.get("/api/vehicles/makes", async (c) => {
+  const cache = caches.default;
+  const cacheKey = new Request("https://vehicle-catalog.internal/makes");
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(
+      "https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/car?format=json",
+    );
+    if (!response.ok) return c.json({ makes: [] }, 502);
+    const data = (await response.json()) as { Results?: { MakeName?: string }[] };
+    const makes = Array.from(
+      new Set(
+        (data.Results ?? [])
+          .map((row) => row.MakeName?.trim())
+          .filter((name): name is string => Boolean(name)),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    const result = c.json({ makes });
+    result.headers.set("Cache-Control", "public, max-age=86400");
+    c.executionCtx.waitUntil(cache.put(cacheKey, result.clone()));
+    return result;
+  } catch {
+    return c.json({ makes: [] }, 502);
+  }
+});
+
+app.get("/api/vehicles/models", async (c) => {
+  const make = String(c.req.query("make") ?? "").trim();
+  const year = String(c.req.query("year") ?? "").trim();
+  if (!make) return c.json({ models: [] });
+  if (year && !/^\d{4}$/.test(year)) return c.json({ models: [] }, 400);
+
+  const cache = caches.default;
+  const cacheKey = new Request(
+    `https://vehicle-catalog.internal/models?make=${encodeURIComponent(make.toLowerCase())}&year=${year}`,
+  );
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const url = year
+      ? `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/${encodeURIComponent(make)}/modelyear/${year}?format=json`
+      : `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMake/${encodeURIComponent(make)}?format=json`;
+    const response = await fetch(url);
+    if (!response.ok) return c.json({ models: [] }, 502);
+    const data = (await response.json()) as { Results?: { Model_Name?: string }[] };
+    const models = Array.from(
+      new Set(
+        (data.Results ?? [])
+          .map((row) => row.Model_Name?.trim())
+          .filter((name): name is string => Boolean(name)),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    const result = c.json({ models });
+    result.headers.set("Cache-Control", "public, max-age=86400");
+    c.executionCtx.waitUntil(cache.put(cacheKey, result.clone()));
+    return result;
+  } catch {
+    return c.json({ models: [] }, 502);
+  }
+});
+
 app.post("/api/chat", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body !== "object") return c.json({ ok: false, error: "Invalid request." }, 400);

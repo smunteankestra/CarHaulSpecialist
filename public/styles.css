@@ -2442,3 +2442,10 @@ main {
     min-height: 2.3em;
   }
 }
+
+.field select.vehicle-select {
+  appearance: auto;
+  -webkit-appearance: auto;
+  background-image: none;
+  padding-right: 0.65rem;
+}

@@ -846,6 +846,94 @@ if (location.pathname.indexOf('/admin') !== 0) {
   });
 })();
 </script>
+<script>
+(function () {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-vehicle-catalog]"), function (root) {
+    var year = root.querySelector("[data-vehicle-year]");
+    var make = root.querySelector("[data-vehicle-make]");
+    var model = root.querySelector("[data-vehicle-model]");
+    if (!year || !make || !model) return;
+
+    var selectedMake = make.getAttribute("data-selected") || "";
+    var selectedModel = model.getAttribute("data-selected") || "";
+    var modelRequest = 0;
+
+    function setOptions(select, values, placeholder, selected) {
+      var current = selected || select.value;
+      select.innerHTML = "";
+      var blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = placeholder;
+      select.appendChild(blank);
+      var found = false;
+      values.forEach(function (value) {
+        var option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        if (value === current) {
+          option.selected = true;
+          found = true;
+        }
+        select.appendChild(option);
+      });
+      if (current && !found) {
+        var extra = document.createElement("option");
+        extra.value = current;
+        extra.textContent = current;
+        extra.selected = true;
+        select.appendChild(extra);
+      }
+    }
+
+    function loadMakes() {
+      make.disabled = true;
+      fetch("/api/vehicles/makes")
+        .then(function (response) { return response.ok ? response.json() : { makes: [] }; })
+        .then(function (data) {
+          setOptions(make, data.makes || [], "Select make", selectedMake);
+          make.disabled = false;
+          loadModels();
+        })
+        .catch(function () { make.disabled = false; });
+    }
+
+    function loadModels() {
+      var makeValue = make.value;
+      var yearValue = year.value;
+      var request = ++modelRequest;
+      if (!makeValue) {
+        setOptions(model, [], "Select model", "");
+        model.disabled = true;
+        return;
+      }
+      model.disabled = true;
+      var url = "/api/vehicles/models?make=" + encodeURIComponent(makeValue);
+      if (yearValue) url += "&year=" + encodeURIComponent(yearValue);
+      fetch(url)
+        .then(function (response) { return response.ok ? response.json() : { models: [] }; })
+        .then(function (data) {
+          if (request !== modelRequest) return;
+          setOptions(model, data.models || [], "Select model", selectedModel);
+          model.disabled = false;
+          selectedModel = "";
+        })
+        .catch(function () { if (request === modelRequest) model.disabled = false; });
+    }
+
+    make.addEventListener("change", function () {
+      selectedMake = make.value;
+      selectedModel = "";
+      loadModels();
+    });
+    year.addEventListener("change", function () {
+      selectedModel = "";
+      loadModels();
+    });
+
+    loadMakes();
+  });
+})();
+</script>
 </body>
 </html>`;
 }
@@ -889,6 +977,8 @@ export function datePicker(name: string, value: string, allowPast = false): stri
 </div>`;
 }
 
+const VEHICLE_YEARS = Array.from({ length: 128 }, (_, index) => String(2027 - index));
+
 export function quoteForm(values: QuoteFormValues = {}, error?: string): string {
   const v = (key: keyof QuoteFormValues) => esc(values[key] ?? "");
   const condition = values.condition || "running";
@@ -931,19 +1021,29 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     <button class="btn btn-accent btn-block" type="button" data-next-step>Start my quote</button>
   </section>
 
-  <section class="quote-step" data-step="2" hidden>
+  <section class="quote-step" data-step="2" data-vehicle-catalog hidden>
     <div class="field-row">
       <label class="field">
         <span>Vehicle year</span>
-        <input name="vehicle_year" maxlength="4" value="${v("vehicle_year")}" placeholder="2019">
+        <select name="vehicle_year" class="vehicle-select" data-vehicle-year>
+          <option value="">Select year</option>
+          ${VEHICLE_YEARS.map((year) => `<option value="${year}"${values.vehicle_year === year ? " selected" : ""}>${year}</option>`).join("")}
+          ${values.vehicle_year && !VEHICLE_YEARS.includes(values.vehicle_year) ? `<option value="${v("vehicle_year")}" selected>${v("vehicle_year")}</option>` : ""}
+        </select>
       </label>
       <label class="field">
         <span>Make</span>
-        <input name="vehicle_make" value="${v("vehicle_make")}" placeholder="Toyota">
+        <select name="vehicle_make" class="vehicle-select" data-vehicle-make data-selected="${v("vehicle_make")}" disabled>
+          <option value="">Select make</option>
+          ${values.vehicle_make ? `<option value="${v("vehicle_make")}" selected>${v("vehicle_make")}</option>` : ""}
+        </select>
       </label>
       <label class="field">
         <span>Model</span>
-        <input name="vehicle_model" value="${v("vehicle_model")}" placeholder="Camry">
+        <select name="vehicle_model" class="vehicle-select" data-vehicle-model data-selected="${v("vehicle_model")}" disabled>
+          <option value="">Select model</option>
+          ${values.vehicle_model ? `<option value="${v("vehicle_model")}" selected>${v("vehicle_model")}</option>` : ""}
+        </select>
       </label>
     </div>
 
