@@ -490,7 +490,7 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
     <nav class="admin-nav">
-      <a href="/admin"${status === "leads" ? ' class="active"' : ""}>Leads</a>
+      <a href="/admin"${status === "leads" ? ' class="active"' : ""}>Quotes</a>
       <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
     </nav>
   </div>
@@ -689,7 +689,7 @@ export function adminUsersPage(
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Staff accounts</h1>
       <nav class="admin-nav">
-        <a href="/admin">Leads</a>
+        <a href="/admin">Quotes</a>
         <a href="/admin/orders">Orders</a>
         <a href="/admin/users" class="active">Staff</a>
         <a href="/admin/account">Account</a>
