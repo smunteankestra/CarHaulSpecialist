@@ -5,6 +5,7 @@ import {
   CUSTOMER_STAGES,
   ORDER_STATUSES,
   STATUS_LABELS,
+  isOrderStatus,
   type InvoiceRow,
   type OrderEventRow,
   type OrderRow,
@@ -147,8 +148,13 @@ function statusBadge(status: string): string {
 
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
   const done = new Set(events.map((event) => event.kind));
+  const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
   const timeline = CUSTOMER_STAGES.map((stage) => {
-    const reached = done.has(stage) || order.status === stage;
+    const reached =
+      stage === "requested" ||
+      done.has(stage) ||
+      order.status === stage ||
+      (order.status !== "cancelled" && current >= ORDER_STATUSES.indexOf(stage));
     return `<li class="${reached ? "reached" : ""}"><strong>${esc(STATUS_LABELS[stage])}</strong>${reached ? "" : `<span class="muted small">pending</span>`
       }</li>`;
   }).join("");
@@ -310,7 +316,7 @@ export function adminOrderPage(
 ): string {
   const eventRows = events
     .map(
-      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
+      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(isOrderStatus(event.kind) ? STATUS_LABELS[event.kind] : event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
     )
     .join("");
 

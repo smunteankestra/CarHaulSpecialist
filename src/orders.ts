@@ -1,11 +1,12 @@
 export const ORDER_STATUSES = [
   "requested",
+  "quoted",
   "confirmed",
   "assigned",
   "picked_up",
   "in_transit",
   "delivered",
-  "closed",
+  "paid",
   "cancelled",
 ] as const;
 
@@ -13,12 +14,13 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export const STATUS_LABELS: Record<OrderStatus, string> = {
   requested: "Requested",
+  quoted: "Quoted",
   confirmed: "Confirmed",
   assigned: "Carrier assigned",
   picked_up: "Picked up",
   in_transit: "In transit",
   delivered: "Delivered",
-  closed: "Closed",
+  paid: "Paid",
   cancelled: "Cancelled",
 };
 
