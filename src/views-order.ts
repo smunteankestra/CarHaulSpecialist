@@ -205,8 +205,16 @@ function statusBadge(status: string): string {
   return `<span class="badge badge-${esc(status)}">${esc(label)}</span>`;
 }
 
-function pickupFields(order: OrderRow): string {
-  const date = order.picked_up_at ? new Date(order.picked_up_at) : new Date();
+function timeFields(config: {
+  dateLabel: string;
+  dateName: string;
+  hourName: string;
+  minuteName: string;
+  ampmName: string;
+  value: number | null;
+  note: string;
+}): string {
+  const date = config.value ? new Date(config.value) : new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const hours = date.getUTCHours();
   const hour = hours % 12 || 12;
@@ -220,18 +228,42 @@ function pickupFields(order: OrderRow): string {
     .map((value) => `<option value="${value}"${minute === value ? " selected" : ""}>${pad(value)}</option>`)
     .join("");
 
-  return `<label class="field"><span>Picked up date</span>
-        <input name="picked_up_date" type="date" value="${dateValue}">
+  return `<label class="field"><span>${esc(config.dateLabel)}</span>
+        <input name="${config.dateName}" type="date" value="${dateValue}">
       </label>
       <div class="field-row">
-        <label class="field"><span>Hour</span><select name="picked_up_hour">${hourOptions}</select></label>
-        <label class="field"><span>Minute</span><select name="picked_up_minute">${minuteOptions}</select></label>
-        <label class="field"><span>AM / PM</span><select name="picked_up_ampm">
+        <label class="field"><span>Hour</span><select name="${config.hourName}">${hourOptions}</select></label>
+        <label class="field"><span>Minute</span><select name="${config.minuteName}">${minuteOptions}</select></label>
+        <label class="field"><span>AM / PM</span><select name="${config.ampmName}">
           <option value="AM"${ampm === "AM" ? " selected" : ""}>AM</option>
           <option value="PM"${ampm === "PM" ? " selected" : ""}>PM</option>
         </select></label>
       </div>
-      <p class="form-note">${order.picked_up_at ? `Saved: ${when(order.picked_up_at)}` : "Choose the pickup date and time in AM/PM."}</p>`;
+      <p class="form-note">${config.note}</p>`;
+}
+
+function pickupFields(order: OrderRow): string {
+  return timeFields({
+    dateLabel: "Picked up date",
+    dateName: "picked_up_date",
+    hourName: "picked_up_hour",
+    minuteName: "picked_up_minute",
+    ampmName: "picked_up_ampm",
+    value: order.picked_up_at,
+    note: order.picked_up_at ? `Saved: ${when(order.picked_up_at)}` : "Choose the pickup date and time in AM/PM.",
+  });
+}
+
+function pickupEtaFields(order: OrderRow): string {
+  return timeFields({
+    dateLabel: "Pick up ETA date",
+    dateName: "pickup_eta_date",
+    hourName: "pickup_eta_hour",
+    minuteName: "pickup_eta_minute",
+    ampmName: "pickup_eta_ampm",
+    value: order.pickup_eta,
+    note: order.pickup_eta ? `Pick up ETA: ${when(order.pickup_eta)}` : "Choose the estimated pickup time in AM/PM.",
+  });
 }
 
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
@@ -264,6 +296,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       <p class="muted small">Price ${money(order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
       ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.driver_name ? ` · Driver: ${esc(order.driver_name)}` : ""}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
       ${order.picked_up_at ? `<p class="muted small">Picked up ${when(order.picked_up_at)}</p>` : ""}
+      ${order.pickup_eta ? `<p class="muted small">Pickup ETA ${when(order.pickup_eta)}</p>` : ""}
     </div>
     <div class="card">
       <h3>Progress</h3>
@@ -306,6 +339,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(stateName(order.dest_state))} ${esc(order.dest_zip)}`)}
       ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
       ${row("Picked up at", order.picked_up_at ? when(order.picked_up_at) : "")}
+      ${row("Pick up ETA", order.pickup_eta ? when(order.pickup_eta) : "")}
       ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
@@ -335,6 +369,7 @@ function orderModal(order: OrderRow): string {
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
       <input type="hidden" name="next" value="${esc(anchor)}">
       ${pickupFields(order)}
+      ${pickupEtaFields(order)}
       <div class="status-actions">${ORDER_STATUSES.map(
     (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
   ).join("")}</div>
@@ -471,6 +506,7 @@ export function adminOrderPage(
     ).join("")}</select>
       </label>
       ${pickupFields(order)}
+      ${pickupEtaFields(order)}
       <label class="field"><span>Note</span><input name="note" placeholder="Optional"></label>
       <button class="btn btn-accent" type="submit">Save status</button>
     </form>

@@ -419,6 +419,33 @@ function adminRedirect(body: Record<string, unknown>, fallback: string): string 
   return next === "/admin" || next.startsWith("/admin/") ? next : fallback;
 }
 
+/** Combine a date plus 12-hour time fields into a UTC timestamp. */
+function parseDateTime(body: Record<string, string | File>, prefix: string): number | null {
+  const date = String(body[`${prefix}_date`] ?? "").trim();
+  const hour = Number(body[`${prefix}_hour`] ?? "");
+  const minute = Number(body[`${prefix}_minute`] ?? "");
+  const ampm = String(body[`${prefix}_ampm`] ?? "").toUpperCase();
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    hour < 1 ||
+    hour > 12 ||
+    minute < 0 ||
+    minute > 59 ||
+    (ampm !== "AM" && ampm !== "PM")
+  ) {
+    return null;
+  }
+  const [yearPart, monthPart, dayPart] = date.split("-");
+  const stamp = Date.UTC(
+    Number(yearPart),
+    Number(monthPart) - 1,
+    Number(dayPart),
+    (hour % 12) + (ampm === "PM" ? 12 : 0),
+    minute,
+  );
+  return Number.isFinite(stamp) ? stamp : null;
+}
+
 app.post("/admin/leads/:id/status", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.redirect("/admin/login", 303);
@@ -512,37 +539,20 @@ app.post("/admin/orders/:id/status", async (c) => {
   const status = String(body.status ?? "");
   if (!isOrderStatus(status)) return c.redirect(`/admin/orders/${id}`, 303);
 
-  const pickupDate = String(body.picked_up_date ?? "").trim();
-  const pickupHour = Number(body.picked_up_hour ?? "");
-  const pickupMinute = Number(body.picked_up_minute ?? "");
-  const pickupAmPm = String(body.picked_up_ampm ?? "").toUpperCase();
-  let pickedUpAt: number | null = null;
-  if (
-    /^\d{4}-\d{2}-\d{2}$/.test(pickupDate) &&
-    pickupHour >= 1 &&
-    pickupHour <= 12 &&
-    pickupMinute >= 0 &&
-    pickupMinute <= 59 &&
-    (pickupAmPm === "AM" || pickupAmPm === "PM")
-  ) {
-    const [yearPart, monthPart, dayPart] = pickupDate.split("-");
-    const year = Number(yearPart);
-    const month = Number(monthPart);
-    const day = Number(dayPart);
-    const hour24 = (pickupHour % 12) + (pickupAmPm === "PM" ? 12 : 0);
-    const stamp = Date.UTC(year, month - 1, day, hour24, pickupMinute);
-    if (Number.isFinite(stamp)) pickedUpAt = stamp;
-  }
+  const pickedUpAt = parseDateTime(body, "picked_up");
+  const pickupEta = parseDateTime(body, "pickup_eta");
   const note = String(body.note ?? "").trim();
   const pickupNote = pickedUpAt ? `Picked up ${when(pickedUpAt)}` : "";
+  const etaNote = pickupEta ? `Pickup ETA ${when(pickupEta)}` : "";
 
   await setStatus(
     c.env.DB,
     id,
     status,
     user.email,
-    [note, pickupNote].filter(Boolean).join(" · "),
+    [note, pickupNote, etaNote].filter(Boolean).join(" · "),
     pickedUpAt,
+    pickupEta,
   );
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });
