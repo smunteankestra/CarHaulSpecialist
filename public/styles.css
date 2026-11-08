@@ -2108,3 +2108,34 @@ main {
   top: auto;
   bottom: calc(100% + 6px);
 }
+
+/* keep long date labels inside the hero form */
+.hero-grid {
+  grid-template-columns: 0.9fr 1.1fr;
+}
+
+.field {
+  min-width: 0;
+}
+
+.date-picker {
+  min-width: 0;
+}
+
+.date-trigger {
+  gap: 0.4rem;
+  padding: 0.62rem 0.65rem;
+  font-size: 0.85rem;
+}
+
+.date-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+.date-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
