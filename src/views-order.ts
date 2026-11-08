@@ -242,6 +242,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       <p class="muted small">Price ${money(order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
       ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.driver_name ? ` · Driver: ${esc(order.driver_name)}` : ""}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
       ${order.picked_up_at ? `<p class="muted small">Picked up ${when(order.picked_up_at)}</p>` : ""}
+      ${order.in_transit_at ? `<p class="muted small">In transit since ${when(order.in_transit_at)}</p>` : ""}
     </div>
     <div class="card">
       <h3>Progress</h3>
@@ -284,6 +285,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(stateName(order.dest_state))} ${esc(order.dest_zip)}`)}
       ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
       ${row("Picked up at", order.picked_up_at ? when(order.picked_up_at) : "")}
+      ${row("In transit at", order.in_transit_at ? when(order.in_transit_at) : "")}
       ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
@@ -313,9 +315,14 @@ function orderModal(order: OrderRow): string {
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
       <input type="hidden" name="next" value="${esc(anchor)}">
       <label class="field"><span>Picked up at</span>
-        <input name="picked_up_at" type="datetime-local" value="${toDatetimeLocal(order.picked_up_at)}">
+        <input name="picked_up_at" type="datetime-local" value="${toDatetimeLocal(order.picked_up_at)}" oninput="this.nextElementSibling.textContent = usaDateTime(this.value)">
+        <small class="muted">${order.picked_up_at ? when(order.picked_up_at) : ""}</small>
       </label>
-      ${order.picked_up_at ? `<p class="form-note">Saved: ${when(order.picked_up_at)}</p>` : `<p class="form-note">Set this when the status is Picked up.</p>`}
+      <label class="field"><span>In transit at</span>
+        <input name="in_transit_at" type="datetime-local" value="${toDatetimeLocal(order.in_transit_at)}" oninput="this.nextElementSibling.textContent = usaDateTime(this.value)">
+        <small class="muted">${order.in_transit_at ? when(order.in_transit_at) : ""}</small>
+      </label>
+      <p class="form-note">Times display in USA format (AM/PM).</p>
       <div class="status-actions">${ORDER_STATUSES.map(
         (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
       ).join("")}</div>
@@ -452,9 +459,14 @@ export function adminOrderPage(
     ).join("")}</select>
       </label>
       <label class="field"><span>Picked up at</span>
-        <input name="picked_up_at" type="datetime-local" value="${toDatetimeLocal(order.picked_up_at)}">
+        <input name="picked_up_at" type="datetime-local" value="${toDatetimeLocal(order.picked_up_at)}" oninput="this.nextElementSibling.textContent = usaDateTime(this.value)">
+        <small class="muted">${order.picked_up_at ? when(order.picked_up_at) : ""}</small>
       </label>
-      ${order.picked_up_at ? `<p class="form-note">Saved: ${when(order.picked_up_at)}</p>` : `<p class="form-note">Set this when the status is Picked up.</p>`}
+      <label class="field"><span>In transit at</span>
+        <input name="in_transit_at" type="datetime-local" value="${toDatetimeLocal(order.in_transit_at)}" oninput="this.nextElementSibling.textContent = usaDateTime(this.value)">
+        <small class="muted">${order.in_transit_at ? when(order.in_transit_at) : ""}</small>
+      </label>
+      <p class="form-note">Times display in USA format (AM/PM).</p>
       <label class="field"><span>Note</span><input name="note" placeholder="Optional"></label>
       <button class="btn btn-accent" type="submit">Save status</button>
     </form>

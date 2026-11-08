@@ -517,16 +517,23 @@ app.post("/admin/orders/:id/status", async (c) => {
     ? new Date(`${rawPickup}${rawPickup.length === 16 ? ":00" : ""}Z`).getTime()
     : NaN;
   const pickedUpAt = Number.isFinite(parsedPickup) ? parsedPickup : null;
+  const rawTransit = String(body.in_transit_at ?? "").trim();
+  const parsedTransit = rawTransit
+    ? new Date(`${rawTransit}${rawTransit.length === 16 ? ":00" : ""}Z`).getTime()
+    : NaN;
+  const inTransitAt = Number.isFinite(parsedTransit) ? parsedTransit : null;
   const note = String(body.note ?? "").trim();
   const pickupNote = pickedUpAt ? `Picked up ${when(pickedUpAt)}` : "";
+  const transitNote = inTransitAt ? `In transit ${when(inTransitAt)}` : "";
 
   await setStatus(
     c.env.DB,
     id,
     status,
     user.email,
-    [note, pickupNote].filter(Boolean).join(" · "),
+    [note, pickupNote, transitNote].filter(Boolean).join(" · "),
     pickedUpAt,
+    inTransitAt,
   );
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });

@@ -140,6 +140,16 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     </div>
   </div>
 </footer>
+<script>
+function usaDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value + "Z");
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const pad = (n) => String(n).padStart(2, "0");
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" });
+  return months[date.getUTCMonth()] + "/" + pad(date.getUTCDate()) + "/" + date.getUTCFullYear() + ", " + time;
+}
+</script>
 </body>
 </html>`;
 }
