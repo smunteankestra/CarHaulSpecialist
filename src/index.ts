@@ -592,20 +592,23 @@ app.post("/admin/orders/:id/status", async (c) => {
   const pickedUpAt = parseDateTime(body, "picked_up");
   const pickupEta = parseDateTime(body, "pickup_eta");
   const deliveryEta = parseDateTime(body, "delivery_eta");
+  const deliveredAt = parseDateTime(body, "delivered");
   const note = String(body.note ?? "").trim();
   const pickupNote = pickedUpAt ? `Picked up ${when(pickedUpAt)}` : "";
   const etaNote = pickupEta ? `Pickup ETA ${when(pickupEta)}` : "";
   const deliveryNote = deliveryEta ? `Delivery ETA ${when(deliveryEta)}` : "";
+  const deliveredNote = deliveredAt ? `Delivered ${when(deliveredAt)}` : "";
 
   await setStatus(
     c.env.DB,
     id,
     status,
     user.email,
-    [note, pickupNote, etaNote, deliveryNote].filter(Boolean).join(" · "),
+    [note, pickupNote, etaNote, deliveryNote, deliveredNote].filter(Boolean).join(" · "),
     pickedUpAt,
     pickupEta,
     deliveryEta,
+    deliveredAt,
   );
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });

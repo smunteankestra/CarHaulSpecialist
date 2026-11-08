@@ -304,10 +304,25 @@ function deliveryEtaFields(order: OrderRow): string {
   });
 }
 
+function deliveredFields(order: OrderRow): string {
+  return timeFields({
+    dateLabel: "Delivered date",
+    monthName: "delivered_month",
+    dayName: "delivered_day",
+    yearName: "delivered_year",
+    hourName: "delivered_hour",
+    minuteName: "delivered_minute",
+    ampmName: "delivered_ampm",
+    value: order.delivered_at,
+    note: order.delivered_at ? `Delivered: ${when(order.delivered_at)}` : "Choose the delivery date and time in AM/PM.",
+  });
+}
+
 function statusTimeFields(order: OrderRow): string {
   if (order.status === "quoted" || order.status === "cancelled") return "";
   if (order.status === "confirmed" || order.status === "assigned") return pickupEtaFields(order);
-  return `${pickupFields(order)}${deliveryEtaFields(order)}`;
+  if (order.status === "picked_up") return `${pickupFields(order)}${deliveryEtaFields(order)}`;
+  return `${pickupFields(order)}${deliveredFields(order)}`;
 }
 
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
@@ -369,7 +384,8 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.driver_name ? ` · Driver: ${esc(order.driver_name)}` : ""}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
       ${order.picked_up_at ? `<p class="muted small">Picked up ${when(order.picked_up_at)}</p>` : ""}
       ${!["picked_up", "delivered", "paid"].includes(order.status) && order.pickup_eta ? `<p class="muted small">Pickup ETA ${when(order.pickup_eta)}</p>` : ""}
-      ${["picked_up", "delivered", "paid"].includes(order.status) && order.delivery_eta ? `<p class="muted small">Delivery ETA ${when(order.delivery_eta)}</p>` : ""}
+      ${order.status === "picked_up" && order.delivery_eta ? `<p class="muted small">Delivery ETA ${when(order.delivery_eta)}</p>` : ""}
+      ${order.delivered_at ? `<p class="muted small">Delivered ${when(order.delivered_at)}</p>` : ""}
     </div>
     <div class="card">
       <h3>Progress</h3>
@@ -423,6 +439,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Picked up at", order.picked_up_at ? when(order.picked_up_at) : "")}
       ${row("Pick up ETA", order.pickup_eta ? when(order.pickup_eta) : "")}
       ${row("Delivery ETA", order.delivery_eta ? when(order.delivery_eta) : "")}
+      ${row("Delivered at", order.delivered_at ? when(order.delivered_at) : "")}
       ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
