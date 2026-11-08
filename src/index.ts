@@ -50,6 +50,7 @@ import {
   pricingPage,
   quotePage,
   servicePage,
+  type LeadPhotoRow,
   type LeadRow,
   type QuoteFormValues,
 } from "./views.ts";
@@ -73,26 +74,28 @@ const PHOTO_TYPES = new Map([
   ["image/webp", "webp"],
 ]);
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_PHOTOS = 5;
 
 app.get("/", (c) => c.html(homePage()));
 
 app.get("/quote", (c) => c.html(quotePage({ values: {} })));
 
 app.post("/quote", async (c) => {
-  const body = await c.req.parseBody();
+  const form = await c.req.formData();
+  const field = (name: string) => String(form.get(name) ?? "").trim();
   const values: QuoteFormValues = {
-    name: String(body.name ?? "").trim(),
-    email: String(body.email ?? "").trim(),
-    phone: String(body.phone ?? "").trim(),
-    origin_zip: String(body.origin_zip ?? "").trim(),
-    dest_zip: String(body.dest_zip ?? "").trim(),
-    transport_type: String(body.transport_type ?? "open"),
-    vehicle_year: String(body.vehicle_year ?? "").trim(),
-    vehicle_make: String(body.vehicle_make ?? "").trim(),
-    vehicle_model: String(body.vehicle_model ?? "").trim(),
-    condition: String(body.condition ?? "running"),
-    available_date: String(body.available_date ?? "").trim(),
-    notes: String(body.notes ?? "").trim(),
+    name: field("name"),
+    email: field("email"),
+    phone: field("phone"),
+    origin_zip: field("origin_zip"),
+    dest_zip: field("dest_zip"),
+    transport_type: field("transport_type") || "open",
+    vehicle_year: field("vehicle_year"),
+    vehicle_make: field("vehicle_make"),
+    vehicle_model: field("vehicle_model"),
+    condition: field("condition") || "running",
+    available_date: field("available_date"),
+    notes: field("notes"),
   };
 
   const invalid = (message: string) => c.html(quotePage({ values, error: message }), 400);
@@ -102,9 +105,14 @@ app.post("/quote", async (c) => {
   if (!ZIP_PATTERN.test(values.origin_zip ?? "")) return invalid("Pickup ZIP must be five digits.");
   if (!ZIP_PATTERN.test(values.dest_zip ?? "")) return invalid("Delivery ZIP must be five digits.");
 
-  const photo = body.photo instanceof File && body.photo.size > 0 ? body.photo : null;
-  if (photo && !PHOTO_TYPES.has(photo.type)) return invalid("Upload a JPEG, PNG or WebP photo.");
-  if (photo && photo.size > MAX_PHOTO_BYTES) return invalid("That photo is larger than 5 MB. Choose a smaller one.");
+  const photos = form
+    .getAll("photo")
+    .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+  if (photos.length > MAX_PHOTOS) return invalid(`Add up to ${MAX_PHOTOS} photos.`);
+  for (const photo of photos) {
+    if (!PHOTO_TYPES.has(photo.type)) return invalid("Upload JPEG, PNG or WebP photos.");
+    if (photo.size > MAX_PHOTO_BYTES) return invalid("Each photo must be 5 MB or smaller.");
+  }
 
   const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
   const condition = parseCondition(values.condition ?? "running");
@@ -117,20 +125,23 @@ app.post("/quote", async (c) => {
   const distance = origin && destination ? roadMiles(origin, destination) : null;
   const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false);
 
-  const photoKey = photo ? `leads/${crypto.randomUUID()}.${PHOTO_TYPES.get(photo.type) ?? "jpg"}` : null;
-  if (photo && photoKey) {
-    await c.env.UPLOADS.put(photoKey, await photo.arrayBuffer(), {
+  const stored: string[] = [];
+  for (const photo of photos) {
+    const key = `leads/${crypto.randomUUID()}.${PHOTO_TYPES.get(photo.type) ?? "jpg"}`;
+    await c.env.UPLOADS.put(key, await photo.arrayBuffer(), {
       metadata: { contentType: photo.type },
     });
+    stored.push(key);
   }
 
+  let leadId: number | null = null;
   try {
-    await c.env.DB.prepare(
+    const inserted = await c.env.DB.prepare(
       `INSERT INTO leads
          (name, email, phone, origin_zip, origin_city, origin_state, dest_zip, dest_city, dest_state,
           transport_type, vehicle_year, vehicle_make, vehicle_model, condition, available_date,
-          distance_miles, price_estimate, price_is_estimate, notes, photo_key, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'new', ?)`,
+          distance_miles, price_estimate, price_is_estimate, notes, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'new', ?)`,
     )
       .bind(
         values.name,
@@ -151,12 +162,30 @@ app.post("/quote", async (c) => {
         distance,
         breakdown?.total ?? null,
         values.notes || null,
-        photoKey,
         Date.now(),
       )
       .run();
+
+    const newLeadId = Number(inserted.meta.last_row_id);
+    leadId = newLeadId;
+
+    if (stored.length) {
+      const now = Date.now();
+      await c.env.DB.batch(
+        stored.map((key) =>
+          c.env.DB.prepare("INSERT INTO lead_photos (lead_id, photo_key, created_at) VALUES (?, ?, ?)").bind(
+            newLeadId,
+            key,
+            now,
+          ),
+        ),
+      );
+    }
   } catch (error) {
-    if (photoKey) await c.env.UPLOADS.delete(photoKey);
+    if (leadId !== null) {
+      await c.env.DB.prepare("DELETE FROM leads WHERE id = ?").bind(leadId).run();
+    }
+    await Promise.all(stored.map((key) => c.env.UPLOADS.delete(key)));
     throw error;
   }
 
@@ -370,7 +399,17 @@ app.get("/admin", async (c) => {
     "SELECT * FROM leads ORDER BY id DESC LIMIT 100",
   ).all<LeadRow>();
 
-  return c.html(adminPage(results, user.email, user.role === "admin"));
+  const photos = results.length
+    ? (
+      await c.env.DB.prepare(
+        `SELECT * FROM lead_photos WHERE lead_id IN (${results.map(() => "?").join(",")}) ORDER BY id`,
+      )
+        .bind(...results.map((lead) => lead.id))
+        .all<LeadPhotoRow>()
+    ).results
+    : [];
+
+  return c.html(adminPage(results, user.email, user.role === "admin", photos));
 });
 
 /** Keep modal redirects inside the console; anything else falls back to the record page. */
@@ -392,17 +431,17 @@ app.post("/admin/leads/:id/status", async (c) => {
   return c.redirect(`/admin#quote-${id}`, 303);
 });
 
-app.get("/admin/leads/:id/photo", async (c) => {
+app.get("/admin/photos/:id", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.redirect("/admin/login", 303);
 
   const id = Number(c.req.param("id"));
-  const lead = await c.env.DB.prepare("SELECT photo_key FROM leads WHERE id = ?")
+  const photo = await c.env.DB.prepare("SELECT photo_key FROM lead_photos WHERE id = ?")
     .bind(id)
-    .first<{ photo_key: string | null }>();
-  if (!lead?.photo_key) return c.notFound();
+    .first<{ photo_key: string }>();
+  if (!photo) return c.notFound();
 
-  const object = await c.env.UPLOADS.getWithMetadata<{ contentType?: string }>(lead.photo_key, "arrayBuffer");
+  const object = await c.env.UPLOADS.getWithMetadata<{ contentType?: string }>(photo.photo_key, "arrayBuffer");
   if (!object.value) return c.notFound();
 
   return new Response(object.value, {

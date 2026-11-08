@@ -971,3 +971,30 @@ a.card:hover {
   object-fit: contain;
   background: #f7fafc;
 }
+/* lead photo gallery */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+
+.photo-grid a {
+  display: block;
+  border: 1px solid #d7e0e8;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f7fafc;
+}
+
+.photo-grid .lead-photo {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+.photo-grid a:hover .lead-photo {
+  opacity: 0.9;
+}

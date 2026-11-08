@@ -211,10 +211,10 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
   </label>
 
   <label class="field">
-    <span>Vehicle photo (optional)</span>
-    <input name="photo" type="file" accept="image/jpeg,image/png,image/webp">
+    <span>Vehicle photos (optional)</span>
+    <input name="photo" type="file" accept="image/jpeg,image/png,image/webp" multiple>
   </label>
-  <p class="form-note">A clear photo helps dispatch confirm condition and loading. JPEG, PNG or WebP up to 5 MB.</p>
+  <p class="form-note">Add up to 5 photos. JPEG, PNG or WebP, 5 MB each.</p>
 
   <button class="btn btn-accent btn-block" type="submit">See my price</button>
   <p class="form-note">No card needed. We quote from your route, then a dispatcher confirms the pickup window.</p>
@@ -553,8 +553,14 @@ export interface LeadRow {
   price_estimate: number | null;
   price_is_estimate: number;
   notes: string | null;
-  photo_key: string | null;
   status: string;
+  created_at: number;
+}
+
+export interface LeadPhotoRow {
+  id: number;
+  lead_id: number;
+  photo_key: string;
   created_at: number;
 }
 
@@ -585,7 +591,7 @@ function placeLabel(city: string | null, state: string | null, zip: string): str
   return label ? `${esc(label)} ${esc(zip)}` : esc(zip);
 }
 
-function leadModal(lead: LeadRow): string {
+function leadModal(lead: LeadRow, photos: LeadPhotoRow[]): string {
   const vehicle = [lead.vehicle_year, lead.vehicle_make, lead.vehicle_model].filter(Boolean).join(" ") || "—";
   const row = (label: string, value: string) =>
     `<tr><th>${esc(label)}</th><td>${value || '<span class="muted">—</span>'}</td></tr>`;
@@ -612,33 +618,49 @@ function leadModal(lead: LeadRow): string {
       ${row("Customer notes", esc(lead.notes ?? ""))}
     </tbody></table>
 
-    ${lead.photo_key ? `<h3 class="section-title mt">Vehicle photo</h3>
-    <img class="lead-photo" src="/admin/leads/${lead.id}/photo" alt="Vehicle photo for quote #${lead.id}" loading="lazy">` : ""}
+    ${photos.length
+      ? `<h3 class="section-title mt">Vehicle photos</h3>
+    <div class="photo-grid">${photos
+        .map(
+          (photo) =>
+            `<a href="/admin/photos/${photo.id}" target="_blank" rel="noopener"><img class="lead-photo" src="/admin/photos/${photo.id}" alt="Vehicle photo for quote #${lead.id}" loading="lazy"></a>`,
+        )
+        .join("")}</div>`
+      : ""}
 
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/leads/${lead.id}/status" class="status-actions">
       ${LEAD_STATUSES.map(
-    (value) => `<button class="chip${lead.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(LEAD_STATUS_LABELS[value])}</button>`,
-  ).join("")}
+        (value) => `<button class="chip${lead.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(LEAD_STATUS_LABELS[value])}</button>`,
+      ).join("")}
     </form>
     <p class="form-note">Status changes are saved on the quote request.</p>
   </div>
 </div>`;
 }
 
-export function adminPage(leads: LeadRow[], email: string, isAdmin = false): string {
+export function adminPage(leads: LeadRow[], email: string, isAdmin = false, photos: LeadPhotoRow[] = []): string {
+  const photosByLead = new Map<number, LeadPhotoRow[]>();
+  for (const photo of photos) {
+    const list = photosByLead.get(photo.lead_id);
+    if (list) list.push(photo);
+    else photosByLead.set(photo.lead_id, [photo]);
+  }
+
   const rows = leads
-    .map(
-      (lead) => `<tr>
+    .map((lead) => {
+      const photoCount = photosByLead.get(lead.id)?.length ?? 0;
+      return `<tr>
       <td><a class="row-link" href="#quote-${lead.id}">${lead.id}</a></td>
-      <td>${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span></td>
+      <td>${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span>${photoCount ? `<br><span class="muted small">${photoCount} photo${photoCount === 1 ? "" : "s"}</span>` : ""
+        }</td>
       <td>${esc(lead.origin_zip)} → ${esc(lead.dest_zip)}<br><span class="muted small">${esc(lead.transport_type)} · ${esc(conditionLabel(lead.condition))}</span></td>
       <td>${lead.distance_miles ? `${lead.distance_miles.toLocaleString()} mi` : "—"}</td>
       <td>${lead.price_estimate ? money(lead.price_estimate) : "—"}</td>
       <td>${leadStatusBadge(lead.status)}</td>
       <td class="muted small">${when(lead.created_at)}</td>
-    </tr>`,
-    )
+    </tr>`;
+    })
     .join("");
 
   return layout({
@@ -653,7 +675,7 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false): str
     <div class="admin-user"><span class="muted small">${esc(email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
   </div>
   ${leads.length === 0 ? `<p class="muted">No requests yet.</p>` : `<table class="table rows-clickable"><thead><tr><th>#</th><th>Customer</th><th>Route</th><th>Miles</th><th>Quote</th><th>Status</th><th>Received</th></tr></thead><tbody>${rows}</tbody></table>`}
-  ${leads.map(leadModal).join("")}
+  ${leads.map((lead) => leadModal(lead, photosByLead.get(lead.id) ?? [])).join("")}
 </section>`,
   });
 }

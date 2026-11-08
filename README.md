@@ -60,9 +60,9 @@ Distance comes from ZIP centroids looked up through `zippopotam.us`, then multip
 
 ## Lead photos
 
-The quote form takes an optional JPEG, PNG or WebP up to 5 MB. The file is stored in the `UPLOADS` KV namespace under `leads/<uuid>.<ext>`; the lead row keeps only `photo_key`. Signed-in staff see it in the quote modal and fetch it from `/admin/leads/:id/photo`, which redirects to login when unauthenticated.
+The quote form takes up to five optional JPEG, PNG or WebP photos, 5 MB each. Files are stored in the `UPLOADS` KV namespace under `leads/<uuid>.<ext>`; `lead_photos` rows reference them. Signed-in staff see a gallery in the quote modal and fetch each image from `/admin/photos/:id`, which redirects to login when unauthenticated.
 
-Apply `migrations/0004_lead_photo.sql` before deploying. KV is used because R2 is not enabled on the account; moving to R2 later only changes the binding and the storage calls, not the column or route.
+Apply `migrations/0004_lead_photo.sql` and `migrations/0006_lead_photos.sql` before deploying. KV is used because R2 is not enabled on the account; moving to R2 later only changes the binding and the storage calls.
 
 ## Deploy
 
