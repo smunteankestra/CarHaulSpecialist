@@ -91,6 +91,8 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
         </label>
       </div>
 
+      <a class="btn btn-accent btn-inline" href="/book" target="_blank" rel="noopener">Add another vehicle</a>
+
       <h3 class="form-section">Pickup</h3>
       <div class="field-row">
         <label class="field"><span>Street address *</span><input name="origin_street" required value="${v("origin_street")}" autocomplete="street-address"></label>

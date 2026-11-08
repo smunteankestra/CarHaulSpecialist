@@ -998,3 +998,7 @@ a.card:hover {
 .photo-grid a:hover .lead-photo {
   opacity: 0.9;
 }
+
+.btn-inline {
+  justify-self: start;
+}
