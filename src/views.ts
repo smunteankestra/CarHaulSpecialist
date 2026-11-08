@@ -535,11 +535,29 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
       return type === "image/heic" || type === "image/heif" || name.endsWith(".heic") || name.endsWith(".heif");
     }
 
+    function removeFile(index) {
+      var current = Array.prototype.slice.call(input.files || []);
+      if (index < 0 || index >= current.length) return;
+      current.splice(index, 1);
+      try {
+        var transfer = new DataTransfer();
+        current.forEach(function (file) { transfer.items.add(file); });
+        input.files = transfer.files;
+      } catch (e) {
+        return;
+      }
+      if (error) {
+        error.hidden = true;
+        error.textContent = "";
+      }
+      render(current);
+    }
+
     function render(files) {
       urls.forEach(function (url) { URL.revokeObjectURL(url); });
       urls = [];
       preview.innerHTML = "";
-      files.forEach(function (file) {
+      files.forEach(function (file, index) {
         var tile = document.createElement("div");
         tile.className = "photo-thumb";
         tile.title = file.name;
@@ -557,6 +575,13 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
           fallback.textContent = isHeic(file) ? "HEIC" : "IMG";
           tile.appendChild(fallback);
         }
+        var remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "photo-remove";
+        remove.setAttribute("aria-label", "Remove " + file.name);
+        remove.textContent = "×";
+        remove.addEventListener("click", function () { removeFile(index); });
+        tile.appendChild(remove);
         preview.appendChild(tile);
       });
       preview.hidden = files.length === 0;
