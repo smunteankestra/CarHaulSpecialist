@@ -170,7 +170,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
 
       <h3 class="form-section">Schedule</h3>
       <div class="field-row">
-        <div class="field"><span>Ready date</span>${datePicker("ready_date", values.ready_date ?? "")}</div>
+        <div class="field"><span>Pickup date</span>${datePicker("ready_date", values.ready_date ?? "")}</div>
         <label class="field"><span>Anything we should know?</span><textarea name="notes" rows="2">${v("notes")}</textarea></label>
       </div>
 
@@ -485,7 +485,7 @@ function orderEditForm(order: OrderRow, next: string): string {
             <option value="">Select method</option>
             ${methods.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
           </select></td></tr>
-          <tr><th>Ready date</th><td>${datePicker("ready_date", order.ready_date ?? "", true)}</td></tr>
+          <tr><th>Pickup date</th><td>${datePicker("ready_date", order.ready_date ?? "", true)}</td></tr>
           <tr><th>Distance</th><td><input name="distance_miles" type="number" min="0" value="${order.distance_miles ?? ""}" placeholder="Miles"></td></tr>
           <tr><th>Price</th><td><input name="price" type="number" min="0" value="${order.price}" placeholder="USD"></td></tr>
           <tr><th>Carrier</th><td><div class="edit-stack">
@@ -628,7 +628,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Delivered at", order.delivered_at ? when(order.delivered_at) : "")}
       ${row("Paid amount", order.paid_amount !== null ? money(order.paid_amount) : "")}
       ${row("Payment method", esc(order.payment_method ?? ""))}
-      ${row("Ready date", esc(dateOnly(order.ready_date)))}
+      ${row("Pickup date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
       ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}${carrierLine ? `<br><span class="muted small">${esc(carrierLine)}</span>` : ""}${driverLine ? `<br><span class="muted small">Driver: ${esc(driverLine)}</span>` : ""}` : "")}

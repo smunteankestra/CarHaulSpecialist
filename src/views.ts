@@ -214,12 +214,17 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
 
     function positionPopover() {
       var rect = root.getBoundingClientRect();
-      var width = Math.min(300, window.innerWidth - 32);
       var container = root.closest(".hero-card, .card, .modal-card");
-      var bounds = container ? container.getBoundingClientRect() : { left: 0, right: window.innerWidth };
+      var bounds = container
+        ? container.getBoundingClientRect()
+        : { left: 0, right: window.innerWidth, width: window.innerWidth, top: 0, bottom: window.innerHeight };
+      var width = Math.max(220, Math.min(300, bounds.width - 56));
+      root.style.setProperty("--date-popover-width", width + "px");
       var alignRight = rect.left + width > bounds.right - 12;
       var alignLeft = rect.right - width < bounds.left + 12;
       root.classList.toggle("align-right", alignRight && !alignLeft);
+      var alignTop = rect.bottom + 6 + 340 > bounds.bottom - 12 && rect.top - 6 - 340 > bounds.top + 12;
+      root.classList.toggle("align-top", alignTop);
     }
 
     function open() {
@@ -565,7 +570,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
       </select>
     </div>
     <div class="field">
-      <span>Ready date</span>
+      <span>Pickup date</span>
       ${datePicker("available_date", values.available_date ?? "")}
     </div>
   </div>
@@ -794,7 +799,7 @@ export function quotePage(options: {
           <div><dt>Pickup</dt><dd>${esc(options.values.origin_zip ?? "")} · ${esc(result.origin)}</dd></div>
           <div><dt>Delivery</dt><dd>${esc(options.values.dest_zip ?? "")} · ${esc(result.destination)}</dd></div>
           <div><dt>Transport</dt><dd>${esc(result.transport)}</dd></div>
-          <div><dt>Ready date</dt><dd>${options.values.available_date ? esc(dateOnly(options.values.available_date)) : "Flexible"}</dd></div>
+          <div><dt>Pickup date</dt><dd>${options.values.available_date ? esc(dateOnly(options.values.available_date)) : "Flexible"}</dd></div>
           <div><dt>Transit estimate</dt><dd>${transitEstimate(result.distance)}</dd></div>
         </dl>
       </div>
@@ -1120,7 +1125,7 @@ function leadModal(lead: LeadRow, photos: LeadPhotoRow[]): string {
       ${row("Customer", `${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span>`)}
       ${row("Route", `${placeLabel(lead.origin_city, lead.origin_state, lead.origin_zip)} → ${placeLabel(lead.dest_city, lead.dest_state, lead.dest_zip)}`)}
       ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(lead.transport_type)} trailer · ${conditionTag(lead.condition)}</span>`)}
-      ${row("Ready date", esc(dateOnly(lead.available_date)))}
+      ${row("Pickup date", esc(dateOnly(lead.available_date)))}
       ${row("Distance", lead.distance_miles ? `${lead.distance_miles.toLocaleString()} miles` : "")}
       ${row("Customer notes", esc(lead.notes ?? ""))}
     </tbody></table>

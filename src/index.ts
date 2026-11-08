@@ -994,7 +994,7 @@ app.post("/admin/orders/:id/edit", async (c) => {
     dest_zip: "Delivery ZIP",
     dest_contact: "Delivery contact",
     dest_phone: "Delivery phone",
-    ready_date: "Ready date",
+    ready_date: "Pickup date",
     distance_miles: "Distance",
     price: "Price",
     notes: "Customer notes",
