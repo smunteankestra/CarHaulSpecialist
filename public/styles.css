@@ -1884,3 +1884,87 @@ main {
   border-color: var(--ink);
   color: #fff;
 }
+
+/* status-colored order filters with counts */
+.filter-row-orders .chip {
+  justify-content: space-between;
+  gap: 0.45rem;
+  border-color: transparent;
+}
+
+.chip-status-all {
+  --chip-bg: #eef2f6;
+  --chip-fg: #33475b;
+  --chip-active: #0b2230;
+}
+
+.chip-status-quoted {
+  --chip-bg: #eef2ff;
+  --chip-fg: #3730a3;
+  --chip-active: #3730a3;
+}
+
+.chip-status-confirmed {
+  --chip-bg: #e0f7f5;
+  --chip-fg: #0f766e;
+  --chip-active: #0f766e;
+}
+
+.chip-status-assigned {
+  --chip-bg: #f3e8ff;
+  --chip-fg: #6b21a8;
+  --chip-active: #6b21a8;
+}
+
+.chip-status-picked_up {
+  --chip-bg: #ffedd5;
+  --chip-fg: #9a3412;
+  --chip-active: #9a3412;
+}
+
+.chip-status-delivered {
+  --chip-bg: #e0f2fe;
+  --chip-fg: #075985;
+  --chip-active: #075985;
+}
+
+.chip-status-paid {
+  --chip-bg: #dcfce7;
+  --chip-fg: #166534;
+  --chip-active: #166534;
+}
+
+.chip-status-cancelled {
+  --chip-bg: #fdecea;
+  --chip-fg: #8f1d14;
+  --chip-active: #8f1d14;
+}
+
+.filter-row-orders .chip {
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+}
+
+.filter-row-orders .chip.active {
+  background: var(--chip-active);
+  color: #fff;
+}
+
+.chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.filter-row-orders .chip.active .chip-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}

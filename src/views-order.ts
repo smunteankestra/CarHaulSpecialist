@@ -717,6 +717,7 @@ export function adminOrdersPage(
   sort = "created",
   dir = "desc",
   events: OrderEventRow[] = [],
+  counts: Record<string, number> = {},
 ): string {
   const photosByOrder = new Map<number, OrderPhotoRow[]>();
   for (const photo of photos) {
@@ -776,9 +777,13 @@ export function adminOrdersPage(
     </nav>
   </div>
   <div class="filter-row filter-row-orders">
-    <a href="${filterHref("all")}"${status === "all" ? ' class="chip active"' : ' class="chip"'}>All</a>
+    <a href="${filterHref("all")}" class="chip chip-status-all${status === "all" ? " active" : ""}">
+      <span>All</span><span class="chip-count">${Object.values(counts).reduce((sum, n) => sum + n, 0)}</span>
+    </a>
     ${ORDER_STATUSES.map(
-      (value) => `<a href="${filterHref(value)}"${status === value ? ' class="chip active"' : ' class="chip"'}>${esc(STATUS_LABELS[value])}</a>`,
+      (value) => `<a href="${filterHref(value)}" class="chip chip-status-${value}${status === value ? " active" : ""}">
+        <span>${esc(STATUS_LABELS[value])}</span><span class="chip-count">${counts[value] ?? 0}</span>
+      </a>`,
     ).join("")}
   </div>
   ${orders.length === 0

@@ -818,7 +818,14 @@ app.get("/admin/orders", async (c) => {
       ).results
     : [];
 
-  return c.html(adminOrdersPage(results, status, user.role === "admin", photos, sort, dir, events));
+  const { results: countRows } = await c.env.DB.prepare("SELECT status, COUNT(*) AS n FROM orders GROUP BY status").all<{
+    status: string;
+    n: number;
+  }>();
+  const counts: Record<string, number> = {};
+  for (const row of countRows) counts[row.status] = row.n;
+
+  return c.html(adminOrdersPage(results, status, user.role === "admin", photos, sort, dir, events, counts));
 });
 
 app.get("/admin/orders/:id", async (c) => {
