@@ -766,6 +766,7 @@ const ORDER_SORTS: Record<string, string> = {
   order: "number",
   customer: "customer_name",
   route: "origin_zip",
+  distance: "distance_miles",
   price: "price",
   status: `CASE status
     WHEN 'quoted' THEN 1

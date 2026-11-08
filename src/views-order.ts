@@ -757,6 +757,7 @@ export function adminOrdersPage(
       <td><a class="row-link" href="#order-${order.id}">${esc(order.number)}</a></td>
       <td>${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_phone)}</span></td>
       <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}</span></td>
+      <td>${order.distance_miles ? `${order.distance_miles.toLocaleString()} mi` : "—"}</td>
       <td>${money(order.price)}</td>
       <td>${statusBadge(order.status, true)}</td>
       <td class="muted small">${when(order.created_at)}</td>
@@ -791,6 +792,7 @@ export function adminOrdersPage(
       <th>${sortLink("order", "Order")}</th>
       <th>${sortLink("customer", "Customer")}</th>
       <th>${sortLink("route", "Route")}</th>
+      <th>${sortLink("distance", "Distance")}</th>
       <th>${sortLink("price", "Price")}</th>
       <th>${sortLink("status", "Status")}</th>
       <th>${sortLink("created", "Created")}</th>
