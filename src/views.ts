@@ -370,11 +370,17 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     <textarea name="notes" rows="3" placeholder="Modifications, tight access, second vehicle…">${v("notes")}</textarea>
   </label>
 
-  <label class="field">
+  <div class="field">
     <span>Vehicle photos (optional)</span>
-    <input name="photo" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-  </label>
-  <p class="form-note">Add up to 5 photos. JPEG, PNG or WebP, 5 MB each.</p>
+    <div class="photo-upload">
+      <label class="photo-drop">
+        <input class="photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple>
+        <span class="photo-plus" aria-hidden="true">+</span>
+        <strong>Add vehicle photos</strong>
+        <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
+      </label>
+    </div>
+  </div>
 
   <button class="btn btn-accent btn-block" type="submit">See my price</button>
   <p class="form-note">No card needed. We quote from your route, then a dispatcher confirms the pickup window.</p>

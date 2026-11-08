@@ -76,8 +76,27 @@ const PHOTO_TYPES = new Map([
   ["image/jpeg", "jpg"],
   ["image/png", "png"],
   ["image/webp", "webp"],
+  ["image/heic", "heic"],
+  ["image/heif", "heif"],
 ]);
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
+function photoExtension(photo: File): string | null {
+  const byType = PHOTO_TYPES.get(photo.type);
+  if (byType) return byType;
+  const name = photo.name.toLowerCase();
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "jpg";
+  if (name.endsWith(".png")) return "png";
+  if (name.endsWith(".webp")) return "webp";
+  if (name.endsWith(".heic")) return "heic";
+  if (name.endsWith(".heif")) return "heif";
+  return null;
+}
+
+function photoContentType(photo: File, extension: string): string {
+  if (photo.type) return photo.type;
+  return extension === "jpg" ? "image/jpeg" : `image/${extension}`;
+}
 const MAX_PHOTOS = 5;
 
 app.get("/", (c) => c.html(homePage()));
@@ -122,8 +141,8 @@ app.post("/quote", async (c) => {
     .filter((entry): entry is File => entry instanceof File && entry.size > 0);
   if (photos.length > MAX_PHOTOS) return invalid(`Add up to ${MAX_PHOTOS} photos.`);
   for (const photo of photos) {
-    if (!PHOTO_TYPES.has(photo.type)) return invalid("Upload JPEG, PNG or WebP photos.");
-    if (photo.size > MAX_PHOTO_BYTES) return invalid("Each photo must be 5 MB or smaller.");
+    if (!photoExtension(photo)) return invalid("Upload JPEG, PNG, WebP or HEIC photos.");
+    if (photo.size > MAX_PHOTO_BYTES) return invalid("Each photo must be 10 MB or smaller.");
   }
 
   const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
@@ -335,8 +354,8 @@ app.post("/book/submit", async (c) => {
   const photos = form.getAll("photo").filter((entry): entry is File => entry instanceof File && entry.size > 0);
   if (photos.length > MAX_PHOTOS) return invalid(`Add up to ${MAX_PHOTOS} photos.`);
   for (const photo of photos) {
-    if (!PHOTO_TYPES.has(photo.type)) return invalid("Upload JPEG, PNG or WebP photos.");
-    if (photo.size > MAX_PHOTO_BYTES) return invalid("Each photo must be 5 MB or smaller.");
+    if (!photoExtension(photo)) return invalid("Upload JPEG, PNG, WebP or HEIC photos.");
+    if (photo.size > MAX_PHOTO_BYTES) return invalid("Each photo must be 10 MB or smaller.");
   }
 
   const { distance, price } = await priceFor(values);
@@ -386,9 +405,10 @@ app.post("/book/submit", async (c) => {
   if (photos.length) {
     const stored: string[] = [];
     for (const photo of photos) {
-      const key = `orders/${crypto.randomUUID()}.${PHOTO_TYPES.get(photo.type) ?? "jpg"}`;
+      const extension = photoExtension(photo) ?? "jpg";
+      const key = `orders/${crypto.randomUUID()}.${extension}`;
       await c.env.UPLOADS.put(key, await photo.arrayBuffer(), {
-        metadata: { contentType: photo.type },
+        metadata: { contentType: photoContentType(photo, extension) },
       });
       stored.push(key);
     }

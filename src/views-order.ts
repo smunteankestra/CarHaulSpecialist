@@ -176,10 +176,10 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       <h3 class="form-section">Photos</h3>
       <div class="photo-upload">
         <label class="photo-drop">
-          <input class="photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <input class="photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple>
           <span class="photo-plus" aria-hidden="true">+</span>
           <strong>Add vehicle photos</strong>
-          <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG or WebP · 5 MB each</span>
+          <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
         </label>
       </div>
 
