@@ -23,16 +23,17 @@ test("tracking tokens are long, hex and unique", () => {
 
 test("only known statuses are accepted", () => {
   assert.equal(isOrderStatus("in_transit"), true);
-  assert.equal(isOrderStatus("requested"), true);
   assert.equal(isOrderStatus("quoted"), true);
   assert.equal(isOrderStatus("paid"), true);
+  assert.equal(isOrderStatus("requested"), false);
   assert.equal(isOrderStatus("closed"), false);
   assert.equal(isOrderStatus("shipped"), false);
   assert.equal(isOrderStatus(""), false);
 });
 
-test("quoted sits between requested and confirmed, and paid replaces closed", () => {
-  assert.deepEqual(ORDER_STATUSES.slice(0, 3), ["requested", "quoted", "confirmed"]);
+test("quoted is the first status and paid replaces closed", () => {
+  assert.deepEqual(ORDER_STATUSES.slice(0, 3), ["quoted", "confirmed", "assigned"]);
   assert.ok(ORDER_STATUSES.includes("paid"));
   assert.equal((ORDER_STATUSES as readonly string[]).includes("closed"), false);
+  assert.equal((ORDER_STATUSES as readonly string[]).includes("requested"), false);
 });

@@ -1,5 +1,4 @@
 export const ORDER_STATUSES = [
-  "requested",
   "quoted",
   "confirmed",
   "assigned",
@@ -13,7 +12,6 @@ export const ORDER_STATUSES = [
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export const STATUS_LABELS: Record<OrderStatus, string> = {
-  requested: "Requested",
   quoted: "Quoted",
   confirmed: "Confirmed",
   assigned: "Carrier assigned",
@@ -29,7 +27,7 @@ export function isOrderStatus(value: string): value is OrderStatus {
 }
 
 /** Statuses a customer should see in the timeline, in order. */
-export const CUSTOMER_STAGES: OrderStatus[] = ["requested", "confirmed", "assigned", "picked_up", "in_transit", "delivered"];
+export const CUSTOMER_STAGES: OrderStatus[] = ["quoted", "confirmed", "assigned", "picked_up", "in_transit", "delivered"];
 
 export function orderNumber(id: number, year: number): string {
   return `CHS-${year}-${String(id).padStart(4, "0")}`;
@@ -149,7 +147,7 @@ export async function createOrder(db: D1Database, input: NewOrder): Promise<Orde
           origin_street, origin_city, origin_state, origin_zip, origin_contact, origin_phone,
           dest_street, dest_city, dest_state, dest_zip, dest_contact, dest_phone,
           ready_date, distance_miles, price, status, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'quoted', ?, ?, ?)`,
     )
     .bind(
       "pending",

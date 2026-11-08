@@ -210,7 +210,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
   const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
   const timeline = CUSTOMER_STAGES.filter(
     (stage) =>
-      stage === "requested" ||
+      stage === "quoted" ||
       done.has(stage) ||
       order.status === stage ||
       (order.status !== "cancelled" && current >= ORDER_STATUSES.indexOf(stage)),
@@ -384,7 +384,7 @@ export function adminOrderPage(
 ): string {
   const eventRows = events
     .map(
-      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(isOrderStatus(event.kind) ? STATUS_LABELS[event.kind] : event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
+      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(event.kind === "requested" ? "Quoted" : isOrderStatus(event.kind) ? STATUS_LABELS[event.kind] : event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
     )
     .join("");
 
