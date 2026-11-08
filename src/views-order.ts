@@ -490,7 +490,7 @@ function orderModal(order: OrderRow): string {
   ).join("")}</div>
     </form>
 
-    ${order.status === "quoted" || order.status === "cancelled" ? "" : `    <h3 class="section-title mt">Assign carrier</h3>
+    ${order.status === "quoted" || order.status === "cancelled" || order.status === "assigned" ? "" : `    <h3 class="section-title mt">Assign carrier</h3>
     <form class="quote-form" method="post" action="/admin/orders/${order.id}/carrier">
       <input type="hidden" name="next" value="${esc(anchor)}">
       <div class="field-row">
@@ -625,7 +625,7 @@ export function adminOrderPage(
       <button class="btn btn-accent" type="submit">Save status</button>
     </form>
 
-    ${order.status === "quoted" || order.status === "cancelled" ? "" : `    <form class="card quote-form" method="post" action="/admin/orders/${order.id}/carrier">
+    ${order.status === "quoted" || order.status === "cancelled" || order.status === "assigned" ? "" : `    <form class="card quote-form" method="post" action="/admin/orders/${order.id}/carrier">
       <h3>Assign carrier</h3>
       <label class="field"><span>Company</span><input name="carrier_name" required value="${esc(order.carrier_name ?? "")}"></label>
       <div class="field-row">
