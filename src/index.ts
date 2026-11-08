@@ -69,8 +69,8 @@ import {
 
 const SITEMAP_PATHS = [
   "/",
+  "/get-quote",
   "/quote",
-  "/book",
   "/services/open",
   "/services/enclosed",
   "/services/expedited",
@@ -157,7 +157,7 @@ const MAX_PHOTOS = 5;
 
 app.get("/", (c) => c.html(homePage()));
 
-app.get("/quote", (c) => c.html(quotePage({ values: {} })));
+app.get("/get-quote", (c) => c.html(quotePage({ values: {} })));
 
 /** Accept only a valid date today or later. */
 function futureDate(value: string | undefined): string {
@@ -172,7 +172,7 @@ function moneyOrNull(value: unknown): number | null {
   return Number.isFinite(number) && number >= 0 ? Math.round(number) : null;
 }
 
-app.post("/quote", async (c) => {
+app.post("/get-quote", async (c) => {
   const form = await c.req.formData();
   const field = (name: string) => String(form.get(name) ?? "").trim();
   const values: QuoteFormValues = {
@@ -407,7 +407,15 @@ async function priceFor(values: BookValues): Promise<{ distance: number | null; 
   return { distance, price: priceQuote(distance, transport, condition, false).total };
 }
 
-app.get("/book", (c) => c.html(bookPage({}, null)));
+app.get("/quote", (c) => c.html(bookPage({}, null)));
+app.get("/book", (c) => c.redirect("/quote", 301));
+
+app.post("/quote", async (c) => {
+  const values = bookValuesFrom(await c.req.formData());
+  values.ready_date = futureDate(values.ready_date);
+  const { price } = await priceFor(values);
+  return c.html(bookPage(values, price));
+});
 
 app.post("/book", async (c) => {
   const values = bookValuesFrom(await c.req.formData());
@@ -593,8 +601,7 @@ app.get("/post/:slug", (c) => {
   return post ? c.html(blogPostPage(post)) : c.html(notFoundPage(), 404);
 });
 
-app.get("/get-quote", (c) => c.redirect("/", 301));
-app.get("/booking-form", (c) => c.redirect("/book", 301));
+app.get("/booking-form", (c) => c.redirect("/quote", 301));
 app.get("/enclosed-vehicle-transport", (c) => c.redirect("/services/enclosed", 301));
 app.get("/open-vehicle-transport", (c) => c.redirect("/services/open", 301));
 app.get("/app-landing-page", (c) => c.redirect("/", 301));

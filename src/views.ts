@@ -130,7 +130,7 @@ if (location.pathname.indexOf('/admin') !== 0) {
     <nav class="nav">
       ${NAV.map((item) => `<a href="${item.href}">${esc(item.label)}</a>`).join("")}
     </nav>
-    <a class="btn btn-accent header-cta" href="/quote">Get a quote</a>
+    <a class="btn btn-accent header-cta" href="/get-quote">Get a quote</a>
   </div>
 </header>
 <main>${options.body}</main>
@@ -805,7 +805,7 @@ export function datePicker(name: string, value: string, allowPast = false): stri
 export function quoteForm(values: QuoteFormValues = {}, error?: string): string {
   const v = (key: keyof QuoteFormValues) => esc(values[key] ?? "");
   const condition = values.condition || "running";
-  return `<form class="quote-form" method="post" action="/quote" enctype="multipart/form-data">
+  return `<form class="quote-form" method="post" action="/get-quote" enctype="multipart/form-data">
   ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
   <div class="field-row">
     <label class="field">
@@ -1014,7 +1014,7 @@ export function quotePage(options: {
     return layout({
       title: "Your quote — Bond Auto Transport",
       description: `Your ${result.transport.toLowerCase()} quote from ${result.origin} to ${result.destination}.`,
-      canonical: "/quote",
+      canonical: "/get-quote",
       body: `
 <section class="wrap section">
   <div class="summary-grid">
@@ -1045,7 +1045,7 @@ export function quotePage(options: {
           <li><span>Deposit to reserve</span><span>${money(result.deposit)}</span></li>
           <li><span>Due now</span><span>$0</span></li>
         </ul>
-        <form method="post" action="/book">
+        <form method="post" action="/quote">
           ${hidden}
           <button class="btn btn-accent btn-block" type="submit">Continue to booking</button>
         </form>
@@ -1116,7 +1116,7 @@ export function quotePage(options: {
   return layout({
     title: "Get a vehicle shipping quote — Bond Auto Transport",
     description: "Instant open and enclosed vehicle transport pricing from your pickup and delivery ZIP codes.",
-    canonical: "/quote",
+    canonical: "/get-quote",
     body: `
 <section class="wrap section">
   <h1 class="page-title">Get your price</h1>
@@ -1203,7 +1203,7 @@ export function servicePage(slug: string): string | null {
     ${page.points.map((point) => `<li>${esc(point)}</li>`).join("")}
   </ul>
   <div class="cta-row">
-    <a class="btn btn-accent" href="/quote">Get a price for this route</a>
+    <a class="btn btn-accent" href="/get-quote">Get a price for this route</a>
     <a class="btn btn-ghost" href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">Call dispatch</a>
   </div>
 </section>`,
@@ -1289,7 +1289,7 @@ export function contactPage(): string {
   <div class="cards">
     <div class="card"><h3>Phone</h3><p><a href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">${esc(site.phone)}</a></p><p class="muted small">${esc(site.hours)}</p></div>
     <div class="card"><h3>Email</h3><p><a href="mailto:${esc(site.email)}">${esc(site.email)}</a></p><p class="muted small">We reply within one business hour.</p></div>
-    <div class="card"><h3>Quote first</h3><p><a href="/quote">Get an instant price</a></p><p class="muted small">Fastest route to a booking.</p></div>
+    <div class="card"><h3>Quote first</h3><p><a href="/get-quote">Get an instant price</a></p><p class="muted small">Fastest route to a booking.</p></div>
     <div class="card"><h3>Company</h3><p>${esc(site.legalName)}</p><p class="muted small">${esc(site.address)} · ${esc(site.mc)} · ${esc(site.dot)}</p></div>
   </div>
 </section>`,
@@ -1323,7 +1323,7 @@ export function notFoundPage(): string {
   return layout({
     title: "Page not found — Bond Auto Transport",
     description: "That page does not exist.",
-    body: `<section class="wrap section"><h1 class="page-title">That page moved.</h1><p class="lede narrow">Try the quote form, or call dispatch on ${esc(site.phone)}.</p><a class="btn btn-accent" href="/quote">Get a price</a></section>`,
+    body: `<section class="wrap section"><h1 class="page-title">That page moved.</h1><p class="lede narrow">Try the quote form, or call dispatch on ${esc(site.phone)}.</p><a class="btn btn-accent" href="/get-quote">Get a price</a></section>`,
   });
 }
 

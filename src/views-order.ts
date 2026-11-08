@@ -66,7 +66,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
   return layout({
     title: "Book your transport — Bond Auto Transport",
     description: "Confirm the addresses, contacts and vehicle details so dispatch can assign a carrier.",
-    canonical: "/book",
+    canonical: "/quote",
     body: `
 <section class="hero">
   <div class="wrap hero-grid">
@@ -142,7 +142,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
         </div>
       </div>
 
-      <a class="btn btn-accent btn-inline" href="/book" target="_blank" rel="noopener">Add another vehicle</a>
+      <a class="btn btn-accent btn-inline" href="/quote" target="_blank" rel="noopener">Add another vehicle</a>
 
       <h3 class="form-section">Pickup</h3>
       <div class="field-row">
@@ -610,7 +610,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
   <div class="card mt">
     <h3>Book another vehicle</h3>
     <p class="muted small">Your details are prefilled. Change anything you need before submitting.</p>
-    <form method="post" action="/book">
+    <form method="post" action="/quote">
       ${bookingHidden}
       <button class="btn btn-accent btn-block" type="submit">Continue to booking</button>
     </form>

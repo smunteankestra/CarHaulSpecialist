@@ -22,7 +22,7 @@ export function legacyPage(slug: string): string | null {
     )
     .join("")}
   <div class="cta-row">
-    <a class="btn btn-accent" href="/quote">Get your quote</a>
+    <a class="btn btn-accent" href="/get-quote">Get your quote</a>
     <a class="btn btn-ghost" href="/contact">Contact dispatch</a>
   </div>
 </section>`,
@@ -70,7 +70,7 @@ export function blogPostPage(post: BlogPost): string {
   <p class="muted small">${esc(post.date)} · ${esc(post.readTime)}</p>
   ${post.paragraphs.map(renderBlogParagraph).join("")}
   <div class="cta-row">
-    <a class="btn btn-accent" href="/quote">Get your quote</a>
+    <a class="btn btn-accent" href="/get-quote">Get your quote</a>
     <a class="btn btn-ghost" href="/blog">Back to the blog</a>
   </div>
 </section>`,
