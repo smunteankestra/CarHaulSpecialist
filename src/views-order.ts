@@ -309,6 +309,34 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
     .map((stage) => `<li class="reached"><strong>${esc(STATUS_LABELS[stage])}</strong></li>`)
     .join("");
 
+  const bookingHidden = Object.entries({
+    name: order.customer_name,
+    email: order.customer_email,
+    phone: order.customer_phone,
+    vin: order.vin ?? "",
+    origin_street: order.origin_street ?? "",
+    origin_city: order.origin_city ?? "",
+    origin_state: order.origin_state ?? "",
+    origin_zip: order.origin_zip,
+    origin_contact: order.origin_contact ?? "",
+    origin_phone: order.origin_phone ?? "",
+    dest_street: order.dest_street ?? "",
+    dest_city: order.dest_city ?? "",
+    dest_state: order.dest_state ?? "",
+    dest_zip: order.dest_zip,
+    dest_contact: order.dest_contact ?? "",
+    dest_phone: order.dest_phone ?? "",
+    vehicle_year: order.vehicle_year ?? "",
+    vehicle_make: order.vehicle_make ?? "",
+    vehicle_model: order.vehicle_model ?? "",
+    transport_type: order.transport_type,
+    condition: order.condition,
+    ready_date: order.ready_date ?? "",
+    notes: order.notes ?? "",
+  })
+    .map(([key, value]) => `<input type="hidden" name="${key}" value="${esc(value)}">`)
+    .join("");
+
   return layout({
     title: `${order.number} — Bond Auto Transport`,
     description: `Status of shipment ${order.number}.`,
@@ -332,6 +360,15 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       <h3>Progress</h3>
       <ul class="timeline">${timeline}</ul>
     </div>
+  </div>
+
+  <div class="card mt">
+    <h3>Book another vehicle</h3>
+    <p class="muted small">Your details are prefilled. Change anything you need before submitting.</p>
+    <form method="post" action="/book">
+      ${bookingHidden}
+      <button class="btn btn-accent btn-block" type="submit">Continue to booking</button>
+    </form>
   </div>
 
   ${invoices.length
