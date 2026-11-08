@@ -219,9 +219,10 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
   });
 }
 
-function statusBadge(status: string): string {
+function statusBadge(status: string, decorated = false): string {
   const label = STATUS_LABELS[status as OrderStatus] ?? status;
-  return `<span class="badge badge-${esc(status)}">${esc(label)}</span>`;
+  const display = decorated && status === "paid" ? `$$$ ${label} 🚬💨🌿` : label;
+  return `<span class="badge badge-${esc(status)}">${esc(display)}</span>`;
 }
 
 function eventLabel(kind: string): string {
@@ -392,7 +393,7 @@ function orderEditForm(order: OrderRow, next: string): string {
         <tbody>
           <tr><th>Order</th><td>${esc(order.number)}</td></tr>
           <tr><th>Quote record</th><td>${order.lead_id ? `<a href="/admin#quote-${order.lead_id}">#${order.lead_id}</a>` : "—"}</td></tr>
-          <tr><th>Status</th><td>${statusBadge(order.status)}</td></tr>
+          <tr><th>Status</th><td>${statusBadge(order.status, true)}</td></tr>
           <tr><th>Created</th><td>${when(order.created_at)}</td></tr>
           <tr><th>Last updated</th><td>${when(order.updated_at)}</td></tr>
           <tr><th>Customer</th><td><div class="edit-stack">
@@ -611,7 +612,7 @@ function orderDetailRows(order: OrderRow): string {
   return `
       ${row("Order", esc(order.number))}
       ${row("Quote record", order.lead_id ? `<a href="/admin#quote-${order.lead_id}">#${order.lead_id}</a>` : "")}
-      ${row("Status", statusBadge(order.status))}
+      ${row("Status", statusBadge(order.status, true))}
       ${row("Created", when(order.created_at))}
       ${row("Last updated", when(order.updated_at))}
       ${row("Customer", `${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</span>`)}
@@ -644,7 +645,7 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
     <div class="modal-head">
       <div>
         <p class="eyebrow">Order</p>
-        <h2 id="order-${order.id}-title">${esc(order.number)} ${statusBadge(order.status)}</h2>
+        <h2 id="order-${order.id}-title">${esc(order.number)} ${statusBadge(order.status, true)}</h2>
         <p class="muted small">Booked ${when(order.created_at)} · updated ${when(order.updated_at)}</p>
       </div>
       <a class="modal-close" href="#orders" aria-label="Close">×</a>
@@ -756,7 +757,7 @@ export function adminOrdersPage(
       <td>${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_phone)}</span></td>
       <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}</span></td>
       <td>${money(order.price)}</td>
-      <td>${statusBadge(order.status)}</td>
+      <td>${statusBadge(order.status, true)}</td>
       <td class="muted small">${when(order.created_at)}</td>
       <td class="muted">Details</td>
     </tr>`,
