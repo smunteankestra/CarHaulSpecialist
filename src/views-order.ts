@@ -318,11 +318,25 @@ function deliveredFields(order: OrderRow): string {
   });
 }
 
-function statusTimeFields(order: OrderRow): string {
+function paymentFields(order: OrderRow): string {
+  const methods = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"];
+  return `<p class="form-section form-section-date">Payment</p>
+      <div class="field-row">
+        <label class="field"><span>Amount (USD)</span><input name="paid_amount" type="number" min="0" step="1" value="${order.paid_amount ?? order.price}"></label>
+        <label class="field"><span>Payment method</span><select name="payment_method">
+          <option value="">Select method</option>
+          ${methods.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
+        </select></label>
+      </div>
+      <p class="form-note">${order.paid_amount !== null ? `Saved: ${money(order.paid_amount)}${order.payment_method ? ` via ${esc(order.payment_method)}` : ""}` : "Record how the balance was paid."}</p>`;
+}
+
+function statusFields(order: OrderRow): string {
   if (order.status === "quoted" || order.status === "cancelled") return "";
   if (order.status === "confirmed" || order.status === "assigned") return pickupEtaFields(order);
   if (order.status === "picked_up") return `${pickupFields(order)}${deliveryEtaFields(order)}`;
-  return `${pickupFields(order)}${deliveredFields(order)}`;
+  if (order.status === "delivered") return `${pickupFields(order)}${deliveredFields(order)}`;
+  return paymentFields(order);
 }
 
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
@@ -440,6 +454,8 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Pick up ETA", order.pickup_eta ? when(order.pickup_eta) : "")}
       ${row("Delivery ETA", order.delivery_eta ? when(order.delivery_eta) : "")}
       ${row("Delivered at", order.delivered_at ? when(order.delivered_at) : "")}
+      ${row("Paid amount", order.paid_amount !== null ? money(order.paid_amount) : "")}
+      ${row("Payment method", esc(order.payment_method ?? ""))}
       ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
@@ -468,7 +484,7 @@ function orderModal(order: OrderRow): string {
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
       <input type="hidden" name="next" value="${esc(anchor)}">
-      ${statusTimeFields(order)}
+      ${statusFields(order)}
       <div class="status-actions">${ORDER_STATUSES.map(
     (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
   ).join("")}</div>
@@ -604,7 +620,7 @@ export function adminOrderPage(
       (value) => `<option value="${value}"${order.status === value ? " selected" : ""}>${esc(STATUS_LABELS[value])}</option>`,
     ).join("")}</select>
       </label>
-      ${statusTimeFields(order)}
+      ${statusFields(order)}
       <label class="field"><span>Note</span><input name="note" placeholder="Optional"></label>
       <button class="btn btn-accent" type="submit">Save status</button>
     </form>

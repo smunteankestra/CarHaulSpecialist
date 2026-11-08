@@ -593,22 +593,32 @@ app.post("/admin/orders/:id/status", async (c) => {
   const pickupEta = parseDateTime(body, "pickup_eta");
   const deliveryEta = parseDateTime(body, "delivery_eta");
   const deliveredAt = parseDateTime(body, "delivered");
+  const paidRaw = String(body.paid_amount ?? "").trim();
+  const paidNumber = paidRaw ? Number(paidRaw) : NaN;
+  const paidAmount = Number.isFinite(paidNumber) && paidNumber >= 0 ? Math.round(paidNumber) : null;
+  const paymentMethodRaw = String(body.payment_method ?? "").trim();
+  const paymentMethod = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"].includes(paymentMethodRaw)
+    ? paymentMethodRaw
+    : null;
   const note = String(body.note ?? "").trim();
   const pickupNote = pickedUpAt ? `Picked up ${when(pickedUpAt)}` : "";
   const etaNote = pickupEta ? `Pickup ETA ${when(pickupEta)}` : "";
   const deliveryNote = deliveryEta ? `Delivery ETA ${when(deliveryEta)}` : "";
   const deliveredNote = deliveredAt ? `Delivered ${when(deliveredAt)}` : "";
+  const paidNote = paidAmount !== null ? `Paid $${paidAmount.toLocaleString()}${paymentMethod ? ` via ${paymentMethod}` : ""}` : "";
 
   await setStatus(
     c.env.DB,
     id,
     status,
     user.email,
-    [note, pickupNote, etaNote, deliveryNote, deliveredNote].filter(Boolean).join(" · "),
+    [note, pickupNote, etaNote, deliveryNote, deliveredNote, paidNote].filter(Boolean).join(" · "),
     pickedUpAt,
     pickupEta,
     deliveryEta,
     deliveredAt,
+    paidAmount,
+    paymentMethod,
   );
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });
