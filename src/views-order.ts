@@ -734,7 +734,7 @@ export function adminOrdersPage(
 
   const sortLink = (key: string, label: string) => {
     const active = sort === key;
-    const nextDir = active && dir === "asc" ? "desc" : "asc";
+    const nextDir = active && dir === "desc" ? "asc" : "desc";
     const arrow = active ? (dir === "asc" ? " ▲" : " ▼") : "";
     const params = new URLSearchParams();
     if (status !== "all") params.set("status", status);
