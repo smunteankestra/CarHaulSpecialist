@@ -421,12 +421,22 @@ function adminRedirect(body: Record<string, unknown>, fallback: string): string 
 
 /** Combine a date plus 12-hour time fields into a UTC timestamp. */
 function parseDateTime(body: Record<string, string | File>, prefix: string): number | null {
-  const date = String(body[`${prefix}_date`] ?? "").trim();
+  const month = Number(body[`${prefix}_month`] ?? "");
+  const day = Number(body[`${prefix}_day`] ?? "");
+  const year = Number(body[`${prefix}_year`] ?? "");
   const hour = Number(body[`${prefix}_hour`] ?? "");
   const minute = Number(body[`${prefix}_minute`] ?? "");
   const ampm = String(body[`${prefix}_ampm`] ?? "").toUpperCase();
   if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    !Number.isInteger(month) ||
+    month < 1 ||
+    month > 12 ||
+    !Number.isInteger(day) ||
+    day < 1 ||
+    day > 31 ||
+    !Number.isInteger(year) ||
+    year < 2000 ||
+    year > 2100 ||
     hour < 1 ||
     hour > 12 ||
     minute < 0 ||
@@ -435,14 +445,9 @@ function parseDateTime(body: Record<string, string | File>, prefix: string): num
   ) {
     return null;
   }
-  const [yearPart, monthPart, dayPart] = date.split("-");
-  const stamp = Date.UTC(
-    Number(yearPart),
-    Number(monthPart) - 1,
-    Number(dayPart),
-    (hour % 12) + (ampm === "PM" ? 12 : 0),
-    minute,
-  );
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const safeDay = Math.min(day, lastDay);
+  const stamp = Date.UTC(year, month - 1, safeDay, (hour % 12) + (ampm === "PM" ? 12 : 0), minute);
   return Number.isFinite(stamp) ? stamp : null;
 }
 

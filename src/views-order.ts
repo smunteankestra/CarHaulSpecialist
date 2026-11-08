@@ -1,4 +1,4 @@
-import { esc, conditionTag, dateOnly, layout, money, site, when } from "./views.ts";
+import { esc, MONTH_NAMES, conditionTag, dateOnly, layout, money, site, when } from "./views.ts";
 import { US_STATES, stateCode, stateName } from "./states.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
@@ -207,7 +207,9 @@ function statusBadge(status: string): string {
 
 function timeFields(config: {
   dateLabel: string;
-  dateName: string;
+  monthName: string;
+  dayName: string;
+  yearName: string;
   hourName: string;
   minuteName: string;
   ampmName: string;
@@ -220,7 +222,22 @@ function timeFields(config: {
   const hour = hours % 12 || 12;
   const minute = date.getUTCMinutes();
   const ampm = hours >= 12 ? "PM" : "AM";
-  const dateValue = `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const year = date.getUTCFullYear();
+  const currentYear = new Date().getUTCFullYear();
+  const years = Array.from(new Set([...Array.from({ length: 8 }, (_, i) => currentYear - 2 + i), year])).sort(
+    (a, b) => a - b,
+  );
+  const monthOptions = MONTH_NAMES.map(
+    (name, index) => `<option value="${index + 1}"${month === index + 1 ? " selected" : ""}>${name}</option>`,
+  ).join("");
+  const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1)
+    .map((value) => `<option value="${value}"${day === value ? " selected" : ""}>${value}</option>`)
+    .join("");
+  const yearOptions = years
+    .map((value) => `<option value="${value}"${year === value ? " selected" : ""}>${value}</option>`)
+    .join("");
   const hourOptions = Array.from({ length: 12 }, (_, i) => i + 1)
     .map((value) => `<option value="${value}"${hour === value ? " selected" : ""}>${value}</option>`)
     .join("");
@@ -228,9 +245,12 @@ function timeFields(config: {
     .map((value) => `<option value="${value}"${minute === value ? " selected" : ""}>${pad(value)}</option>`)
     .join("");
 
-  return `<label class="field"><span>${esc(config.dateLabel)}</span>
-        <input name="${config.dateName}" type="date" value="${dateValue}">
-      </label>
+  return `<p class="form-section">${esc(config.dateLabel)}</p>
+      <div class="field-row">
+        <label class="field"><span>Month</span><select name="${config.monthName}">${monthOptions}</select></label>
+        <label class="field"><span>Day</span><select name="${config.dayName}">${dayOptions}</select></label>
+        <label class="field"><span>Year</span><select name="${config.yearName}">${yearOptions}</select></label>
+      </div>
       <div class="field-row">
         <label class="field"><span>Hour</span><select name="${config.hourName}">${hourOptions}</select></label>
         <label class="field"><span>Minute</span><select name="${config.minuteName}">${minuteOptions}</select></label>
@@ -245,7 +265,9 @@ function timeFields(config: {
 function pickupFields(order: OrderRow): string {
   return timeFields({
     dateLabel: "Picked up date",
-    dateName: "picked_up_date",
+    monthName: "picked_up_month",
+    dayName: "picked_up_day",
+    yearName: "picked_up_year",
     hourName: "picked_up_hour",
     minuteName: "picked_up_minute",
     ampmName: "picked_up_ampm",
@@ -257,7 +279,9 @@ function pickupFields(order: OrderRow): string {
 function pickupEtaFields(order: OrderRow): string {
   return timeFields({
     dateLabel: "Pick up ETA date",
-    dateName: "pickup_eta_date",
+    monthName: "pickup_eta_month",
+    dayName: "pickup_eta_day",
+    yearName: "pickup_eta_year",
     hourName: "pickup_eta_hour",
     minuteName: "pickup_eta_minute",
     ampmName: "pickup_eta_ampm",

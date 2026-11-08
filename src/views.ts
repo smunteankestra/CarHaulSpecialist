@@ -24,7 +24,7 @@ export function esc(value: unknown): string {
 
 export const money = (value: number) => `$${value.toLocaleString()}`;
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   "January",
   "February",
   "March",
