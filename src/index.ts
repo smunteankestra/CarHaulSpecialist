@@ -512,11 +512,27 @@ app.post("/admin/orders/:id/status", async (c) => {
   const status = String(body.status ?? "");
   if (!isOrderStatus(status)) return c.redirect(`/admin/orders/${id}`, 303);
 
-  const rawPickup = String(body.picked_up_at ?? "").trim();
-  const parsedPickup = rawPickup
-    ? new Date(`${rawPickup}${rawPickup.length === 16 ? ":00" : ""}Z`).getTime()
-    : NaN;
-  const pickedUpAt = Number.isFinite(parsedPickup) ? parsedPickup : null;
+  const pickupDate = String(body.picked_up_date ?? "").trim();
+  const pickupHour = Number(body.picked_up_hour ?? "");
+  const pickupMinute = Number(body.picked_up_minute ?? "");
+  const pickupAmPm = String(body.picked_up_ampm ?? "").toUpperCase();
+  let pickedUpAt: number | null = null;
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(pickupDate) &&
+    pickupHour >= 1 &&
+    pickupHour <= 12 &&
+    pickupMinute >= 0 &&
+    pickupMinute <= 59 &&
+    (pickupAmPm === "AM" || pickupAmPm === "PM")
+  ) {
+    const [yearPart, monthPart, dayPart] = pickupDate.split("-");
+    const year = Number(yearPart);
+    const month = Number(monthPart);
+    const day = Number(dayPart);
+    const hour24 = (pickupHour % 12) + (pickupAmPm === "PM" ? 12 : 0);
+    const stamp = Date.UTC(year, month - 1, day, hour24, pickupMinute);
+    if (Number.isFinite(stamp)) pickedUpAt = stamp;
+  }
   const note = String(body.note ?? "").trim();
   const pickupNote = pickedUpAt ? `Picked up ${when(pickedUpAt)}` : "";
 

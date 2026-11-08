@@ -205,11 +205,33 @@ function statusBadge(status: string): string {
   return `<span class="badge badge-${esc(status)}">${esc(label)}</span>`;
 }
 
-function toDatetimeLocal(value: number | null): string {
-  if (!value) return "";
-  const date = new Date(value);
+function pickupFields(order: OrderRow): string {
+  const date = order.picked_up_at ? new Date(order.picked_up_at) : new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+  const hours = date.getUTCHours();
+  const hour = hours % 12 || 12;
+  const minute = date.getUTCMinutes();
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const dateValue = `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+  const hourOptions = Array.from({ length: 12 }, (_, i) => i + 1)
+    .map((value) => `<option value="${value}"${hour === value ? " selected" : ""}>${value}</option>`)
+    .join("");
+  const minuteOptions = Array.from({ length: 60 }, (_, value) => value)
+    .map((value) => `<option value="${value}"${minute === value ? " selected" : ""}>${pad(value)}</option>`)
+    .join("");
+
+  return `<label class="field"><span>Picked up date</span>
+        <input name="picked_up_date" type="date" value="${dateValue}">
+      </label>
+      <div class="field-row">
+        <label class="field"><span>Hour</span><select name="picked_up_hour">${hourOptions}</select></label>
+        <label class="field"><span>Minute</span><select name="picked_up_minute">${minuteOptions}</select></label>
+        <label class="field"><span>AM / PM</span><select name="picked_up_ampm">
+          <option value="AM"${ampm === "AM" ? " selected" : ""}>AM</option>
+          <option value="PM"${ampm === "PM" ? " selected" : ""}>PM</option>
+        </select></label>
+      </div>
+      <p class="form-note">${order.picked_up_at ? `Saved: ${when(order.picked_up_at)}` : "Choose the pickup date and time in AM/PM."}</p>`;
 }
 
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
@@ -312,14 +334,10 @@ function orderModal(order: OrderRow): string {
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
       <input type="hidden" name="next" value="${esc(anchor)}">
-      <label class="field"><span>Picked up at</span>
-        <input name="picked_up_at" type="datetime-local" value="${toDatetimeLocal(order.picked_up_at)}" oninput="this.nextElementSibling.textContent = usaDateTime(this.value)">
-        <small class="muted">${order.picked_up_at ? when(order.picked_up_at) : ""}</small>
-      </label>
-      <p class="form-note">Times display in USA format (AM/PM).</p>
+      ${pickupFields(order)}
       <div class="status-actions">${ORDER_STATUSES.map(
-        (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
-      ).join("")}</div>
+    (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
+  ).join("")}</div>
     </form>
 
     <h3 class="section-title mt">Assign carrier</h3>
@@ -452,11 +470,7 @@ export function adminOrderPage(
       (value) => `<option value="${value}"${order.status === value ? " selected" : ""}>${esc(STATUS_LABELS[value])}</option>`,
     ).join("")}</select>
       </label>
-      <label class="field"><span>Picked up at</span>
-        <input name="picked_up_at" type="datetime-local" value="${toDatetimeLocal(order.picked_up_at)}" oninput="this.nextElementSibling.textContent = usaDateTime(this.value)">
-        <small class="muted">${order.picked_up_at ? when(order.picked_up_at) : ""}</small>
-      </label>
-      <p class="form-note">Times display in USA format (AM/PM).</p>
+      ${pickupFields(order)}
       <label class="field"><span>Note</span><input name="note" placeholder="Optional"></label>
       <button class="btn btn-accent" type="submit">Save status</button>
     </form>
