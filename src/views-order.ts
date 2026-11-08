@@ -182,6 +182,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
           <strong>Add vehicle photos</strong>
           <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
         </label>
+        <div class="photo-preview" hidden></div>
       </div>
 
       <button class="btn btn-accent btn-block" type="submit">Submit booking request</button>

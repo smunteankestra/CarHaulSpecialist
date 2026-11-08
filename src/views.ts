@@ -501,6 +501,45 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   });
 })();
 </script>
+<script>
+(function () {
+  Array.prototype.forEach.call(document.querySelectorAll(".photo-input"), function (input) {
+    var upload = input.closest(".photo-upload");
+    var preview = upload ? upload.querySelector(".photo-preview") : null;
+    if (!preview) return;
+    var urls = [];
+    input.addEventListener("change", function () {
+      urls.forEach(function (url) { URL.revokeObjectURL(url); });
+      urls = [];
+      preview.innerHTML = "";
+      var files = Array.prototype.slice.call(input.files || []).slice(0, 5);
+      files.forEach(function (file) {
+        var tile = document.createElement("div");
+        tile.className = "photo-thumb";
+        tile.title = file.name;
+        var name = file.name.toLowerCase();
+        var isHeic = /heic|heif/i.test(file.type) || name.endsWith(".heic") || name.endsWith(".heif");
+        if (!isHeic && file.type.indexOf("image/") === 0) {
+          var img = document.createElement("img");
+          var url = URL.createObjectURL(file);
+          urls.push(url);
+          img.src = url;
+          img.alt = file.name;
+          img.loading = "lazy";
+          tile.appendChild(img);
+        } else {
+          var fallback = document.createElement("span");
+          fallback.className = "photo-thumb-fallback";
+          fallback.textContent = isHeic ? "HEIC" : "IMG";
+          tile.appendChild(fallback);
+        }
+        preview.appendChild(tile);
+      });
+      preview.hidden = files.length === 0;
+    });
+  });
+})();
+</script>
 </body>
 </html>`;
 }
@@ -626,6 +665,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
         <strong>Add vehicle photos</strong>
         <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
       </label>
+      <div class="photo-preview" hidden></div>
     </div>
   </div>
 
