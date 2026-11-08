@@ -1,0 +1,3 @@
+ALTER TABLE orders ADD COLUMN final_quote INTEGER;
+ALTER TABLE orders ADD COLUMN broker_fee INTEGER;
+ALTER TABLE orders ADD COLUMN carrier_fee INTEGER;

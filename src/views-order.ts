@@ -374,9 +374,30 @@ function paymentFields(order: OrderRow): string {
       <p class="form-note">${order.paid_amount !== null ? `Saved: ${money(order.paid_amount)}${order.payment_method ? ` via ${esc(order.payment_method)}` : ""}` : "Record how the balance was paid."}</p>`;
 }
 
+function finalQuoteFields(order: OrderRow): string {
+  return `<p class="form-section form-section-date">Final quote</p>
+      <div class="field-row">
+        <label class="field"><span>Final quote (USD)</span><input name="final_quote" type="number" min="0" step="1" value="${order.final_quote ?? order.price}"></label>
+      </div>
+      <p class="form-note">Negotiated final price. The original quote was ${money(order.price)}.</p>`;
+}
+
+function feeFields(order: OrderRow): string {
+  const total = (order.broker_fee ?? 0) + (order.carrier_fee ?? 0);
+  return `<p class="form-section form-section-date">Fees</p>
+      <div class="field-row">
+        <label class="field"><span>Broker fee (USD)</span><input name="broker_fee" type="number" min="0" step="1" value="${order.broker_fee ?? ""}" class="fee-input"></label>
+        <label class="field"><span>Carrier fee (USD)</span><input name="carrier_fee" type="number" min="0" step="1" value="${order.carrier_fee ?? ""}" class="fee-input"></label>
+        <label class="field"><span>Total price (USD)</span><input class="fee-total" value="${money(total)}" readonly></label>
+      </div>
+      <p class="form-note">Total price = broker fee + carrier fee.</p>`;
+}
+
 function statusFields(order: OrderRow): string {
-  if (order.status === "quoted" || order.status === "cancelled") return "";
-  if (order.status === "confirmed" || order.status === "assigned") return pickupEtaFields(order);
+  if (order.status === "quoted") return finalQuoteFields(order);
+  if (order.status === "cancelled") return "";
+  if (order.status === "confirmed") return `${pickupEtaFields(order)}${feeFields(order)}`;
+  if (order.status === "assigned") return pickupEtaFields(order);
   if (order.status === "picked_up") return `${pickupFields(order)}${deliveryEtaFields(order)}`;
   if (order.status === "delivered") return `${pickupFields(order)}${deliveredFields(order)}`;
   return paymentFields(order);
@@ -492,6 +513,10 @@ function orderEditForm(order: OrderRow, next: string): string {
           <tr><th>Pickup date</th><td>${datePicker("ready_date", order.ready_date ?? "", true)}</td></tr>
           <tr><th>Distance</th><td><input name="distance_miles" type="number" min="0" value="${order.distance_miles ?? ""}" placeholder="Miles"></td></tr>
           <tr><th>Price</th><td><input name="price" type="number" min="0" value="${order.price}" placeholder="USD"></td></tr>
+          <tr><th>Final quote</th><td><input name="final_quote" type="number" min="0" step="1" value="${order.final_quote ?? ""}" placeholder="Same as quote"></td></tr>
+          <tr><th>Broker fee</th><td><input name="broker_fee" type="number" min="0" step="1" value="${order.broker_fee ?? ""}" class="fee-input"></td></tr>
+          <tr><th>Carrier fee</th><td><input name="carrier_fee" type="number" min="0" step="1" value="${order.carrier_fee ?? ""}" class="fee-input"></td></tr>
+          <tr><th>Total price</th><td><input class="fee-total" value="${money((order.broker_fee ?? 0) + (order.carrier_fee ?? 0))}" readonly></td></tr>
           <tr><th>Carrier</th><td><div class="edit-stack">
             <div class="edit-grid">
               <input name="carrier_name" value="${esc(order.carrier_name ?? "")}" placeholder="Company">
@@ -635,6 +660,10 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Pickup date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
+      ${row("Final quote", order.final_quote !== null ? `<strong>${money(order.final_quote)}</strong>` : "")}
+      ${row("Broker fee", order.broker_fee !== null ? money(order.broker_fee) : "")}
+      ${row("Carrier fee", order.carrier_fee !== null ? money(order.carrier_fee) : "")}
+      ${row("Total price", order.broker_fee !== null || order.carrier_fee !== null ? `<strong>${money((order.broker_fee ?? 0) + (order.carrier_fee ?? 0))}</strong>` : "")}
       ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}${carrierLine ? `<br><span class="muted small">${esc(carrierLine)}</span>` : ""}${driverLine ? `<br><span class="muted small">Driver: ${esc(driverLine)}</span>` : ""}` : "")}
       ${row("Customer notes", esc(order.notes ?? ""))}
   `;

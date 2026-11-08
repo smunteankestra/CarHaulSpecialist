@@ -645,6 +645,25 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   });
 })();
 </script>
+<script>
+(function () {
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="broker_fee"]'), function (broker) {
+    var form = broker.closest("form");
+    if (!form) return;
+    var carrier = form.querySelector('input[name="carrier_fee"]');
+    var total = form.querySelector(".fee-total");
+    if (!carrier || !total) return;
+    function update() {
+      var b = Number(broker.value) || 0;
+      var c = Number(carrier.value) || 0;
+      total.value = "$" + (b + c).toLocaleString();
+    }
+    broker.addEventListener("input", update);
+    carrier.addEventListener("input", update);
+    update();
+  });
+})();
+</script>
 </body>
 </html>`;
 }

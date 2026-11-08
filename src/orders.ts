@@ -115,6 +115,9 @@ export interface OrderRow {
   ready_date: string | null;
   distance_miles: number | null;
   price: number;
+  final_quote: number | null;
+  broker_fee: number | null;
+  carrier_fee: number | null;
   status: string;
   carrier_name: string | null;
   carrier_mc: string | null;

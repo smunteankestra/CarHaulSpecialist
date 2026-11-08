@@ -135,6 +135,13 @@ function futureDate(value: string | undefined): string {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= today ? value : "";
 }
 
+function moneyOrNull(value: unknown): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const number = Number(raw);
+  return Number.isFinite(number) && number >= 0 ? Math.round(number) : null;
+}
+
 app.post("/quote", async (c) => {
   const form = await c.req.formData();
   const field = (name: string) => String(form.get(name) ?? "").trim();
@@ -874,7 +881,16 @@ app.post("/admin/orders/:id/status", async (c) => {
   const paymentMethod = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"].includes(paymentMethodRaw)
     ? paymentMethodRaw
     : null;
+  const hasFinal = Object.prototype.hasOwnProperty.call(body, "final_quote");
+  const hasBroker = Object.prototype.hasOwnProperty.call(body, "broker_fee");
+  const hasCarrier = Object.prototype.hasOwnProperty.call(body, "carrier_fee");
+  const finalQuote = moneyOrNull(body.final_quote);
+  const brokerFee = moneyOrNull(body.broker_fee);
+  const carrierFee = moneyOrNull(body.carrier_fee);
   const note = String(body.note ?? "").trim();
+  const finalNote = hasFinal && finalQuote !== null ? `Final quote $${finalQuote.toLocaleString()}` : "";
+  const brokerNote = hasBroker && brokerFee !== null ? `Broker fee $${brokerFee.toLocaleString()}` : "";
+  const carrierNote = hasCarrier && carrierFee !== null ? `Carrier fee $${carrierFee.toLocaleString()}` : "";
   const pickupNote = pickedUpAt ? `Picked up ${when(pickedUpAt)}` : "";
   const etaNote = pickupEta ? `Pickup ETA ${when(pickupEta)}` : "";
   const deliveryNote = deliveryEta ? `Delivery ETA ${when(deliveryEta)}` : "";
@@ -887,7 +903,9 @@ app.post("/admin/orders/:id/status", async (c) => {
     id,
     status,
     user.email,
-    [note, pickupNote, etaNote, deliveryNote, deliveredNote, paidNote].filter(Boolean).join(" · "),
+    [note, pickupNote, etaNote, deliveryNote, deliveredNote, paidNote, finalNote, brokerNote, carrierNote]
+      .filter(Boolean)
+      .join(" · "),
     pickedUpAt,
     pickupEta,
     deliveryEta,
@@ -895,6 +913,15 @@ app.post("/admin/orders/:id/status", async (c) => {
     paidAmount,
     paymentMethod,
   );
+  if (hasFinal) {
+    await c.env.DB.prepare("UPDATE orders SET final_quote = ? WHERE id = ?").bind(finalQuote, id).run();
+  }
+  if (hasBroker) {
+    await c.env.DB.prepare("UPDATE orders SET broker_fee = ? WHERE id = ?").bind(brokerFee, id).run();
+  }
+  if (hasCarrier) {
+    await c.env.DB.prepare("UPDATE orders SET carrier_fee = ? WHERE id = ?").bind(carrierFee, id).run();
+  }
   if (order) {
     const fromLabel = isOrderStatus(order.status) ? STATUS_LABELS[order.status] : order.status;
     notify(
@@ -961,6 +988,9 @@ app.post("/admin/orders/:id/edit", async (c) => {
     ready_date: /^\d{4}-\d{2}-\d{2}$/.test(text("ready_date")) ? text("ready_date") : null,
     distance_miles: Number.isFinite(distance) && distance >= 0 ? Math.round(distance) : old.distance_miles,
     price: Number.isFinite(price) && price >= 0 ? Math.round(price) : old.price,
+    final_quote: moneyOrNull(text("final_quote")),
+    broker_fee: moneyOrNull(text("broker_fee")),
+    carrier_fee: moneyOrNull(text("carrier_fee")),
     notes: text("notes") || null,
     carrier_name: text("carrier_name") || null,
     carrier_mc: text("carrier_mc") || null,
@@ -1005,6 +1035,9 @@ app.post("/admin/orders/:id/edit", async (c) => {
     ready_date: "Pickup date",
     distance_miles: "Distance",
     price: "Price",
+    final_quote: "Final quote",
+    broker_fee: "Broker fee",
+    carrier_fee: "Carrier fee",
     notes: "Customer notes",
     carrier_name: "Carrier company",
     carrier_mc: "MC number",
@@ -1025,7 +1058,15 @@ app.post("/admin/orders/:id/edit", async (c) => {
     if (key === "condition") return conditionLabel(String(value));
     if (key === "transport_type") return value === "enclosed" ? "Enclosed trailer" : "Open trailer";
     if (key === "distance_miles") return `${Number(value).toLocaleString()} mi`;
-    if (key === "price" || key === "paid_amount") return `$${Number(value).toLocaleString()}`;
+    if (
+      key === "price" ||
+      key === "paid_amount" ||
+      key === "final_quote" ||
+      key === "broker_fee" ||
+      key === "carrier_fee"
+    ) {
+      return `$${Number(value).toLocaleString()}`;
+    }
     if (key === "picked_up_at" || key === "pickup_eta" || key === "delivery_eta" || key === "delivered_at") {
       return when(Number(value));
     }
@@ -1052,7 +1093,7 @@ app.post("/admin/orders/:id/edit", async (c) => {
       vehicle_year=?, vehicle_make=?, vehicle_model=?, transport_type=?, condition=?, vin=?,
       origin_street=?, origin_city=?, origin_state=?, origin_zip=?, origin_contact=?, origin_phone=?,
       dest_street=?, dest_city=?, dest_state=?, dest_zip=?, dest_contact=?, dest_phone=?,
-      ready_date=?, distance_miles=?, price=?, notes=?,
+      ready_date=?, distance_miles=?, price=?, final_quote=?, broker_fee=?, carrier_fee=?, notes=?,
       carrier_name=?, carrier_mc=?, carrier_company_phone=?, carrier_email=?, driver_name=?, carrier_phone=?,
       paid_amount=?, payment_method=?, picked_up_at=?, pickup_eta=?, delivery_eta=?, delivered_at=?,
       updated_at=?
@@ -1083,6 +1124,9 @@ app.post("/admin/orders/:id/edit", async (c) => {
       newValues.ready_date,
       newValues.distance_miles,
       newValues.price,
+      newValues.final_quote,
+      newValues.broker_fee,
+      newValues.carrier_fee,
       newValues.notes,
       newValues.carrier_name,
       newValues.carrier_mc,
