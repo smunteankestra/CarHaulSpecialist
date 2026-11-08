@@ -361,7 +361,7 @@ function paymentFields(order: OrderRow): string {
   return `<p class="form-section form-section-date">Payment</p>
       <div class="field-row">
         <label class="field"><span>Amount (USD)</span><input name="paid_amount" type="number" min="0" step="1" value="${order.paid_amount ?? order.price}"></label>
-        <label class="field"><span>Payment method</span><select name="payment_method">
+        <label class="field"><span>Payment method</span><select name="payment_method" class="payment-select">
           <option value="">Select method</option>
           ${methods.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
         </select></label>
@@ -480,7 +480,7 @@ function orderEditForm(order: OrderRow, next: string): string {
             value: order.delivered_at,
           })}</td></tr>
           <tr><th>Paid amount</th><td><input name="paid_amount" type="number" min="0" value="${order.paid_amount ?? ""}" placeholder="0"></td></tr>
-          <tr><th>Payment method</th><td><select name="payment_method">
+          <tr><th>Payment method</th><td><select name="payment_method" class="payment-select">
             <option value="">Select method</option>
             ${methods.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
           </select></td></tr>
