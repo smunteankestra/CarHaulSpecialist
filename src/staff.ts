@@ -1,6 +1,6 @@
 import { ROLE_LABELS, listUsers, type Role } from "./users.ts";
 
-export type StaffPeriod = "day" | "week" | "month";
+export type StaffPeriod = "day" | "week" | "month" | "year";
 export type StaffMetric = "actions" | "status" | "deliveries" | "edits" | "revenue";
 
 export interface StaffBucket {
@@ -25,6 +25,7 @@ export interface StaffSeries {
   totalRevenue: number;
   orders: number;
   lastActivity: number | null;
+  comparison: { today: number; week: number; month: number; year: number };
 }
 
 export interface StaffPerformance {
@@ -69,6 +70,7 @@ function startOfWeek(date: Date): Date {
 }
 
 function bucketKey(date: Date, period: StaffPeriod): string {
+  if (period === "year") return String(date.getUTCFullYear());
   if (period === "month") return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}`;
   if (period === "week") return isoDate(startOfWeek(date));
   return isoDate(date);
@@ -77,6 +79,15 @@ function bucketKey(date: Date, period: StaffPeriod): string {
 function buildBuckets(period: StaffPeriod): { buckets: StaffBucket[]; since: number } {
   const now = new Date();
   const buckets: StaffBucket[] = [];
+
+  if (period === "year") {
+    const currentYear = now.getUTCFullYear();
+    const firstYear = currentYear - 4;
+    for (let year = firstYear; year <= currentYear; year += 1) {
+      buckets.push({ key: String(year), label: String(year) });
+    }
+    return { buckets, since: Date.UTC(firstYear, 0, 1) };
+  }
 
   if (period === "month") {
     const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
@@ -120,7 +131,7 @@ function buildBuckets(period: StaffPeriod): { buckets: StaffBucket[]; since: num
 }
 
 export function parseStaffPeriod(value: string | undefined): StaffPeriod {
-  return value === "week" || value === "month" ? value : "day";
+  return value === "week" || value === "month" || value === "year" ? value : "day";
 }
 
 export function parseStaffMetric(value: string | undefined): StaffMetric {
@@ -143,6 +154,21 @@ export async function loadStaffPerformance(
       )
       .bind(since)
       .all<{ order_id: number; kind: string; actor: string; created_at: number }>()
+  ).results;
+
+  const now = new Date();
+  const todayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const weekStart = startOfWeek(now).getTime();
+  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const yearStart = Date.UTC(now.getUTCFullYear(), 0, 1);
+
+  const comparisonEvents = (
+    await db
+      .prepare(
+        "SELECT kind, actor, created_at FROM order_events WHERE created_at >= ? AND actor <> 'customer'",
+      )
+      .bind(yearStart)
+      .all<{ kind: string; actor: string; created_at: number }>()
   ).results;
 
   const paidOrders = (
@@ -197,6 +223,7 @@ export async function loadStaffPerformance(
       totalRevenue: 0,
       orders: 0,
       lastActivity: null,
+      comparison: { today: 0, week: 0, month: 0, year: 0 },
     };
     seriesMap.set(key, series);
     orderSets.set(key, new Set());
@@ -235,6 +262,13 @@ export async function loadStaffPerformance(
     const paid = latestPaid.get(order.id);
     const actor = (paid?.actor || "unattributed").toLowerCase();
     const at = paid?.created_at ?? order.updated_at;
+    if (metric === "revenue" && at >= yearStart) {
+      const comparisonSeries = ensureSeries(actor, actor === "unattributed" ? "Unattributed" : undefined);
+      comparisonSeries.comparison.year += order.paid_amount;
+      if (at >= monthStart) comparisonSeries.comparison.month += order.paid_amount;
+      if (at >= weekStart) comparisonSeries.comparison.week += order.paid_amount;
+      if (at >= todayStart) comparisonSeries.comparison.today += order.paid_amount;
+    }
     if (at < since) continue;
     const index = bucketIndex.get(bucketKey(new Date(at), period));
     if (index === undefined) continue;
@@ -243,6 +277,25 @@ export async function loadStaffPerformance(
     series.totalRevenue += order.paid_amount;
     orderSets.get(actor)?.add(order.id);
     series.lastActivity = Math.max(series.lastActivity ?? 0, at);
+  }
+
+  const qualifies = (kind: string): boolean => {
+    if (metric === "actions") return true;
+    if (metric === "status") return STATUS_KINDS.has(kind);
+    if (metric === "deliveries") return kind === "delivered";
+    if (metric === "edits") return kind === "edited";
+    return false;
+  };
+
+  for (const event of comparisonEvents) {
+    const actor = String(event.actor || "").toLowerCase();
+    if (!actor || actor === "customer") continue;
+    if (!qualifies(event.kind)) continue;
+    const series = ensureSeries(actor);
+    series.comparison.year += 1;
+    if (event.created_at >= monthStart) series.comparison.month += 1;
+    if (event.created_at >= weekStart) series.comparison.week += 1;
+    if (event.created_at >= todayStart) series.comparison.today += 1;
   }
 
   for (const [email, set] of orderSets) {

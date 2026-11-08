@@ -13,6 +13,7 @@ const PERIOD_LABELS: Record<StaffPeriod, string> = {
   day: "Day",
   week: "Week",
   month: "Month",
+  year: "Year",
 };
 
 const METRIC_LABELS: Record<StaffMetric, string> = {
@@ -142,6 +143,22 @@ export function staffPerformancePage(data: StaffPerformance, viewer: UserRow): s
     ? [{ name: "Revenue", color: "#f26a1b", values: revenueValues }]
     : [];
 
+  const formatComparison = (value: number) =>
+    data.metric === "revenue" ? money(value) : value.toLocaleString();
+  const comparisonRows = [...data.series]
+    .sort((a, b) => b.comparison.year - a.comparison.year || b.comparison.month - a.comparison.month)
+    .map(
+      (item) => `<tr>
+      <td>${esc(item.name)}<br><span class="muted small">${esc(item.email)}</span></td>
+      <td>${esc(item.role)}</td>
+      <td>${formatComparison(item.comparison.today)}</td>
+      <td>${formatComparison(item.comparison.week)}</td>
+      <td>${formatComparison(item.comparison.month)}</td>
+      <td>${formatComparison(item.comparison.year)}</td>
+    </tr>`,
+    )
+    .join("");
+
   const tableRows = [...data.series]
     .sort((a, b) => b.totalActions - a.totalActions || b.totalRevenue - a.totalRevenue)
     .map(
@@ -202,6 +219,13 @@ export function staffPerformancePage(data: StaffPerformance, viewer: UserRow): s
   </div>
 
   <h2 class="section-title mt">Staff comparison</h2>
+  <p class="muted small">${METRIC_LABELS[data.metric]} — today, this week, this month and this year.</p>
+  <table class="table">
+    <thead><tr><th>Staff</th><th>Role</th><th>Today</th><th>This week</th><th>This month</th><th>This year</th></tr></thead>
+    <tbody>${comparisonRows}</tbody>
+  </table>
+
+  <h3 class="section-title mt">Selected period totals</h3>
   <table class="table">
     <thead><tr><th>Staff</th><th>Role</th><th>Actions</th><th>Status</th><th>Deliveries</th><th>Edits</th><th>Orders</th><th>Revenue</th><th>Last activity</th></tr></thead>
     <tbody>${tableRows}</tbody>
