@@ -961,10 +961,14 @@ app.post("/admin/orders/:id/edit", async (c) => {
     carrier_phone: text("carrier_phone") || null,
     paid_amount: paidAmount,
     payment_method: paymentMethod,
-    picked_up_at: parseDateTime(body, "edit_picked_up") ?? old.picked_up_at,
-    pickup_eta: parseDateTime(body, "edit_pickup_eta") ?? old.pickup_eta,
-    delivery_eta: parseDateTime(body, "edit_delivery_eta") ?? old.delivery_eta,
-    delivered_at: parseDateTime(body, "edit_delivered") ?? old.delivered_at,
+    picked_up_at:
+      text("edit_picked_up_set") === "1" ? (parseDateTime(body, "edit_picked_up") ?? old.picked_up_at) : null,
+    pickup_eta:
+      text("edit_pickup_eta_set") === "1" ? (parseDateTime(body, "edit_pickup_eta") ?? old.pickup_eta) : null,
+    delivery_eta:
+      text("edit_delivery_eta_set") === "1" ? (parseDateTime(body, "edit_delivery_eta") ?? old.delivery_eta) : null,
+    delivered_at:
+      text("edit_delivered_set") === "1" ? (parseDateTime(body, "edit_delivered") ?? old.delivered_at) : null,
   };
 
   const labels: Record<keyof typeof newValues, string> = {

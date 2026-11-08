@@ -444,7 +444,7 @@ function orderEditForm(order: OrderRow, next: string): string {
             <input name="dest_contact" value="${esc(order.dest_contact ?? "")}" placeholder="Contact">
             <input name="dest_phone" value="${esc(order.dest_phone ?? "")}" placeholder="Phone">
           </div></td></tr>
-          <tr><th>Picked up at</th><td>${timeSelects({
+          <tr><th>Picked up at</th><td><label class="edit-set"><input type="checkbox" name="edit_picked_up_set" value="1"${order.picked_up_at ? " checked" : ""}> Set</label>${timeSelects({
             monthName: "edit_picked_up_month",
             dayName: "edit_picked_up_day",
             yearName: "edit_picked_up_year",
@@ -453,7 +453,7 @@ function orderEditForm(order: OrderRow, next: string): string {
             ampmName: "edit_picked_up_ampm",
             value: order.picked_up_at,
           })}</td></tr>
-          <tr><th>Pickup ETA</th><td>${timeSelects({
+          <tr><th>Pickup ETA</th><td><label class="edit-set"><input type="checkbox" name="edit_pickup_eta_set" value="1"${order.pickup_eta ? " checked" : ""}> Set</label>${timeSelects({
             monthName: "edit_pickup_eta_month",
             dayName: "edit_pickup_eta_day",
             yearName: "edit_pickup_eta_year",
@@ -462,7 +462,7 @@ function orderEditForm(order: OrderRow, next: string): string {
             ampmName: "edit_pickup_eta_ampm",
             value: order.pickup_eta,
           })}</td></tr>
-          <tr><th>Delivery ETA</th><td>${timeSelects({
+          <tr><th>Delivery ETA</th><td><label class="edit-set"><input type="checkbox" name="edit_delivery_eta_set" value="1"${order.delivery_eta ? " checked" : ""}> Set</label>${timeSelects({
             monthName: "edit_delivery_eta_month",
             dayName: "edit_delivery_eta_day",
             yearName: "edit_delivery_eta_year",
@@ -471,7 +471,7 @@ function orderEditForm(order: OrderRow, next: string): string {
             ampmName: "edit_delivery_eta_ampm",
             value: order.delivery_eta,
           })}</td></tr>
-          <tr><th>Delivered at</th><td>${timeSelects({
+          <tr><th>Delivered at</th><td><label class="edit-set"><input type="checkbox" name="edit_delivered_set" value="1"${order.delivered_at ? " checked" : ""}> Set</label>${timeSelects({
             monthName: "edit_delivered_month",
             dayName: "edit_delivered_day",
             yearName: "edit_delivered_year",
@@ -663,6 +663,17 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
         .join("")}</div>`
       : ""}
 
+    ${events.length
+      ? `<h3 class="section-title mt">History</h3>
+    <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${events
+        .slice(-8)
+        .map(
+          (event) =>
+            `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(eventLabel(event.kind))}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
+        )
+        .join("")}</tbody></table>`
+      : ""}
+
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
       <input type="hidden" name="next" value="${esc(anchor)}">
@@ -689,17 +700,6 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
       </div>
       <button class="btn btn-accent" type="submit">Assign carrier</button>
     </form>`}
-
-    ${events.length
-      ? `<h3 class="section-title mt">History</h3>
-    <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${events
-        .slice(-8)
-        .map(
-          (event) =>
-            `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(eventLabel(event.kind))}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
-        )
-        .join("")}</tbody></table>`
-      : ""}
 
     <div class="modal-actions mt">
       <a class="btn btn-ghost" href="/admin/orders/${order.id}">Open full record</a>
