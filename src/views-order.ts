@@ -290,6 +290,11 @@ function pickupEtaFields(order: OrderRow): string {
   });
 }
 
+function statusTimeFields(order: OrderRow): string {
+  if (order.status === "quoted") return "";
+  return `${pickupFields(order)}${pickupEtaFields(order)}`;
+}
+
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
   const done = new Set(events.map((event) => event.kind));
   const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
@@ -392,8 +397,7 @@ function orderModal(order: OrderRow): string {
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
       <input type="hidden" name="next" value="${esc(anchor)}">
-      ${pickupFields(order)}
-      ${pickupEtaFields(order)}
+      ${statusTimeFields(order)}
       <div class="status-actions">${ORDER_STATUSES.map(
     (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
   ).join("")}</div>
@@ -529,8 +533,7 @@ export function adminOrderPage(
       (value) => `<option value="${value}"${order.status === value ? " selected" : ""}>${esc(STATUS_LABELS[value])}</option>`,
     ).join("")}</select>
       </label>
-      ${pickupFields(order)}
-      ${pickupEtaFields(order)}
+      ${statusTimeFields(order)}
       <label class="field"><span>Note</span><input name="note" placeholder="Optional"></label>
       <button class="btn btn-accent" type="submit">Save status</button>
     </form>
