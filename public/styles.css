@@ -149,7 +149,7 @@ p {
 
 .hero-grid {
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  grid-template-columns: 0.9fr 1.1fr;
   gap: 2.5rem;
   align-items: start;
 }
@@ -2110,10 +2110,6 @@ main {
 }
 
 /* keep long date labels inside the hero form */
-.hero-grid {
-  grid-template-columns: 0.9fr 1.1fr;
-}
-
 .field {
   min-width: 0;
 }
@@ -2138,4 +2134,20 @@ main {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
+}
+
+/* keep the custom dropdown inside the field on mobile */
+@media (max-width: 640px) {
+  .pretty-select-list {
+    left: 0;
+    right: auto;
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+  }
+
+  .pretty-select-option {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
