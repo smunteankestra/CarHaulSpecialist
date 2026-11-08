@@ -816,7 +816,7 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false, phot
     .join("");
 
   return layout({
-    title: "Leads — Bond Auto Transport",
+    title: "Quotes — Bond Auto Transport",
     description: "Dispatch console.",
     body: `
 <section class="wrap section" id="quotes">
