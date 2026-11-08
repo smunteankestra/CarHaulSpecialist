@@ -348,6 +348,14 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   }
   var selector = 'input[name="phone"], input[name="origin_phone"], input[name="dest_phone"], input[name="customer_phone"], input[name="carrier_phone"], input[name="carrier_company_phone"], input[autocomplete="tel"]';
   document.querySelectorAll(selector).forEach(function (input) {
+    input.addEventListener("keydown", function (event) {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (input.value.trim().startsWith("+")) return;
+      if (event.key.length !== 1 || event.key < "0" || event.key > "9") return;
+      var digits = input.value.replace(/\\D/g, "");
+      var selected = input.selectionEnd - input.selectionStart;
+      if (digits.length >= 10 && selected === 0) event.preventDefault();
+    });
     input.addEventListener("input", function () {
       if (input.value.trim().startsWith("+")) return;
       var caret = input.selectionStart;
@@ -367,6 +375,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
             }
           }
         }
+        if (count < digitsBefore) position = formatted.length;
       }
       input.setSelectionRange(position, position);
     });
