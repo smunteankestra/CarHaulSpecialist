@@ -2093,3 +2093,8 @@ main {
   width: max-content;
   max-width: min(320px, calc(100vw - 2rem));
 }
+
+.date-picker.align-right .date-popover {
+  left: auto;
+  right: 0;
+}

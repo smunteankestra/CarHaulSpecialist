@@ -212,7 +212,14 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
       prev.disabled = !allowPast && previousLast < today;
     }
 
+    function positionPopover() {
+      var rect = root.getBoundingClientRect();
+      var width = Math.min(300, window.innerWidth - 32);
+      root.classList.toggle("align-right", rect.left + width > window.innerWidth - 12);
+    }
+
     function open() {
+      positionPopover();
       root.classList.add("is-open");
       trigger.setAttribute("aria-expanded", "true");
       render();
@@ -254,6 +261,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape") close();
     });
+    window.addEventListener("resize", positionPopover);
     updateLabel();
   });
 })();
