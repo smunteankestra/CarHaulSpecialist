@@ -2219,3 +2219,13 @@ main {
 .photo-remove:hover {
   background: #8f1d14;
 }
+
+.photo-warning {
+  margin: 0.45rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #f0d39a;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #8a5a00;
+  font-size: 0.8rem;
+}

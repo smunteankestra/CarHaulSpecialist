@@ -517,6 +517,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     var preview = upload ? upload.querySelector(".photo-preview") : null;
     if (!preview) return;
     var count = upload.querySelector(".photo-count");
+    var warning = upload.querySelector(".photo-warning");
     var error = upload.querySelector(".photo-error");
     var urls = [];
 
@@ -554,6 +555,10 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
         input.files = transfer.files;
       } catch (e) {
         return;
+      }
+      if (warning) {
+        warning.hidden = true;
+        warning.textContent = "";
       }
       if (error) {
         error.hidden = true;
@@ -604,6 +609,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
       var selected = Array.prototype.slice.call(input.files || []);
       var valid = [];
       var errors = [];
+      var notices = [];
       selected.forEach(function (file) {
         if (!isSupported(file)) {
           errors.push(file.name + " is not a JPEG, PNG, WebP or HEIC image.");
@@ -614,7 +620,7 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
         }
       });
       if (valid.length > 5) {
-        errors.push("You can upload up to 5 photos. Only the first 5 will be used.");
+        notices.push("Only 5 photos can be selected. The first 5 are kept.");
         valid = valid.slice(0, 5);
       }
       if (valid.length !== selected.length) {
@@ -625,6 +631,10 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
         } catch (e) {
           // Older browser: keep the selection and let the server validate.
         }
+      }
+      if (warning) {
+        warning.hidden = notices.length === 0;
+        warning.textContent = notices.join(" ");
       }
       if (error) {
         error.hidden = errors.length === 0;
@@ -762,6 +772,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
       </label>
       <div class="photo-preview" hidden></div>
       <p class="photo-count muted small" hidden></p>
+      <p class="photo-warning" role="status" hidden></p>
       <p class="photo-error form-error" role="alert" hidden></p>
     </div>
   </div>

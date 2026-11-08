@@ -184,6 +184,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
         </label>
         <div class="photo-preview" hidden></div>
         <p class="photo-count muted small" hidden></p>
+        <p class="photo-warning" role="status" hidden></p>
         <p class="photo-error form-error" role="alert" hidden></p>
       </div>
 
