@@ -292,7 +292,7 @@ function pickupEtaFields(order: OrderRow): string {
 
 function statusTimeFields(order: OrderRow): string {
   if (order.status === "quoted") return "";
-  if (order.status === "confirmed") return pickupEtaFields(order);
+  if (order.status === "confirmed" || order.status === "assigned") return pickupEtaFields(order);
   return `${pickupFields(order)}${pickupEtaFields(order)}`;
 }
 
