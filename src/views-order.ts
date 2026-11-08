@@ -197,12 +197,13 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
   const rows = orders
     .map(
       (order) => `<tr>
-      <td><a href="/admin/orders/${order.id}">${esc(order.number)}</a></td>
+      <td><a class="row-link" href="/admin/orders/${order.id}">${esc(order.number)}</a></td>
       <td>${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_phone)}</span></td>
       <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}</span></td>
       <td>${money(order.price)}</td>
       <td>${statusBadge(order.status)}</td>
       <td class="muted small">${when(order.created_at)}</td>
+      <td class="muted">→</td>
     </tr>`,
     )
     .join("");
@@ -228,13 +229,18 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
   ${
     orders.length === 0
       ? `<p class="muted">No orders in this view.</p>`
-      : `<table class="table"><thead><tr><th>Order</th><th>Customer</th><th>Route</th><th>Price</th><th>Status</th><th>Created</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<table class="table rows-clickable"><thead><tr><th>Order</th><th>Customer</th><th>Route</th><th>Price</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
   }
 </section>`,
   });
 }
 
-export function adminOrderPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
+export function adminOrderPage(
+  order: OrderRow,
+  events: OrderEventRow[],
+  invoices: InvoiceRow[],
+  baseUrl = "",
+): string {
   const eventRows = events
     .map(
       (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
@@ -245,6 +251,7 @@ export function adminOrderPage(order: OrderRow, events: OrderEventRow[], invoice
     .map(
       (invoice) => `<tr>
       <td><a href="/admin/invoices/${invoice.id}">${esc(invoice.number)}</a></td>
+      <td>${esc(invoice.description)}</td>
       <td>${money(invoice.amount)}</td>
       <td>${esc(invoice.status)}</td>
       <td class="muted small">${when(invoice.issued_at)}</td>
@@ -257,6 +264,10 @@ export function adminOrderPage(order: OrderRow, events: OrderEventRow[], invoice
     )
     .join("");
 
+  const vehicle = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—";
+  const row = (label: string, value: string) =>
+    `<tr><th>${esc(label)}</th><td>${value || '<span class="muted">—</span>'}</td></tr>`;
+
   return layout({
     title: `${order.number} — Car Haul Specialist`,
     description: "Order detail.",
@@ -264,33 +275,43 @@ export function adminOrderPage(order: OrderRow, events: OrderEventRow[], invoice
 <section class="wrap section">
   <div class="admin-head">
     <div>
-      <p class="eyebrow"><a href="/admin/orders">Orders</a></p>
+      <p class="eyebrow"><a href="/admin/orders">← All orders</a></p>
       <h1 class="page-title">${esc(order.number)} ${statusBadge(order.status)}</h1>
-      <p class="muted small">Tracking link: <code>/track/${esc(order.token)}</code></p>
+      <p class="muted small">Booked ${when(order.created_at)} · updated ${when(order.updated_at)}</p>
     </div>
     <div class="admin-user"><a class="btn btn-ghost" href="/track/${esc(order.token)}">Customer view</a></div>
   </div>
 
-  <div class="cards two-up">
-    <div class="card">
-      <h3>Customer</h3>
-      <p>${esc(order.customer_name)}</p>
-      <p class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</p>
-      <h3 class="mt">Vehicle</h3>
-      <p>${esc([order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—")}</p>
-      <p class="muted small">VIN ${esc(order.vin ?? "—")} · ${esc(order.transport_type)} · ${esc(order.condition)}</p>
-    </div>
-    <div class="card">
-      <h3>Route</h3>
-      <p><strong>Pickup</strong><br>${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(order.origin_state ?? "")} ${esc(order.origin_zip)}</p>
-      <p class="muted small">${esc(order.origin_contact ?? "")} · ${esc(order.origin_phone ?? "")}</p>
-      <p><strong>Delivery</strong><br>${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(order.dest_state ?? "")} ${esc(order.dest_zip)}</p>
-      <p class="muted small">${esc(order.dest_contact ?? "")} · ${esc(order.dest_phone ?? "")}</p>
-      <p class="muted small">${order.distance_miles ? `${order.distance_miles.toLocaleString()} miles · ` : ""}${money(order.price)} · ready ${esc(order.ready_date ?? "—")}</p>
-    </div>
+  <div class="card tracking-card">
+    <h3>Tracking link</h3>
+    <input class="copy-field" readonly value="${esc(baseUrl)}/track/${esc(order.token)}" onclick="this.select()">
+    <p class="muted small">Send this to the customer. No password needed; it shows status, carrier and invoices only.</p>
   </div>
 
-  <div class="cards two-up mt">
+  <h2 class="section-title mt">Full record</h2>
+  <table class="table detail-table">
+    <tbody>
+      ${row("Order", esc(order.number))}
+      ${row("Status", statusBadge(order.status))}
+      ${row("Created", when(order.created_at))}
+      ${row("Last updated", when(order.updated_at))}
+      ${row("Customer", `${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</span>`)}
+      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${esc(order.condition === "non-running" ? "not running" : "runs and drives")}</span>`)}
+      ${row("VIN", esc(order.vin ?? ""))}
+      ${row("Pickup address", `${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(order.origin_state ?? "")} ${esc(order.origin_zip)}`)}
+      ${row("Pickup contact", `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`)}
+      ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(order.dest_state ?? "")} ${esc(order.dest_zip)}`)}
+      ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
+      ${row("Ready date", esc(order.ready_date ?? ""))}
+      ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
+      ${row("Price", `<strong>${money(order.price)}</strong>`)}
+      ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}<br><span class="muted small">${esc(order.carrier_mc ?? "")} · ${esc(order.carrier_phone ?? "")}</span>` : "")}
+      ${row("Customer notes", esc(order.notes ?? ""))}
+    </tbody>
+  </table>
+
+  <h2 class="section-title mt">Actions</h2>
+  <div class="cards two-up">
     <form class="card quote-form" method="post" action="/admin/orders/${order.id}/status">
       <h3>Change status</h3>
       <label class="field"><span>Status</span>
@@ -329,6 +350,7 @@ export function adminOrderPage(order: OrderRow, events: OrderEventRow[], invoice
       <h3>Internal note</h3>
       <label class="field"><span>Note</span><textarea name="note" rows="3" required></textarea></label>
       <button class="btn btn-ghost" type="submit">Add note</button>
+      <p class="form-note">Internal only — never shown on the customer tracking page.</p>
     </form>
   </div>
 
@@ -336,7 +358,7 @@ export function adminOrderPage(order: OrderRow, events: OrderEventRow[], invoice
   ${
     invoices.length === 0
       ? `<p class="muted">No invoices yet.</p>`
-      : `<table class="table"><thead><tr><th>Number</th><th>Amount</th><th>Status</th><th>Issued</th><th></th></tr></thead><tbody>${invoiceRows}</tbody></table>`
+      : `<table class="table"><thead><tr><th>Number</th><th>Description</th><th>Amount</th><th>Status</th><th>Issued</th><th></th></tr></thead><tbody>${invoiceRows}</tbody></table>`
   }
 
   <h2 class="section-title mt">History</h2>

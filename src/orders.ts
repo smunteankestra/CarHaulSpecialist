@@ -76,6 +76,7 @@ export interface OrderRow {
   id: number;
   number: string;
   token: string;
+  lead_id: number | null;
   customer_name: string;
   customer_email: string;
   customer_phone: string;

@@ -377,7 +377,7 @@ app.get("/admin/orders/:id", async (c) => {
     c.env.DB.prepare("SELECT * FROM invoices WHERE order_id = ? ORDER BY id DESC").bind(id).all<InvoiceRow>(),
   ]);
 
-  return c.html(adminOrderPage(order, events, invoices));
+  return c.html(adminOrderPage(order, events, invoices, new URL(c.req.url).origin));
 });
 
 app.post("/admin/orders/:id/status", async (c) => {

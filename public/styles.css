@@ -736,3 +736,53 @@ a.card:hover {
   display: inline;
   margin: 0 0.25rem 0 0;
 }
+
+/* clickable order rows */
+.rows-clickable tbody tr {
+  position: relative;
+  cursor: pointer;
+}
+
+.rows-clickable tbody tr:hover {
+  background: #f6f9fc;
+}
+
+.row-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.row-link {
+  font-weight: 650;
+}
+
+/* order detail */
+.detail-table th {
+  width: 190px;
+  background: #f7fafc;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  vertical-align: top;
+}
+
+.detail-table td {
+  vertical-align: top;
+}
+
+.tracking-card {
+  margin-top: 1.2rem;
+}
+
+.copy-field {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #d7e0e8;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: #fbfdff;
+}
