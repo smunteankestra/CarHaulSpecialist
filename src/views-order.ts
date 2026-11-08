@@ -233,7 +233,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       <p>${esc([order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "Vehicle")}</p>
       <p class="muted small">${esc(order.transport_type)} trailer · ${conditionTag(order.condition)}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</p>
       <p class="muted small">Price ${money(order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
-      ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
+      ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.driver_name ? ` · Driver: ${esc(order.driver_name)}` : ""}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
     </div>
     <div class="card">
       <h3>Progress</h3>
@@ -260,6 +260,8 @@ function orderDetailRows(order: OrderRow): string {
   const vehicle = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—";
   const row = (label: string, value: string) =>
     `<tr><th>${esc(label)}</th><td>${value || '<span class="muted">—</span>'}</td></tr>`;
+  const carrierLine = [order.carrier_mc, order.carrier_company_phone, order.carrier_email].filter(Boolean).join(" · ");
+  const driverLine = [order.driver_name, order.carrier_phone].filter(Boolean).join(" · ");
 
   return `
       ${row("Order", esc(order.number))}
@@ -276,7 +278,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
-      ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}<br><span class="muted small">${esc(order.carrier_mc ?? "")} · ${esc(order.carrier_phone ?? "")}</span>` : "")}
+      ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}${carrierLine ? `<br><span class="muted small">${esc(carrierLine)}</span>` : ""}${driverLine ? `<br><span class="muted small">Driver: ${esc(driverLine)}</span>` : ""}` : "")}
       ${row("Customer notes", esc(order.notes ?? ""))}
   `;
 }
@@ -310,8 +312,15 @@ function orderModal(order: OrderRow): string {
     <form class="quote-form" method="post" action="/admin/orders/${order.id}/carrier">
       <input type="hidden" name="next" value="${esc(anchor)}">
       <div class="field-row">
-        <label class="field"><span>Carrier name</span><input name="carrier_name" required value="${esc(order.carrier_name ?? "")}"></label>
+        <label class="field"><span>Company</span><input name="carrier_name" required value="${esc(order.carrier_name ?? "")}"></label>
         <label class="field"><span>MC number</span><input name="carrier_mc" value="${esc(order.carrier_mc ?? "")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Company phone</span><input name="carrier_company_phone" value="${esc(order.carrier_company_phone ?? "")}"></label>
+        <label class="field"><span>Company email</span><input name="carrier_email" type="email" value="${esc(order.carrier_email ?? "")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Driver name</span><input name="driver_name" value="${esc(order.driver_name ?? "")}"></label>
         <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
       </div>
       <button class="btn btn-accent" type="submit">Assign carrier</button>
@@ -435,12 +444,17 @@ export function adminOrderPage(
 
     <form class="card quote-form" method="post" action="/admin/orders/${order.id}/carrier">
       <h3>Assign carrier</h3>
-      <label class="field"><span>Carrier name</span><input name="carrier_name" required value="${esc(order.carrier_name ?? "")}"></label>
+      <label class="field"><span>Company</span><input name="carrier_name" required value="${esc(order.carrier_name ?? "")}"></label>
       <div class="field-row">
         <label class="field"><span>MC number</span><input name="carrier_mc" value="${esc(order.carrier_mc ?? "")}"></label>
-        <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
+        <label class="field"><span>Company phone</span><input name="carrier_company_phone" value="${esc(order.carrier_company_phone ?? "")}"></label>
       </div>
-      <button class="btn btn-accent" type="submit">Assign</button>
+      <div class="field-row">
+        <label class="field"><span>Company email</span><input name="carrier_email" type="email" value="${esc(order.carrier_email ?? "")}"></label>
+        <label class="field"><span>Driver name</span><input name="driver_name" value="${esc(order.driver_name ?? "")}"></label>
+      </div>
+      <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
+      <button class="btn btn-accent" type="submit">Assign carrier</button>
     </form>
   </div>
 

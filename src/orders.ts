@@ -107,6 +107,9 @@ export interface OrderRow {
   carrier_name: string | null;
   carrier_mc: string | null;
   carrier_phone: string | null;
+  carrier_company_phone: string | null;
+  carrier_email: string | null;
+  driver_name: string | null;
   notes: string | null;
   created_at: number;
   updated_at: number;
@@ -213,19 +216,43 @@ export async function setStatus(
 export async function assignCarrier(
   db: D1Database,
   orderId: number,
-  carrier: { name: string; mc: string; phone: string },
+  carrier: {
+    name: string;
+    mc: string;
+    companyPhone: string;
+    email: string;
+    driverName: string;
+    driverPhone: string;
+  },
   actor: string,
 ): Promise<void> {
   const now = Date.now();
   await db
     .prepare(
-      "UPDATE orders SET carrier_name = ?, carrier_mc = ?, carrier_phone = ?, status = 'assigned', updated_at = ? WHERE id = ?",
+      `UPDATE orders
+          SET carrier_name = ?, carrier_mc = ?, carrier_company_phone = ?, carrier_email = ?,
+              driver_name = ?, carrier_phone = ?, status = 'assigned', updated_at = ?
+        WHERE id = ?`,
     )
-    .bind(carrier.name, carrier.mc || null, carrier.phone || null, now, orderId)
+    .bind(
+      carrier.name,
+      carrier.mc || null,
+      carrier.companyPhone || null,
+      carrier.email || null,
+      carrier.driverName || null,
+      carrier.driverPhone || null,
+      now,
+      orderId,
+    )
     .run();
   await db
     .prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'assigned', ?, ?, ?)")
-    .bind(orderId, `${carrier.name}${carrier.mc ? ` (${carrier.mc})` : ""}`, actor, now)
+    .bind(
+      orderId,
+      `${carrier.name}${carrier.mc ? ` (${carrier.mc})` : ""}${carrier.driverName ? ` · driver ${carrier.driverName}` : ""}`,
+      actor,
+      now,
+    )
     .run();
 }
 

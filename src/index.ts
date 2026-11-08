@@ -527,7 +527,14 @@ app.post("/admin/orders/:id/carrier", async (c) => {
   await assignCarrier(
     c.env.DB,
     id,
-    { name, mc: String(body.carrier_mc ?? "").trim(), phone: String(body.carrier_phone ?? "").trim() },
+    {
+      name,
+      mc: String(body.carrier_mc ?? "").trim(),
+      companyPhone: String(body.carrier_company_phone ?? "").trim(),
+      email: String(body.carrier_email ?? "").trim(),
+      driverName: String(body.driver_name ?? "").trim(),
+      driverPhone: String(body.carrier_phone ?? "").trim(),
+    },
     user.email,
   );
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
