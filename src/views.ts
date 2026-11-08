@@ -331,10 +331,6 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   }
   var selector = 'input[name="phone"], input[name="origin_phone"], input[name="dest_phone"], input[name="customer_phone"], input[name="carrier_phone"], input[name="carrier_company_phone"], input[autocomplete="tel"]';
   document.querySelectorAll(selector).forEach(function (input) {
-    input.addEventListener("input", function () {
-      var formatted = formatPhone(input.value);
-      if (formatted !== input.value) input.value = formatted;
-    });
     input.addEventListener("blur", function () {
       var formatted = formatPhone(input.value);
       if (formatted !== input.value) input.value = formatted;
