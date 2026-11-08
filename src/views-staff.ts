@@ -6,6 +6,7 @@ interface ChartSeries {
   name: string;
   color: string;
   values: number[];
+  staff?: StaffSeries;
 }
 
 const PERIOD_LABELS: Record<StaffPeriod, string> = {
@@ -30,7 +31,12 @@ function niceMax(value: number): number {
   return step * power;
 }
 
-function barChart(buckets: StaffBucket[], series: ChartSeries[], format: "number" | "money"): string {
+function barChart(
+  buckets: StaffBucket[],
+  series: ChartSeries[],
+  format: "number" | "money",
+  metric: StaffMetric,
+): string {
   const width = 960;
   const height = 300;
   const left = 64;
@@ -65,7 +71,11 @@ function barChart(buckets: StaffBucket[], series: ChartSeries[], format: "number
           const x = groupX + seriesIndex * barWidth;
           const y = top + plotHeight - barHeight;
           const label = format === "money" ? money(value) : value.toLocaleString();
-          return `<rect x="${x}" y="${y}" width="${Math.max(1, barWidth - 1)}" height="${barHeight}" rx="2" fill="${item.color}"><title>${esc(`${bucket.label}: ${item.name} — ${label}`)}</title></rect>`;
+          const staff = item.staff;
+          const breakdown = staff
+            ? ` data-breakdown="1" data-email="${esc(staff.email)}" data-role="${esc(staff.role)}" data-actions="${staff.actions[bucketIndex] ?? 0}" data-status="${staff.status[bucketIndex] ?? 0}" data-deliveries="${staff.deliveries[bucketIndex] ?? 0}" data-edits="${staff.edits[bucketIndex] ?? 0}" data-revenue="${staff.revenue[bucketIndex] ?? 0}" data-orders="${staff.orders}"`
+            : "";
+          return `<rect x="${x}" y="${y}" width="${Math.max(1, barWidth - 1)}" height="${barHeight}" rx="2" fill="${item.color}" data-bucket="${esc(bucket.label)}" data-name="${esc(item.name)}" data-metric="${esc(metric)}" data-value="${value}"${breakdown} aria-label="${esc(`${bucket.label}: ${item.name} — ${label}`)}"></rect>`;
         })
         .join("");
     })
@@ -124,7 +134,7 @@ export function staffPerformancePage(data: StaffPerformance, viewer: UserRow): s
 
   const metricSeries = data.series
     .filter((item) => metricValues(item, data.metric).some((value) => value > 0))
-    .map((item) => ({ name: item.name, color: item.color, values: metricValues(item, data.metric) }));
+    .map((item) => ({ name: item.name, color: item.color, values: metricValues(item, data.metric), staff: item }));
   const revenueValues = data.buckets.map((_, index) =>
     data.series.reduce((sum, item) => sum + (item.revenue[index] ?? 0), 0),
   );
@@ -180,14 +190,14 @@ export function staffPerformancePage(data: StaffPerformance, viewer: UserRow): s
   <div class="card chart-card">
     <h3>${METRIC_LABELS[data.metric]} by staff per ${PERIOD_LABELS[data.period].toLowerCase()}</h3>
     ${metricSeries.length
-      ? `${barChart(data.buckets, metricSeries, data.metric === "revenue" ? "money" : "number")}${legend(metricSeries)}`
+      ? `${barChart(data.buckets, metricSeries, data.metric === "revenue" ? "money" : "number", data.metric)}${legend(metricSeries)}`
       : '<p class="muted">No activity in this period.</p>'}
   </div>
 
   <div class="card chart-card">
     <h3>Total revenue per ${PERIOD_LABELS[data.period].toLowerCase()}</h3>
     ${revenueSeries.length
-      ? barChart(data.buckets, revenueSeries, "money")
+      ? barChart(data.buckets, revenueSeries, "money", "revenue")
       : '<p class="muted">No paid orders in this period.</p>'}
   </div>
 

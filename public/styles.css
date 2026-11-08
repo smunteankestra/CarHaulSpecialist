@@ -2298,3 +2298,55 @@ main {
   font-weight: 700;
   text-align: center;
 }
+
+.chart-card {
+  position: relative;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 90;
+  max-width: 280px;
+  padding: 0.6rem 0.7rem;
+  background: #0b2230;
+  color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(11, 22, 32, 0.3);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -100%);
+  transition: opacity 0.12s ease;
+}
+
+.chart-tooltip.is-visible {
+  opacity: 1;
+}
+
+.chart-tooltip strong {
+  display: block;
+  font-size: 0.82rem;
+}
+
+.chart-tooltip .muted {
+  color: #b9c7d4;
+}
+
+.chart-tooltip dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.1rem 0.6rem;
+  margin: 0.35rem 0 0;
+}
+
+.chart-tooltip dt {
+  color: #b9c7d4;
+  font-weight: 400;
+}
+
+.chart-tooltip dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+}

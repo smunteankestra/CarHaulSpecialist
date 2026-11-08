@@ -664,6 +664,73 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
   });
 })();
 </script>
+<script>
+(function () {
+  var labels = { actions: "Actions", status: "Status changes", deliveries: "Deliveries", edits: "Edits", revenue: "Revenue" };
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, function (char) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
+    });
+  }
+  function money(value) { return "$" + Number(value || 0).toLocaleString(); }
+  function show(rect, event) {
+    var card = rect.closest(".chart-card");
+    if (!card) return;
+    var tip = card.querySelector(".chart-tooltip");
+    if (!tip) {
+      tip = document.createElement("div");
+      tip.className = "chart-tooltip";
+      card.appendChild(tip);
+    }
+    var data = rect.dataset;
+    var metric = data.metric || "actions";
+    var value = Number(data.value) || 0;
+    var html = "<strong>" + escapeHtml(data.name || "Revenue") + "</strong>";
+    if (data.email && data.email !== data.name) {
+      html += '<div class="muted">' + escapeHtml(data.email) + (data.role && data.role !== "—" ? " · " + escapeHtml(data.role) : "") + "</div>";
+    }
+    html += "<div>" + escapeHtml(data.bucket || "") + "</div>";
+    html += "<dl><dt>" + escapeHtml(labels[metric] || metric) + "</dt><dd>" + (metric === "revenue" ? money(value) : value.toLocaleString()) + "</dd>";
+    if (data.breakdown === "1") {
+      if (metric !== "actions") html += "<dt>Actions</dt><dd>" + (Number(data.actions) || 0).toLocaleString() + "</dd>";
+      if (metric !== "status") html += "<dt>Status changes</dt><dd>" + (Number(data.status) || 0).toLocaleString() + "</dd>";
+      if (metric !== "deliveries") html += "<dt>Deliveries</dt><dd>" + (Number(data.deliveries) || 0).toLocaleString() + "</dd>";
+      if (metric !== "edits") html += "<dt>Edits</dt><dd>" + (Number(data.edits) || 0).toLocaleString() + "</dd>";
+      if (metric !== "revenue") html += "<dt>Revenue</dt><dd>" + money(data.revenue) + "</dd>";
+      html += "<dt>Orders touched</dt><dd>" + (Number(data.orders) || 0).toLocaleString() + "</dd>";
+    }
+    html += "</dl>";
+    tip.innerHTML = html;
+    var cardRect = card.getBoundingClientRect();
+    var left;
+    var top;
+    if (event) {
+      left = event.clientX - cardRect.left;
+      top = event.clientY - cardRect.top - 10;
+    } else {
+      var bar = rect.getBoundingClientRect();
+      left = bar.left + bar.width / 2 - cardRect.left;
+      top = bar.top - cardRect.top - 10;
+    }
+    tip.style.left = Math.max(140, Math.min(left, cardRect.width - 140)) + "px";
+    tip.style.top = Math.max(10, top) + "px";
+    tip.classList.add("is-visible");
+  }
+  function hide(rect) {
+    var card = rect.closest(".chart-card");
+    var tip = card ? card.querySelector(".chart-tooltip") : null;
+    if (tip) tip.classList.remove("is-visible");
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".chart-svg rect[data-bucket]"), function (rect) {
+    rect.setAttribute("tabindex", "0");
+    rect.addEventListener("mouseenter", function (event) { show(rect, event); });
+    rect.addEventListener("mousemove", function (event) { show(rect, event); });
+    rect.addEventListener("mouseleave", function () { hide(rect); });
+    rect.addEventListener("focus", function () { show(rect); });
+    rect.addEventListener("blur", function () { hide(rect); });
+  });
+})();
+</script>
 </body>
 </html>`;
 }
