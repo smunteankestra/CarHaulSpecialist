@@ -159,15 +159,15 @@ function statusBadge(status: string): string {
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
   const done = new Set(events.map((event) => event.kind));
   const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
-  const timeline = CUSTOMER_STAGES.map((stage) => {
-    const reached =
+  const timeline = CUSTOMER_STAGES.filter(
+    (stage) =>
       stage === "requested" ||
       done.has(stage) ||
       order.status === stage ||
-      (order.status !== "cancelled" && current >= ORDER_STATUSES.indexOf(stage));
-    return `<li class="${reached ? "reached" : ""}"><strong>${esc(STATUS_LABELS[stage])}</strong>${reached ? "" : `<span class="muted small">pending</span>`
-      }</li>`;
-  }).join("");
+      (order.status !== "cancelled" && current >= ORDER_STATUSES.indexOf(stage)),
+  )
+    .map((stage) => `<li class="reached"><strong>${esc(STATUS_LABELS[stage])}</strong></li>`)
+    .join("");
 
   return layout({
     title: `${order.number} — Bond Auto Transport`,
