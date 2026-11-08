@@ -27,8 +27,24 @@ export function isOrderStatus(value: string): value is OrderStatus {
 /** Statuses a customer should see in the timeline, in order. */
 export const CUSTOMER_STAGES: OrderStatus[] = ["quoted", "confirmed", "assigned", "picked_up", "delivered"];
 
-export function orderNumber(id: number, year: number): string {
-  return `CHS-${year}-${String(id).padStart(4, "0")}`;
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+export function orderNumber(id: number, date: Date | number): string {
+  const value = typeof date === "number" ? new Date(date) : date;
+  return `${value.getUTCFullYear()}-${MONTH_NAMES[value.getUTCMonth()]}-${String(id).padStart(3, "0")}`;
 }
 
 export function invoiceNumber(id: number, year: number): string {
@@ -141,7 +157,6 @@ export interface InvoiceRow {
 
 export async function createOrder(db: D1Database, input: NewOrder, status: OrderStatus = "confirmed"): Promise<OrderRow> {
   const now = Date.now();
-  const year = new Date(now).getUTCFullYear();
 
   const inserted = await db
     .prepare(
@@ -189,7 +204,7 @@ export async function createOrder(db: D1Database, input: NewOrder, status: Order
     .run();
 
   const id = Number(inserted.meta.last_row_id);
-  const number = orderNumber(id, year);
+  const number = orderNumber(id, now);
   await db.prepare("UPDATE orders SET number = ? WHERE id = ?").bind(number, id).run();
   await db
     .prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'created', ?, 'customer', ?)")

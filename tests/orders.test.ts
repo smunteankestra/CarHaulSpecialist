@@ -4,9 +4,9 @@ import test from "node:test";
 import { ORDER_STATUSES, invoiceNumber, isOrderStatus, orderNumber, randomToken } from "../src/orders.ts";
 
 test("order numbers are zero padded and carry the year", () => {
-  assert.equal(orderNumber(1, 2026), "CHS-2026-0001");
-  assert.equal(orderNumber(42, 2026), "CHS-2026-0042");
-  assert.equal(orderNumber(1234, 2026), "CHS-2026-1234");
+  assert.equal(orderNumber(1, new Date(Date.UTC(2026, 10, 8))), "2026-November-001");
+  assert.equal(orderNumber(42, new Date(Date.UTC(2026, 0, 5))), "2026-January-042");
+  assert.equal(orderNumber(1234, new Date(Date.UTC(2026, 11, 1))), "2026-December-1234");
 });
 
 test("invoice numbers follow the same shape", () => {

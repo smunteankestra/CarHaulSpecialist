@@ -760,7 +760,6 @@ export function adminOrdersPage(
       <td>${money(order.price)}</td>
       <td>${statusBadge(order.status, true)}</td>
       <td class="muted small">${when(order.created_at)}</td>
-      <td class="muted">Details</td>
     </tr>`,
     )
     .join("");
@@ -795,7 +794,6 @@ export function adminOrdersPage(
       <th>${sortLink("price", "Price")}</th>
       <th>${sortLink("status", "Status")}</th>
       <th>${sortLink("created", "Created")}</th>
-      <th></th>
     </tr></thead><tbody>${rows}</tbody></table>`
       }
   ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [], eventsByOrder.get(order.id) ?? [])).join("")}
