@@ -1256,3 +1256,7 @@ a.card:hover {
     position: static;
   }
 }
+
+.form-section-date {
+  font-weight: 700;
+}

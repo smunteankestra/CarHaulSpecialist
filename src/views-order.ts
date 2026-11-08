@@ -245,7 +245,7 @@ function timeFields(config: {
     .map((value) => `<option value="${value}"${minute === value ? " selected" : ""}>${pad(value)}</option>`)
     .join("");
 
-  return `<p class="form-section">${esc(config.dateLabel)}</p>
+  return `<p class="form-section form-section-date">${esc(config.dateLabel)}</p>
       <div class="field-row">
         <label class="field"><span>Month</span><select name="${config.monthName}">${monthOptions}</select></label>
         <label class="field"><span>Day</span><select name="${config.dayName}">${dayOptions}</select></label>
