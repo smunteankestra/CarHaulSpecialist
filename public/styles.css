@@ -2292,3 +2292,9 @@ main {
   border-radius: 50%;
   display: inline-block;
 }
+
+.filter-row-orders .chip {
+  justify-content: center;
+  font-weight: 700;
+  text-align: center;
+}
