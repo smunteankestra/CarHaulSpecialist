@@ -278,7 +278,7 @@ function pickupFields(order: OrderRow): string {
 
 function pickupEtaFields(order: OrderRow): string {
   return timeFields({
-    dateLabel: "Pick up ETA date",
+    dateLabel: "Pickup ETA",
     monthName: "pickup_eta_month",
     dayName: "pickup_eta_day",
     yearName: "pickup_eta_year",
@@ -286,12 +286,13 @@ function pickupEtaFields(order: OrderRow): string {
     minuteName: "pickup_eta_minute",
     ampmName: "pickup_eta_ampm",
     value: order.pickup_eta,
-    note: order.pickup_eta ? `Pick up ETA: ${when(order.pickup_eta)}` : "Choose the estimated pickup time in AM/PM.",
+    note: order.pickup_eta ? `Pickup ETA: ${when(order.pickup_eta)}` : "Choose the estimated pickup time in AM/PM.",
   });
 }
 
 function statusTimeFields(order: OrderRow): string {
   if (order.status === "quoted") return "";
+  if (order.status === "confirmed") return pickupEtaFields(order);
   return `${pickupFields(order)}${pickupEtaFields(order)}`;
 }
 
