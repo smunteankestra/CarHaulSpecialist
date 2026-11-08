@@ -24,27 +24,42 @@ export function esc(value: unknown): string {
 
 export const money = (value: number) => `$${value.toLocaleString()}`;
 
-export const when = (value: number) =>
-  new Date(value).toLocaleString("en-US", {
-    month: "2-digit",
-    day: "2-digit",
-    year: "numeric",
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function formatDate(date: Date): string {
+  return `${MONTH_NAMES[date.getUTCMonth()] ?? ""}/${String(date.getUTCDate()).padStart(2, "0")}/${date.getUTCFullYear()}`;
+}
+
+export const when = (value: number) => {
+  const date = new Date(value);
+  const time = date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    timeZone: "UTC",
   });
+  return `${formatDate(date)}, ${time}`;
+};
 
-/** Format an ISO date or timestamp as MM/DD/YYYY without timezone drift. */
+/** Format an ISO date or timestamp as Month/DD/YYYY without timezone drift. */
 export function dateOnly(value: string | number | null): string {
   if (value === null || value === "") return "";
-  if (typeof value === "number") {
-    return new Date(value).toLocaleDateString("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "numeric",
-    });
-  }
+  if (typeof value === "number") return formatDate(new Date(value));
   const [year, month, day] = value.slice(0, 10).split("-");
-  return year && month && day ? `${month}/${day}/${year}` : value;
+  const monthName = month ? MONTH_NAMES[Number(month) - 1] : undefined;
+  return year && monthName && day ? `${monthName}/${day}/${year}` : value;
 }
 
 /** Highlight inoperable vehicles in dispatch views. */
