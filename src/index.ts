@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
-import { SESSION_COOKIE, sessionMaxAge, signSession, timingSafeEqual, verifySession } from "./auth";
+import { SESSION_COOKIE, sessionMaxAge, signSession, timingSafeEqual, verifySession } from "./auth.ts";
+import { isLeadStatus } from "./leads.ts";
 import {
   addNote,
   assignCarrier,
@@ -13,8 +14,8 @@ import {
   type InvoiceRow,
   type OrderEventRow,
   type OrderRow,
-} from "./orders";
-import { lookupZip, priceQuote, roadMiles, type TransportType, type VehicleCondition } from "./quote";
+} from "./orders.ts";
+import { lookupZip, priceQuote, roadMiles, type TransportType, type VehicleCondition } from "./quote.ts";
 import {
   accountPage,
   adminOrderPage,
@@ -24,7 +25,7 @@ import {
   invoicePage,
   trackPage,
   type BookValues,
-} from "./views-order";
+} from "./views-order.ts";
 import {
   createUser,
   findUserByEmail,
@@ -36,7 +37,7 @@ import {
   touchLogin,
   verifyPassword,
   type UserRow,
-} from "./users";
+} from "./users.ts";
 import {
   adminLoginPage,
   adminPage,
@@ -51,7 +52,7 @@ import {
   servicePage,
   type LeadRow,
   type QuoteFormValues,
-} from "./views";
+} from "./views.ts";
 
 interface Bindings {
   DB: D1Database;
@@ -342,12 +343,29 @@ app.get("/admin", async (c) => {
   if (!user) return c.redirect("/admin/login", 303);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT id, name, email, phone, origin_zip, dest_zip, transport_type, condition,
-            distance_miles, price_estimate, status, created_at
-       FROM leads ORDER BY id DESC LIMIT 100`,
+    "SELECT * FROM leads ORDER BY id DESC LIMIT 100",
   ).all<LeadRow>();
 
   return c.html(adminPage(results, user.email, user.role === "admin"));
+});
+
+/** Keep modal redirects inside the console; anything else falls back to the record page. */
+function adminRedirect(body: Record<string, unknown>, fallback: string): string {
+  const next = String(body.next ?? "");
+  return next === "/admin" || next.startsWith("/admin/") ? next : fallback;
+}
+
+app.post("/admin/leads/:id/status", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const status = String(body.status ?? "");
+  if (isLeadStatus(status)) {
+    await c.env.DB.prepare("UPDATE leads SET status = ? WHERE id = ?").bind(status, id).run();
+  }
+  return c.redirect(`/admin#quote-${id}`, 303);
 });
 
 app.get("/admin/orders", async (c) => {
@@ -390,7 +408,7 @@ app.post("/admin/orders/:id/status", async (c) => {
   if (!isOrderStatus(status)) return c.redirect(`/admin/orders/${id}`, 303);
 
   await setStatus(c.env.DB, id, status, user.email, String(body.note ?? ""));
-  return c.redirect(`/admin/orders/${id}`, 303);
+  return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });
 
 app.post("/admin/orders/:id/carrier", async (c) => {
@@ -408,7 +426,7 @@ app.post("/admin/orders/:id/carrier", async (c) => {
     { name, mc: String(body.carrier_mc ?? "").trim(), phone: String(body.carrier_phone ?? "").trim() },
     user.email,
   );
-  return c.redirect(`/admin/orders/${id}`, 303);
+  return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });
 
 app.post("/admin/orders/:id/note", async (c) => {

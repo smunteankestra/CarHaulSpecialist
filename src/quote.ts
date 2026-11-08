@@ -1,21 +1,32 @@
+export interface MinimumBand {
+  /** Highest distance in this band, inclusive. The last band uses Infinity. */
+  upToMiles: number;
+  open: number;
+  enclosed: number;
+}
+
 export interface PricingRules {
   openPerMile: number;
-  openMin: number;
   enclosedPerMile: number;
-  enclosedMin: number;
   inopFee: number;
   oversizeFee: number;
   depositPercent: number;
+  minimums: MinimumBand[];
 }
 
 export const DEFAULT_RULES: PricingRules = {
   openPerMile: 0.95,
-  openMin: 450,
   enclosedPerMile: 1.35,
-  enclosedMin: 650,
   inopFee: 150,
   oversizeFee: 200,
   depositPercent: 20,
+  minimums: [
+    { upToMiles: 25, open: 125, enclosed: 175 },
+    { upToMiles: 75, open: 200, enclosed: 275 },
+    { upToMiles: 150, open: 300, enclosed: 425 },
+    { upToMiles: 300, open: 400, enclosed: 550 },
+    { upToMiles: Number.POSITIVE_INFINITY, open: 450, enclosed: 650 },
+  ],
 };
 
 export type TransportType = "open" | "enclosed";
@@ -95,7 +106,8 @@ export function priceQuote(
   rules: PricingRules = DEFAULT_RULES,
 ): QuoteBreakdown {
   const perMile = transport === "enclosed" ? rules.enclosedPerMile : rules.openPerMile;
-  const minimum = transport === "enclosed" ? rules.enclosedMin : rules.openMin;
+  const band = rules.minimums.find((entry) => distanceMiles <= entry.upToMiles);
+  const minimum = band ? (transport === "enclosed" ? band.enclosed : band.open) : 0;
 
   const raw = distanceMiles * perMile;
   const minimumApplied = raw < minimum;

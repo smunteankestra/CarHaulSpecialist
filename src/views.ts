@@ -1,3 +1,5 @@
+import { LEAD_STATUSES, LEAD_STATUS_LABELS, type LeadStatus } from "./leads.ts";
+
 export const site = {
   name: "Car Haul Specialist",
   tagline: "Vehicle transport, dispatched properly.",
@@ -16,6 +18,11 @@ export function esc(value: unknown): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+export const money = (value: number) => `$${value.toLocaleString()}`;
+
+export const when = (value: number) =>
+  new Date(value).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
 const NAV = [
   { href: "/services/open", label: "Open transport" },
@@ -274,9 +281,8 @@ export function quotePage(options: {
   <div class="quote-layout">
     <div>${quoteForm(options.values, options.error)}</div>
     <aside class="quote-side">
-      ${
-        result
-          ? `<div class="price-card">
+      ${result
+        ? `<div class="price-card">
         <p class="eyebrow">Your estimate</p>
         <p class="price">$${result.total.toLocaleString()}</p>
         <p class="muted small">${esc(result.origin)} → ${esc(result.destination)} · ${result.distance.toLocaleString()} miles · ${esc(result.transport)}</p>
@@ -287,13 +293,13 @@ export function quotePage(options: {
         <p class="muted small">${result.estimated ? "This route used a regional estimate; dispatch will confirm the exact mileage." : "Mileage from ZIP centroids; final price is confirmed by dispatch."}</p>
         <form method="post" action="/book">
           ${(["name", "email", "phone", "origin_zip", "dest_zip", "transport_type", "vehicle_year", "vehicle_make", "vehicle_model", "condition", "available_date", "notes"] as const)
-            .map((key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`)
-            .join("")}
+          .map((key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`)
+          .join("")}
           <button class="btn btn-accent btn-block" type="submit">Continue to booking</button>
         </form>
         <p class="muted small">A dispatcher has your request and will reach out within one business hour.</p>
       </div>`
-          : `<div class="price-card price-card-empty">
+        : `<div class="price-card price-card-empty">
         <p class="eyebrow">How pricing works</p>
         <ul class="breakdown">
           <li><span>Open trailer</span><span>from $0.95 / mile</span></li>
@@ -412,13 +418,13 @@ export function pricingPage(): string {
     <thead><tr><th>Line</th><th>Open</th><th>Enclosed</th></tr></thead>
     <tbody>
       <tr><td>Rate per mile</td><td>from $0.95</td><td>from $1.35</td></tr>
-      <tr><td>Minimum charge</td><td>$450</td><td>$650</td></tr>
+      <tr><td>Minimum charge</td><td>$125 local, $450 long-haul</td><td>$175 local, $650 long-haul</td></tr>
       <tr><td>Not running</td><td>+ $150</td><td>+ $150</td></tr>
       <tr><td>Oversize or lifted</td><td>+ $200</td><td>+ $200</td></tr>
       <tr><td>Deposit to book</td><td>20%</td><td>20%</td></tr>
     </tbody>
   </table>
-  <p class="muted small">Rates are planning figures. A dispatcher confirms the final price against the actual lane and dates before you pay anything.</p>
+  <p class="muted small">The minimum steps up at 25, 75, 150 and 300 miles, so a short local move is not priced like a cross-country haul. Rates are planning figures. A dispatcher confirms the final price against the actual lane and dates before you pay anything.</p>
 </section>`,
   });
 }
@@ -474,15 +480,14 @@ export function legalPage(kind: "terms" | "privacy"): string {
 <section class="wrap section prose">
   <h1 class="page-title">${isTerms ? "Terms of service" : "Privacy policy"}</h1>
   <p class="muted small">Placeholder draft. This must be reviewed by your counsel before launch.</p>
-  ${
-    isTerms
-      ? `<h2>Quotes</h2><p>Quotes are estimates based on the route and vehicle described. A dispatcher confirms the final price before booking.</p>
+  ${isTerms
+        ? `<h2>Quotes</h2><p>Quotes are estimates based on the route and vehicle described. A dispatcher confirms the final price before booking.</p>
          <h2>Bookings and deposits</h2><p>A deposit reserves capacity on a carrier's route. The balance is due on delivery after inspection.</p>
          <h2>Claims</h2><p>Condition is recorded on the bill of lading at pickup and delivery. Claims are assessed against that record and the carrier's insurance.</p>`
-      : `<h2>What we collect</h2><p>Contact details, the addresses and vehicle information you provide, and the quote and order records that follow.</p>
+        : `<h2>What we collect</h2><p>Contact details, the addresses and vehicle information you provide, and the quote and order records that follow.</p>
          <h2>Why</h2><p>To price and dispatch your shipment, to contact you about it, and to keep the record required for insurance and tax.</p>
          <h2>Removal</h2><p>Email <a href="mailto:${esc(site.email)}">${esc(site.email)}</a> to request a copy or deletion of your data, subject to records we must retain.</p>`
-  }
+      }
 </section>`,
   });
 }
@@ -501,11 +506,21 @@ export interface LeadRow {
   email: string;
   phone: string;
   origin_zip: string;
+  origin_city: string | null;
+  origin_state: string | null;
   dest_zip: string;
+  dest_city: string | null;
+  dest_state: string | null;
   transport_type: string;
+  vehicle_year: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
   condition: string;
+  available_date: string | null;
   distance_miles: number | null;
   price_estimate: number | null;
+  price_is_estimate: number;
+  notes: string | null;
   status: string;
   created_at: number;
 }
@@ -527,17 +542,65 @@ export function adminLoginPage(error?: string): string {
   });
 }
 
+function leadStatusBadge(status: string): string {
+  const label = LEAD_STATUS_LABELS[status as LeadStatus] ?? status;
+  return `<span class="badge badge-${esc(status)}">${esc(label)}</span>`;
+}
+
+function placeLabel(city: string | null, state: string | null, zip: string): string {
+  const label = [city, state].filter(Boolean).join(", ");
+  return label ? `${esc(label)} ${esc(zip)}` : esc(zip);
+}
+
+function leadModal(lead: LeadRow): string {
+  const vehicle = [lead.vehicle_year, lead.vehicle_make, lead.vehicle_model].filter(Boolean).join(" ") || "—";
+  const row = (label: string, value: string) =>
+    `<tr><th>${esc(label)}</th><td>${value || '<span class="muted">—</span>'}</td></tr>`;
+
+  return `<div class="modal" id="quote-${lead.id}">
+  <a class="modal-backdrop" href="#quotes" aria-label="Close"></a>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="quote-${lead.id}-title">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Quote request</p>
+        <h2 id="quote-${lead.id}-title">#${lead.id} · ${esc(lead.name)} ${leadStatusBadge(lead.status)}</h2>
+        <p class="muted small">Received ${when(lead.created_at)}</p>
+      </div>
+      <a class="modal-close" href="#quotes" aria-label="Close">×</a>
+    </div>
+
+    <table class="table detail-table"><tbody>
+      ${row("Customer", `${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span>`)}
+      ${row("Route", `${placeLabel(lead.origin_city, lead.origin_state, lead.origin_zip)} → ${placeLabel(lead.dest_city, lead.dest_state, lead.dest_zip)}`)}
+      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(lead.transport_type)} trailer · ${esc(lead.condition === "non-running" ? "not running" : "runs and drives")}</span>`)}
+      ${row("Ready date", esc(lead.available_date ?? ""))}
+      ${row("Distance", lead.distance_miles ? `${lead.distance_miles.toLocaleString()} miles` : "")}
+      ${row("Quote", lead.price_estimate ? `<strong>${money(lead.price_estimate)}</strong>` : "")}
+      ${row("Customer notes", esc(lead.notes ?? ""))}
+    </tbody></table>
+
+    <h3 class="section-title mt">Change status</h3>
+    <form method="post" action="/admin/leads/${lead.id}/status" class="status-actions">
+      ${LEAD_STATUSES.map(
+    (value) => `<button class="chip${lead.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(LEAD_STATUS_LABELS[value])}</button>`,
+  ).join("")}
+    </form>
+    <p class="form-note">Status changes are saved on the quote request.</p>
+  </div>
+</div>`;
+}
+
 export function adminPage(leads: LeadRow[], email: string, isAdmin = false): string {
   const rows = leads
     .map(
       (lead) => `<tr>
-      <td>${lead.id}</td>
+      <td><a class="row-link" href="#quote-${lead.id}">${lead.id}</a></td>
       <td>${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span></td>
       <td>${esc(lead.origin_zip)} → ${esc(lead.dest_zip)}<br><span class="muted small">${esc(lead.transport_type)} · ${esc(lead.condition)}</span></td>
       <td>${lead.distance_miles ? `${lead.distance_miles.toLocaleString()} mi` : "—"}</td>
-      <td>${lead.price_estimate ? `$${lead.price_estimate.toLocaleString()}` : "—"}</td>
-      <td>${esc(lead.status)}</td>
-      <td class="muted small">${new Date(lead.created_at).toLocaleString()}</td>
+      <td>${lead.price_estimate ? money(lead.price_estimate) : "—"}</td>
+      <td>${leadStatusBadge(lead.status)}</td>
+      <td class="muted small">${when(lead.created_at)}</td>
     </tr>`,
     )
     .join("");
@@ -546,14 +609,15 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false): str
     title: "Leads — Car Haul Specialist",
     description: "Dispatch console.",
     body: `
-<section class="wrap section">
+<section class="wrap section" id="quotes">
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Quote requests</h1>
       <nav class="admin-nav"><a href="/admin" class="active">Leads</a><a href="/admin/orders">Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a></nav>
     </div>
     <div class="admin-user"><span class="muted small">${esc(email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
   </div>
-  ${leads.length === 0 ? `<p class="muted">No requests yet.</p>` : `<table class="table"><thead><tr><th>#</th><th>Customer</th><th>Route</th><th>Miles</th><th>Quote</th><th>Status</th><th>Received</th></tr></thead><tbody>${rows}</tbody></table>`}
+  ${leads.length === 0 ? `<p class="muted">No requests yet.</p>` : `<table class="table rows-clickable"><thead><tr><th>#</th><th>Customer</th><th>Route</th><th>Miles</th><th>Quote</th><th>Status</th><th>Received</th></tr></thead><tbody>${rows}</tbody></table>`}
+  ${leads.map(leadModal).join("")}
 </section>`,
   });
 }

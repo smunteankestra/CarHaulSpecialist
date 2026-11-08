@@ -1,5 +1,5 @@
-import { esc, layout, site } from "./views";
-import { ROLE_LABELS, type Role, type UserRow } from "./users";
+import { esc, layout, money, site, when } from "./views.ts";
+import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
   CUSTOMER_STAGES,
   ORDER_STATUSES,
@@ -8,7 +8,7 @@ import {
   type OrderEventRow,
   type OrderRow,
   type OrderStatus,
-} from "./orders";
+} from "./orders.ts";
 
 export interface BookValues {
   name?: string;
@@ -36,9 +36,6 @@ export interface BookValues {
   notes?: string;
   lead_id?: string;
 }
-
-const money = (value: number) => `$${value.toLocaleString()}`;
-const when = (value: number) => new Date(value).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
 export function bookPage(values: BookValues, price: number | null, error?: string): string {
   const v = (key: keyof BookValues) => esc(values[key] ?? "");
@@ -149,9 +146,8 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
   const done = new Set(events.map((event) => event.kind));
   const timeline = CUSTOMER_STAGES.map((stage) => {
     const reached = done.has(stage) || order.status === stage;
-    return `<li class="${reached ? "reached" : ""}"><strong>${esc(STATUS_LABELS[stage])}</strong>${
-      reached ? "" : `<span class="muted small">pending</span>`
-    }</li>`;
+    return `<li class="${reached ? "reached" : ""}"><strong>${esc(STATUS_LABELS[stage])}</strong>${reached ? "" : `<span class="muted small">pending</span>`
+      }</li>`;
   }).join("");
 
   return layout({
@@ -177,33 +173,101 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
     </div>
   </div>
 
-  ${
-    invoices.length
-      ? `<h2 class="section-title">Invoices</h2><table class="table"><thead><tr><th>Number</th><th>Amount</th><th>Status</th><th>Issued</th></tr></thead><tbody>${invoices
+  ${invoices.length
+        ? `<h2 class="section-title">Invoices</h2><table class="table"><thead><tr><th>Number</th><th>Amount</th><th>Status</th><th>Issued</th></tr></thead><tbody>${invoices
           .map(
             (invoice) =>
               `<tr><td>${esc(invoice.number)}</td><td>${money(invoice.amount)}</td><td>${esc(invoice.status)}</td><td>${when(invoice.issued_at)}</td></tr>`,
           )
           .join("")}</tbody></table>`
-      : ""
-  }
+        : ""
+      }
 
   <p class="muted small">Questions? Call ${esc(site.phone)} or email ${esc(site.email)} and quote ${esc(order.number)}.</p>
 </section>`,
   });
 }
 
+function orderDetailRows(order: OrderRow): string {
+  const vehicle = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—";
+  const row = (label: string, value: string) =>
+    `<tr><th>${esc(label)}</th><td>${value || '<span class="muted">—</span>'}</td></tr>`;
+
+  return `
+      ${row("Order", esc(order.number))}
+      ${row("Status", statusBadge(order.status))}
+      ${row("Created", when(order.created_at))}
+      ${row("Last updated", when(order.updated_at))}
+      ${row("Customer", `${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</span>`)}
+      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${esc(order.condition === "non-running" ? "not running" : "runs and drives")}</span>`)}
+      ${row("VIN", esc(order.vin ?? ""))}
+      ${row("Pickup address", `${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(order.origin_state ?? "")} ${esc(order.origin_zip)}`)}
+      ${row("Pickup contact", `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`)}
+      ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(order.dest_state ?? "")} ${esc(order.dest_zip)}`)}
+      ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
+      ${row("Ready date", esc(order.ready_date ?? ""))}
+      ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
+      ${row("Price", `<strong>${money(order.price)}</strong>`)}
+      ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}<br><span class="muted small">${esc(order.carrier_mc ?? "")} · ${esc(order.carrier_phone ?? "")}</span>` : "")}
+      ${row("Customer notes", esc(order.notes ?? ""))}
+  `;
+}
+
+function orderModal(order: OrderRow): string {
+  const anchor = `/admin/orders#order-${order.id}`;
+
+  return `<div class="modal" id="order-${order.id}">
+  <a class="modal-backdrop" href="#orders" aria-label="Close"></a>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="order-${order.id}-title">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Order</p>
+        <h2 id="order-${order.id}-title">${esc(order.number)} ${statusBadge(order.status)}</h2>
+        <p class="muted small">Booked ${when(order.created_at)} · updated ${when(order.updated_at)}</p>
+      </div>
+      <a class="modal-close" href="#orders" aria-label="Close">×</a>
+    </div>
+
+    <table class="table detail-table"><tbody>${orderDetailRows(order)}</tbody></table>
+
+    <h3 class="section-title mt">Change status</h3>
+    <form method="post" action="/admin/orders/${order.id}/status" class="status-actions">
+      <input type="hidden" name="next" value="${esc(anchor)}">
+      ${ORDER_STATUSES.map(
+        (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
+      ).join("")}
+    </form>
+
+    <h3 class="section-title mt">Assign carrier</h3>
+    <form class="quote-form" method="post" action="/admin/orders/${order.id}/carrier">
+      <input type="hidden" name="next" value="${esc(anchor)}">
+      <div class="field-row">
+        <label class="field"><span>Carrier name</span><input name="carrier_name" required value="${esc(order.carrier_name ?? "")}"></label>
+        <label class="field"><span>MC number</span><input name="carrier_mc" value="${esc(order.carrier_mc ?? "")}"></label>
+        <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
+      </div>
+      <button class="btn btn-accent" type="submit">Assign carrier</button>
+    </form>
+
+    <div class="modal-actions mt">
+      <a class="btn btn-ghost" href="/admin/orders/${order.id}">Open full record</a>
+      <a class="btn btn-ghost" href="/track/${esc(order.token)}">Customer view</a>
+    </div>
+  </div>
+</div>`;
+}
+
 export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = false): string {
   const rows = orders
     .map(
       (order) => `<tr>
-      <td><a class="row-link" href="/admin/orders/${order.id}">${esc(order.number)}</a></td>
+      <td><a class="row-link" href="#order-${order.id}">${esc(order.number)}</a></td>
       <td>${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_phone)}</span></td>
       <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}</span></td>
       <td>${money(order.price)}</td>
       <td>${statusBadge(order.status)}</td>
       <td class="muted small">${when(order.created_at)}</td>
-      <td class="muted">→</td>
+      <td class="muted">Details</td>
     </tr>`,
     )
     .join("");
@@ -212,7 +276,7 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
     title: "Orders — Car Haul Specialist",
     description: "Dispatch console.",
     body: `
-<section class="wrap section">
+<section class="wrap section" id="orders">
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
     <nav class="admin-nav">
@@ -226,11 +290,11 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
       (value) => `<a href="/admin/orders?status=${value}"${status === value ? ' class="chip active"' : ' class="chip"'}>${esc(STATUS_LABELS[value])}</a>`,
     ).join("")}
   </div>
-  ${
-    orders.length === 0
-      ? `<p class="muted">No orders in this view.</p>`
-      : `<table class="table rows-clickable"><thead><tr><th>Order</th><th>Customer</th><th>Route</th><th>Price</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-  }
+  ${orders.length === 0
+        ? `<p class="muted">No orders in this view.</p>`
+        : `<table class="table rows-clickable"><thead><tr><th>Order</th><th>Customer</th><th>Route</th><th>Price</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      }
+  ${orders.map(orderModal).join("")}
 </section>`,
   });
 }
@@ -255,18 +319,13 @@ export function adminOrderPage(
       <td>${money(invoice.amount)}</td>
       <td>${esc(invoice.status)}</td>
       <td class="muted small">${when(invoice.issued_at)}</td>
-      <td>${
-        invoice.status === "paid"
+      <td>${invoice.status === "paid"
           ? ""
           : `<form method="post" action="/admin/invoices/${invoice.id}/paid"><button class="btn btn-ghost btn-small" type="submit">Mark paid</button></form>`
-      }</td>
+        }</td>
     </tr>`,
     )
     .join("");
-
-  const vehicle = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—";
-  const row = (label: string, value: string) =>
-    `<tr><th>${esc(label)}</th><td>${value || '<span class="muted">—</span>'}</td></tr>`;
 
   return layout({
     title: `${order.number} — Car Haul Specialist`,
@@ -290,24 +349,7 @@ export function adminOrderPage(
 
   <h2 class="section-title mt">Full record</h2>
   <table class="table detail-table">
-    <tbody>
-      ${row("Order", esc(order.number))}
-      ${row("Status", statusBadge(order.status))}
-      ${row("Created", when(order.created_at))}
-      ${row("Last updated", when(order.updated_at))}
-      ${row("Customer", `${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</span>`)}
-      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${esc(order.condition === "non-running" ? "not running" : "runs and drives")}</span>`)}
-      ${row("VIN", esc(order.vin ?? ""))}
-      ${row("Pickup address", `${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(order.origin_state ?? "")} ${esc(order.origin_zip)}`)}
-      ${row("Pickup contact", `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`)}
-      ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(order.dest_state ?? "")} ${esc(order.dest_zip)}`)}
-      ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
-      ${row("Ready date", esc(order.ready_date ?? ""))}
-      ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
-      ${row("Price", `<strong>${money(order.price)}</strong>`)}
-      ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}<br><span class="muted small">${esc(order.carrier_mc ?? "")} · ${esc(order.carrier_phone ?? "")}</span>` : "")}
-      ${row("Customer notes", esc(order.notes ?? ""))}
-    </tbody>
+    <tbody>${orderDetailRows(order)}</tbody>
   </table>
 
   <h2 class="section-title mt">Actions</h2>
@@ -316,8 +358,8 @@ export function adminOrderPage(
       <h3>Change status</h3>
       <label class="field"><span>Status</span>
         <select name="status">${ORDER_STATUSES.map(
-          (value) => `<option value="${value}"${order.status === value ? " selected" : ""}>${esc(STATUS_LABELS[value])}</option>`,
-        ).join("")}</select>
+      (value) => `<option value="${value}"${order.status === value ? " selected" : ""}>${esc(STATUS_LABELS[value])}</option>`,
+    ).join("")}</select>
       </label>
       <label class="field"><span>Note</span><input name="note" placeholder="Optional"></label>
       <button class="btn btn-accent" type="submit">Save status</button>
@@ -355,11 +397,10 @@ export function adminOrderPage(
   </div>
 
   <h2 class="section-title mt">Invoices</h2>
-  ${
-    invoices.length === 0
-      ? `<p class="muted">No invoices yet.</p>`
-      : `<table class="table"><thead><tr><th>Number</th><th>Description</th><th>Amount</th><th>Status</th><th>Issued</th><th></th></tr></thead><tbody>${invoiceRows}</tbody></table>`
-  }
+  ${invoices.length === 0
+        ? `<p class="muted">No invoices yet.</p>`
+        : `<table class="table"><thead><tr><th>Number</th><th>Description</th><th>Amount</th><th>Status</th><th>Issued</th><th></th></tr></thead><tbody>${invoiceRows}</tbody></table>`
+      }
 
   <h2 class="section-title mt">History</h2>
   <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${eventRows}</tbody></table>
@@ -412,10 +453,9 @@ export function adminUsersPage(
         <form method="post" action="/admin/users/${user.id}/reset" class="inline-form">
           <button class="btn btn-ghost btn-small" type="submit">New password</button>
         </form>
-        ${
-          user.id === viewer.id
-            ? ""
-            : `<form method="post" action="/admin/users/${user.id}/active" class="inline-form">
+        ${user.id === viewer.id
+          ? ""
+          : `<form method="post" action="/admin/users/${user.id}/active" class="inline-form">
                  <input type="hidden" name="active" value="${user.active ? "0" : "1"}">
                  <button class="btn btn-ghost btn-small" type="submit">${user.active ? "Disable" : "Enable"}</button>
                </form>`
@@ -442,15 +482,14 @@ export function adminUsersPage(
     <div class="admin-user"><span class="muted small">${esc(viewer.email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
   </div>
 
-  ${
-    flash
-      ? `<div class="flash">
+  ${flash
+        ? `<div class="flash">
            <strong>${flash.kind === "created" ? "Account created" : "Password reset"} for ${esc(flash.email)}</strong>
            <p>Temporary password: <code class="password">${esc(flash.password)}</code></p>
            <p class="muted small">Give it to them now — it is not shown again. They can change it after signing in.</p>
          </div>`
-      : ""
-  }
+        : ""
+      }
 
   <div class="cards two-up">
     <form class="card quote-form" method="post" action="/admin/users">

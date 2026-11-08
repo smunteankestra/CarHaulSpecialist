@@ -22,10 +22,43 @@ test("open transport is priced per mile above the minimum", () => {
   assert.equal(quote.minimumApplied, false);
 });
 
-test("short routes fall back to the minimum charge", () => {
-  const quote = priceQuote(100, "open", "running", false);
-  assert.equal(quote.base, DEFAULT_RULES.openMin);
+test("a short local move uses the local minimum, not the long-haul floor", () => {
+  const quote = priceQuote(7, "open", "running", false);
+  assert.equal(quote.base, 125);
+  assert.equal(quote.total, 125);
+  assert.equal(quote.deposit, 25);
   assert.equal(quote.minimumApplied, true);
+});
+
+test("enclosed local moves use the enclosed local minimum", () => {
+  assert.equal(priceQuote(7, "enclosed", "running", false).base, 175);
+});
+
+test("minimums step up with distance", () => {
+  const cases: Array<[number, number]> = [
+    [7, 125],
+    [25, 125],
+    [26, 200],
+    [75, 200],
+    [76, 300],
+    [150, 300],
+    [151, 400],
+    [300, 400],
+    [301, 450],
+    [474, 450],
+  ];
+  for (const [miles, expected] of cases) {
+    assert.equal(priceQuote(miles, "open", "running", false).base, expected, `${miles} mi`);
+  }
+});
+
+test("a longer route never costs less than a shorter one", () => {
+  let previous = 0;
+  for (let miles = 1; miles <= 1200; miles += 1) {
+    const total = priceQuote(miles, "open", "running", false).total;
+    assert.ok(total >= previous, `${miles} mi priced ${total}, below ${previous}`);
+    previous = total;
+  }
 });
 
 test("enclosed costs more than open on the same route", () => {

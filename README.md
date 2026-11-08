@@ -45,7 +45,11 @@ The public site reads contact details from `site` in `src/views.ts` — phone, e
 | Line | Open | Enclosed |
 |---|---|---|
 | Rate per mile | $0.95 | $1.35 |
-| Minimum | $450 | $650 |
+| Minimum, 0–25 mi | $125 | $175 |
+| Minimum, 26–75 mi | $200 | $275 |
+| Minimum, 76–150 mi | $300 | $425 |
+| Minimum, 151–300 mi | $400 | $550 |
+| Minimum, 301+ mi | $450 | $650 |
 | Non-running | +$150 | +$150 |
 | Oversize | +$200 | +$200 |
 | Deposit | 20% | 20% |
