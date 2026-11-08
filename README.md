@@ -51,7 +51,8 @@ The public site reads contact details from `site` in `src/views.ts` — phone, e
 | Minimum, 76–150 mi | $300 | $425 |
 | Minimum, 151–300 mi | $400 | $550 |
 | Minimum, 301+ mi | $450 | $650 |
-| Non-running | +$150 | +$150 |
+| Inoperable (steer and roll) | +$150 | +$150 |
+| Inoperable (no steer/roll/keys) | +$250 | +$250 |
 | Oversize | +$200 | +$200 |
 | Deposit | 20% | 20% |
 
