@@ -205,6 +205,13 @@ function statusBadge(status: string): string {
   return `<span class="badge badge-${esc(status)}">${esc(label)}</span>`;
 }
 
+function toDatetimeLocal(value: number | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+}
+
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
   const done = new Set(events.map((event) => event.kind));
   const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
@@ -234,6 +241,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       <p class="muted small">${esc(order.transport_type)} trailer · ${conditionTag(order.condition)}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</p>
       <p class="muted small">Price ${money(order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
       ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.driver_name ? ` · Driver: ${esc(order.driver_name)}` : ""}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
+      ${order.picked_up_at ? `<p class="muted small">Picked up ${when(order.picked_up_at)}</p>` : ""}
     </div>
     <div class="card">
       <h3>Progress</h3>
@@ -275,6 +283,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Pickup contact", `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`)}
       ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(stateName(order.dest_state))} ${esc(order.dest_zip)}`)}
       ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
+      ${row("Picked up at", order.picked_up_at ? when(order.picked_up_at) : "")}
       ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
@@ -301,11 +310,15 @@ function orderModal(order: OrderRow): string {
     <table class="table detail-table"><tbody>${orderDetailRows(order)}</tbody></table>
 
     <h3 class="section-title mt">Change status</h3>
-    <form method="post" action="/admin/orders/${order.id}/status" class="status-actions">
+    <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
       <input type="hidden" name="next" value="${esc(anchor)}">
-      ${ORDER_STATUSES.map(
-    (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
-  ).join("")}
+      <label class="field"><span>Picked up at</span>
+        <input name="picked_up_at" type="datetime-local" value="${toDatetimeLocal(order.picked_up_at)}">
+      </label>
+      ${order.picked_up_at ? `<p class="form-note">Saved: ${when(order.picked_up_at)}</p>` : `<p class="form-note">Set this when the status is Picked up.</p>`}
+      <div class="status-actions">${ORDER_STATUSES.map(
+        (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
+      ).join("")}</div>
     </form>
 
     <h3 class="section-title mt">Assign carrier</h3>
@@ -438,6 +451,10 @@ export function adminOrderPage(
       (value) => `<option value="${value}"${order.status === value ? " selected" : ""}>${esc(STATUS_LABELS[value])}</option>`,
     ).join("")}</select>
       </label>
+      <label class="field"><span>Picked up at</span>
+        <input name="picked_up_at" type="datetime-local" value="${toDatetimeLocal(order.picked_up_at)}">
+      </label>
+      ${order.picked_up_at ? `<p class="form-note">Saved: ${when(order.picked_up_at)}</p>` : `<p class="form-note">Set this when the status is Picked up.</p>`}
       <label class="field"><span>Note</span><input name="note" placeholder="Optional"></label>
       <button class="btn btn-accent" type="submit">Save status</button>
     </form>

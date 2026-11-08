@@ -111,6 +111,7 @@ export interface OrderRow {
   notes: string | null;
   created_at: number;
   updated_at: number;
+  picked_up_at: number | null;
 }
 
 export interface OrderEventRow {
@@ -202,9 +203,14 @@ export async function setStatus(
   status: OrderStatus,
   actor: string,
   note: string,
+  pickedUpAt: number | null = null,
 ): Promise<void> {
   const now = Date.now();
-  await db.prepare("UPDATE orders SET status = ?, updated_at = ? WHERE id = ?").bind(status, now, orderId).run();
+  const pickup = status === "picked_up" ? (pickedUpAt ?? now) : pickedUpAt;
+  await db
+    .prepare("UPDATE orders SET status = ?, picked_up_at = COALESCE(?, picked_up_at), updated_at = ? WHERE id = ?")
+    .bind(status, pickup, now, orderId)
+    .run();
   await db
     .prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, ?, ?, ?, ?)")
     .bind(orderId, status, note || null, actor, now)

@@ -51,6 +51,7 @@ import {
   pricingPage,
   quotePage,
   servicePage,
+  when,
   type LeadPhotoRow,
   type LeadRow,
   type QuoteFormValues,
@@ -511,7 +512,22 @@ app.post("/admin/orders/:id/status", async (c) => {
   const status = String(body.status ?? "");
   if (!isOrderStatus(status)) return c.redirect(`/admin/orders/${id}`, 303);
 
-  await setStatus(c.env.DB, id, status, user.email, String(body.note ?? ""));
+  const rawPickup = String(body.picked_up_at ?? "").trim();
+  const parsedPickup = rawPickup
+    ? new Date(`${rawPickup}${rawPickup.length === 16 ? ":00" : ""}Z`).getTime()
+    : NaN;
+  const pickedUpAt = Number.isFinite(parsedPickup) ? parsedPickup : null;
+  const note = String(body.note ?? "").trim();
+  const pickupNote = pickedUpAt ? `Picked up ${when(pickedUpAt)}` : "";
+
+  await setStatus(
+    c.env.DB,
+    id,
+    status,
+    user.email,
+    [note, pickupNote].filter(Boolean).join(" · "),
+    pickedUpAt,
+  );
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
 });
 
