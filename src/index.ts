@@ -16,7 +16,7 @@ import {
   type OrderEventRow,
   type OrderRow,
 } from "./orders.ts";
-import { lookupZip, parseCondition, priceQuote, roadMiles, type TransportType } from "./quote.ts";
+import { conditionLabel, lookupZip, parseCondition, priceQuote, roadMiles, type TransportType } from "./quote.ts";
 import { stateCode, stateName } from "./states.ts";
 import {
   accountPage,
@@ -770,7 +770,17 @@ app.get("/admin/orders", async (c) => {
       ).results
     : [];
 
-  return c.html(adminOrdersPage(results, status, user.role === "admin", photos, sort, dir));
+  const events = results.length
+    ? (
+        await c.env.DB.prepare(
+          `SELECT * FROM order_events WHERE order_id IN (${results.map(() => "?").join(",")}) ORDER BY id`,
+        )
+          .bind(...results.map((order) => order.id))
+          .all<OrderEventRow>()
+      ).results
+    : [];
+
+  return c.html(adminOrdersPage(results, status, user.role === "admin", photos, sort, dir, events));
 });
 
 app.get("/admin/orders/:id", async (c) => {
@@ -831,6 +841,207 @@ app.post("/admin/orders/:id/status", async (c) => {
     paymentMethod,
   );
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
+});
+
+app.post("/admin/orders/:id/edit", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const old = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!old) return c.html(notFoundPage(), 404);
+
+  const body = await c.req.parseBody();
+  const text = (key: string) => String(body[key] ?? "").trim();
+  const next = text("next");
+  const redirectTo = next.startsWith("/admin/orders") ? next : `/admin/orders/${id}`;
+
+  const name = text("customer_name");
+  const email = text("customer_email");
+  const phone = text("customer_phone");
+  const originZip = text("origin_zip");
+  const destZip = text("dest_zip");
+  if (!name || !email || !phone || !EMAIL_PATTERN.test(email)) return c.redirect(redirectTo, 303);
+  if (!ZIP_PATTERN.test(originZip) || !ZIP_PATTERN.test(destZip)) return c.redirect(redirectTo, 303);
+
+  const distance = Number(text("distance_miles"));
+  const price = Number(text("price"));
+  const paidRaw = text("paid_amount");
+  const paidNumber = paidRaw ? Number(paidRaw) : NaN;
+  const paidAmount = Number.isFinite(paidNumber) && paidNumber >= 0 ? Math.round(paidNumber) : null;
+  const methodRaw = text("payment_method");
+  const paymentMethod = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"].includes(methodRaw)
+    ? methodRaw
+    : null;
+
+  const newValues = {
+    customer_name: name,
+    customer_email: email,
+    customer_phone: phone,
+    vehicle_year: text("vehicle_year") || null,
+    vehicle_make: text("vehicle_make") || null,
+    vehicle_model: text("vehicle_model") || null,
+    transport_type: text("transport_type") === "enclosed" ? "enclosed" : "open",
+    condition: parseCondition(text("condition") || "running"),
+    vin: text("vin") || null,
+    origin_street: text("origin_street") || null,
+    origin_city: text("origin_city") || null,
+    origin_state: stateCode(text("origin_state")) || null,
+    origin_zip: originZip,
+    origin_contact: text("origin_contact") || null,
+    origin_phone: text("origin_phone") || null,
+    dest_street: text("dest_street") || null,
+    dest_city: text("dest_city") || null,
+    dest_state: stateCode(text("dest_state")) || null,
+    dest_zip: destZip,
+    dest_contact: text("dest_contact") || null,
+    dest_phone: text("dest_phone") || null,
+    ready_date: /^\d{4}-\d{2}-\d{2}$/.test(text("ready_date")) ? text("ready_date") : null,
+    distance_miles: Number.isFinite(distance) && distance >= 0 ? Math.round(distance) : old.distance_miles,
+    price: Number.isFinite(price) && price >= 0 ? Math.round(price) : old.price,
+    notes: text("notes") || null,
+    carrier_name: text("carrier_name") || null,
+    carrier_mc: text("carrier_mc") || null,
+    carrier_company_phone: text("carrier_company_phone") || null,
+    carrier_email: text("carrier_email") || null,
+    driver_name: text("driver_name") || null,
+    carrier_phone: text("carrier_phone") || null,
+    paid_amount: paidAmount,
+    payment_method: paymentMethod,
+    picked_up_at: parseDateTime(body, "edit_picked_up") ?? old.picked_up_at,
+    pickup_eta: parseDateTime(body, "edit_pickup_eta") ?? old.pickup_eta,
+    delivery_eta: parseDateTime(body, "edit_delivery_eta") ?? old.delivery_eta,
+    delivered_at: parseDateTime(body, "edit_delivered") ?? old.delivered_at,
+  };
+
+  const labels: Record<keyof typeof newValues, string> = {
+    customer_name: "Customer",
+    customer_email: "Email",
+    customer_phone: "Phone",
+    vehicle_year: "Vehicle year",
+    vehicle_make: "Make",
+    vehicle_model: "Model",
+    transport_type: "Transport",
+    condition: "Condition",
+    vin: "VIN",
+    origin_street: "Pickup street",
+    origin_city: "Pickup city",
+    origin_state: "Pickup state",
+    origin_zip: "Pickup ZIP",
+    origin_contact: "Pickup contact",
+    origin_phone: "Pickup phone",
+    dest_street: "Delivery street",
+    dest_city: "Delivery city",
+    dest_state: "Delivery state",
+    dest_zip: "Delivery ZIP",
+    dest_contact: "Delivery contact",
+    dest_phone: "Delivery phone",
+    ready_date: "Ready date",
+    distance_miles: "Distance",
+    price: "Price",
+    notes: "Customer notes",
+    carrier_name: "Carrier company",
+    carrier_mc: "MC number",
+    carrier_company_phone: "Company phone",
+    carrier_email: "Company email",
+    driver_name: "Driver name",
+    carrier_phone: "Driver phone",
+    paid_amount: "Paid amount",
+    payment_method: "Payment method",
+    picked_up_at: "Picked up at",
+    pickup_eta: "Pickup ETA",
+    delivery_eta: "Delivery ETA",
+    delivered_at: "Delivered at",
+  };
+
+  const format = (key: keyof typeof newValues, value: unknown): string => {
+    if (value === null || value === undefined || value === "") return "—";
+    if (key === "condition") return conditionLabel(String(value));
+    if (key === "transport_type") return value === "enclosed" ? "Enclosed trailer" : "Open trailer";
+    if (key === "distance_miles") return `${Number(value).toLocaleString()} mi`;
+    if (key === "price" || key === "paid_amount") return `$${Number(value).toLocaleString()}`;
+    if (key === "picked_up_at" || key === "pickup_eta" || key === "delivery_eta" || key === "delivered_at") {
+      return when(Number(value));
+    }
+    return String(value);
+  };
+
+  const changes: string[] = [];
+  const oldRecord = old as unknown as Record<string, unknown>;
+  for (const key of Object.keys(newValues) as (keyof typeof newValues)[]) {
+    let before = oldRecord[key];
+    if (key === "condition") before = parseCondition(String(before ?? "running"));
+    const after = newValues[key];
+    if (String(before ?? "") !== String(after ?? "")) {
+      changes.push(`${labels[key]}: ${format(key, before)} → ${format(key, after)}`);
+    }
+  }
+
+  if (!changes.length) return c.redirect(redirectTo, 303);
+
+  const now = Date.now();
+  await c.env.DB.prepare(
+    `UPDATE orders SET
+      customer_name=?, customer_email=?, customer_phone=?,
+      vehicle_year=?, vehicle_make=?, vehicle_model=?, transport_type=?, condition=?, vin=?,
+      origin_street=?, origin_city=?, origin_state=?, origin_zip=?, origin_contact=?, origin_phone=?,
+      dest_street=?, dest_city=?, dest_state=?, dest_zip=?, dest_contact=?, dest_phone=?,
+      ready_date=?, distance_miles=?, price=?, notes=?,
+      carrier_name=?, carrier_mc=?, carrier_company_phone=?, carrier_email=?, driver_name=?, carrier_phone=?,
+      paid_amount=?, payment_method=?, picked_up_at=?, pickup_eta=?, delivery_eta=?, delivered_at=?,
+      updated_at=?
+     WHERE id=?`,
+  )
+    .bind(
+      newValues.customer_name,
+      newValues.customer_email,
+      newValues.customer_phone,
+      newValues.vehicle_year,
+      newValues.vehicle_make,
+      newValues.vehicle_model,
+      newValues.transport_type,
+      newValues.condition,
+      newValues.vin,
+      newValues.origin_street,
+      newValues.origin_city,
+      newValues.origin_state,
+      newValues.origin_zip,
+      newValues.origin_contact,
+      newValues.origin_phone,
+      newValues.dest_street,
+      newValues.dest_city,
+      newValues.dest_state,
+      newValues.dest_zip,
+      newValues.dest_contact,
+      newValues.dest_phone,
+      newValues.ready_date,
+      newValues.distance_miles,
+      newValues.price,
+      newValues.notes,
+      newValues.carrier_name,
+      newValues.carrier_mc,
+      newValues.carrier_company_phone,
+      newValues.carrier_email,
+      newValues.driver_name,
+      newValues.carrier_phone,
+      newValues.paid_amount,
+      newValues.payment_method,
+      newValues.picked_up_at,
+      newValues.pickup_eta,
+      newValues.delivery_eta,
+      newValues.delivered_at,
+      now,
+      id,
+    )
+    .run();
+
+  await c.env.DB.prepare(
+    "INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)",
+  )
+    .bind(id, changes.join("; "), user.email, now)
+    .run();
+
+  return c.redirect(redirectTo, 303);
 });
 
 app.post("/admin/orders/:id/carrier", async (c) => {

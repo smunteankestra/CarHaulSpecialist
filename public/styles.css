@@ -1654,3 +1654,30 @@ a.card:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* editable order fields */
+.order-edit-bar {
+  margin-top: 0.6rem;
+}
+
+.order-edit summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  width: max-content;
+  margin-left: auto;
+}
+
+.order-edit summary::-webkit-details-marker {
+  display: none;
+}
+
+.order-edit[open] summary {
+  margin-bottom: 0.8rem;
+}
+
+.order-edit-form {
+  border-top: 1px solid #edf2f6;
+  padding-top: 1rem;
+  margin-top: 0.4rem;
+}

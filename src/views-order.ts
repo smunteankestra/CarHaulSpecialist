@@ -1,5 +1,6 @@
 import { esc, MONTH_NAMES, conditionTag, dateOnly, datePicker, layout, money, site, when } from "./views.ts";
 import { US_STATES, stateCode, stateName } from "./states.ts";
+import { parseCondition } from "./quote.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
   CUSTOMER_STAGES,
@@ -223,6 +224,13 @@ function statusBadge(status: string): string {
   return `<span class="badge badge-${esc(status)}">${esc(label)}</span>`;
 }
 
+function eventLabel(kind: string): string {
+  if (kind === "requested") return "Quoted";
+  if (kind === "in_transit") return "Picked up";
+  if (kind === "edited") return "Edited";
+  return isOrderStatus(kind) ? STATUS_LABELS[kind] : kind;
+}
+
 function timeFields(config: {
   dateLabel: string;
   monthName: string;
@@ -357,6 +365,120 @@ function statusFields(order: OrderRow): string {
   return paymentFields(order);
 }
 
+function orderEditForm(order: OrderRow, next: string): string {
+  const condition = parseCondition(order.condition);
+  const methods = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"];
+  const timeField = (label: string, prefix: string, value: number | null) =>
+    timeFields({
+      dateLabel: label,
+      monthName: `${prefix}_month`,
+      dayName: `${prefix}_day`,
+      yearName: `${prefix}_year`,
+      hourName: `${prefix}_hour`,
+      minuteName: `${prefix}_minute`,
+      ampmName: `${prefix}_ampm`,
+      value,
+      note: value ? `Saved: ${when(value)}` : "Not set.",
+    });
+
+  return `<div class="order-edit-bar">
+  <details class="order-edit">
+    <summary class="btn btn-ghost">Edit fields</summary>
+    <form class="quote-form order-edit-form" method="post" action="/admin/orders/${order.id}/edit">
+      <input type="hidden" name="next" value="${esc(next)}">
+
+      <h3 class="form-section">Customer</h3>
+      <div class="field-row">
+        <label class="field"><span>Name</span><input name="customer_name" required value="${esc(order.customer_name)}"></label>
+        <label class="field"><span>Email</span><input name="customer_email" type="email" required value="${esc(order.customer_email)}"></label>
+        <label class="field"><span>Phone</span><input name="customer_phone" required value="${esc(order.customer_phone)}"></label>
+      </div>
+
+      <h3 class="form-section">Vehicle</h3>
+      <div class="field-row">
+        <label class="field"><span>Year</span><input name="vehicle_year" maxlength="4" value="${esc(order.vehicle_year ?? "")}"></label>
+        <label class="field"><span>Make</span><input name="vehicle_make" value="${esc(order.vehicle_make ?? "")}"></label>
+        <label class="field"><span>Model</span><input name="vehicle_model" value="${esc(order.vehicle_model ?? "")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Transport</span><select name="transport_type">
+          <option value="open"${order.transport_type === "enclosed" ? "" : " selected"}>Open trailer</option>
+          <option value="enclosed"${order.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
+        </select></label>
+        <label class="field"><span>Vehicle condition</span><select name="condition">
+          <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
+          <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" ? " selected" : ""}>Inoperable (steer and roll)</option>
+          <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
+        </select></label>
+        <label class="field"><span>VIN</span><input name="vin" maxlength="17" value="${esc(order.vin ?? "")}"></label>
+      </div>
+
+      <h3 class="form-section">Pickup</h3>
+      <div class="field-row">
+        <label class="field"><span>Street</span><input name="origin_street" value="${esc(order.origin_street ?? "")}"></label>
+        <label class="field"><span>City</span><input name="origin_city" value="${esc(order.origin_city ?? "")}"></label>
+        <label class="field"><span>State</span><select name="origin_state">${stateOptions(order.origin_state ?? "")}</select></label>
+        <label class="field"><span>ZIP</span><input name="origin_zip" required value="${esc(order.origin_zip)}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Contact</span><input name="origin_contact" value="${esc(order.origin_contact ?? "")}"></label>
+        <label class="field"><span>Phone</span><input name="origin_phone" value="${esc(order.origin_phone ?? "")}"></label>
+      </div>
+
+      <h3 class="form-section">Delivery</h3>
+      <div class="field-row">
+        <label class="field"><span>Street</span><input name="dest_street" value="${esc(order.dest_street ?? "")}"></label>
+        <label class="field"><span>City</span><input name="dest_city" value="${esc(order.dest_city ?? "")}"></label>
+        <label class="field"><span>State</span><select name="dest_state">${stateOptions(order.dest_state ?? "")}</select></label>
+        <label class="field"><span>ZIP</span><input name="dest_zip" required value="${esc(order.dest_zip)}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Contact</span><input name="dest_contact" value="${esc(order.dest_contact ?? "")}"></label>
+        <label class="field"><span>Phone</span><input name="dest_phone" value="${esc(order.dest_phone ?? "")}"></label>
+      </div>
+
+      <h3 class="form-section">Schedule</h3>
+      <div class="field-row">
+        <label class="field"><span>Ready date</span><input name="ready_date" type="date" value="${esc(order.ready_date ?? "")}"></label>
+        <label class="field"><span>Distance (miles)</span><input name="distance_miles" type="number" min="0" value="${order.distance_miles ?? ""}"></label>
+        <label class="field"><span>Price (USD)</span><input name="price" type="number" min="0" value="${order.price}"></label>
+      </div>
+      <label class="field"><span>Customer notes</span><textarea name="notes" rows="3">${esc(order.notes ?? "")}</textarea></label>
+
+      <h3 class="form-section">Carrier</h3>
+      <div class="field-row">
+        <label class="field"><span>Company</span><input name="carrier_name" value="${esc(order.carrier_name ?? "")}"></label>
+        <label class="field"><span>MC number</span><input name="carrier_mc" value="${esc(order.carrier_mc ?? "")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Company phone</span><input name="carrier_company_phone" value="${esc(order.carrier_company_phone ?? "")}"></label>
+        <label class="field"><span>Company email</span><input name="carrier_email" type="email" value="${esc(order.carrier_email ?? "")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Driver name</span><input name="driver_name" value="${esc(order.driver_name ?? "")}"></label>
+        <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
+      </div>
+
+      <h3 class="form-section">Payment</h3>
+      <div class="field-row">
+        <label class="field"><span>Paid amount (USD)</span><input name="paid_amount" type="number" min="0" value="${order.paid_amount ?? ""}"></label>
+        <label class="field"><span>Payment method</span><select name="payment_method">
+          <option value="">Select method</option>
+          ${methods.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
+        </select></label>
+      </div>
+
+      ${timeField("Picked up at", "edit_picked_up", order.picked_up_at)}
+      ${timeField("Pickup ETA", "edit_pickup_eta", order.pickup_eta)}
+      ${timeField("Delivery ETA", "edit_delivery_eta", order.delivery_eta)}
+      ${timeField("Delivered at", "edit_delivered", order.delivered_at)}
+
+      <button class="btn btn-accent btn-block" type="submit">Save changes</button>
+    </form>
+  </details>
+</div>`;
+}
+
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
   const done = new Set(events.map((event) => event.kind));
   const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
@@ -483,7 +605,7 @@ function orderDetailRows(order: OrderRow): string {
   `;
 }
 
-function orderModal(order: OrderRow, photos: OrderPhotoRow[]): string {
+function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEventRow[] = []): string {
   const anchor = `/admin/orders#order-${order.id}`;
 
   return `<div class="modal" id="order-${order.id}">
@@ -509,6 +631,8 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[]): string {
         )
         .join("")}</div>`
       : ""}
+
+    ${orderEditForm(order, anchor)}
 
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
@@ -537,6 +661,17 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[]): string {
       <button class="btn btn-accent" type="submit">Assign carrier</button>
     </form>`}
 
+    ${events.length
+      ? `<h3 class="section-title mt">History</h3>
+    <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${events
+        .slice(-8)
+        .map(
+          (event) =>
+            `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(eventLabel(event.kind))}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
+        )
+        .join("")}</tbody></table>`
+      : ""}
+
     <div class="modal-actions mt">
       <a class="btn btn-ghost" href="/admin/orders/${order.id}">Open full record</a>
       <a class="btn btn-ghost" href="/track/${esc(order.token)}">Customer view</a>
@@ -552,12 +687,19 @@ export function adminOrdersPage(
   photos: OrderPhotoRow[] = [],
   sort = "created",
   dir = "desc",
+  events: OrderEventRow[] = [],
 ): string {
   const photosByOrder = new Map<number, OrderPhotoRow[]>();
   for (const photo of photos) {
     const list = photosByOrder.get(photo.order_id);
     if (list) list.push(photo);
     else photosByOrder.set(photo.order_id, [photo]);
+  }
+  const eventsByOrder = new Map<number, OrderEventRow[]>();
+  for (const event of events) {
+    const list = eventsByOrder.get(event.order_id);
+    if (list) list.push(event);
+    else eventsByOrder.set(event.order_id, [event]);
   }
 
   const sortLink = (key: string, label: string) => {
@@ -622,7 +764,7 @@ export function adminOrdersPage(
       <th></th>
     </tr></thead><tbody>${rows}</tbody></table>`
       }
-  ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [])).join("")}
+  ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [], eventsByOrder.get(order.id) ?? [])).join("")}
 </section>`,
   });
 }
@@ -636,7 +778,7 @@ export function adminOrderPage(
 ): string {
   const eventRows = events
     .map(
-      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(event.kind === "requested" ? "Quoted" : event.kind === "in_transit" ? "Picked up" : isOrderStatus(event.kind) ? STATUS_LABELS[event.kind] : event.kind)}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
+      (event) => `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(eventLabel(event.kind))}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
     )
     .join("");
 
