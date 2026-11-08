@@ -24,7 +24,27 @@ export function esc(value: unknown): string {
 export const money = (value: number) => `$${value.toLocaleString()}`;
 
 export const when = (value: number) =>
-  new Date(value).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  new Date(value).toLocaleString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+/** Format an ISO date or timestamp as MM/DD/YYYY without timezone drift. */
+export function dateOnly(value: string | number | null): string {
+  if (value === null || value === "") return "";
+  if (typeof value === "number") {
+    return new Date(value).toLocaleDateString("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+    });
+  }
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${month}/${day}/${year}` : value;
+}
 
 const NAV = [
   { href: "/services/open", label: "Open transport" },
@@ -586,7 +606,7 @@ function leadModal(lead: LeadRow): string {
       ${row("Customer", `${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span>`)}
       ${row("Route", `${placeLabel(lead.origin_city, lead.origin_state, lead.origin_zip)} → ${placeLabel(lead.dest_city, lead.dest_state, lead.dest_zip)}`)}
       ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(lead.transport_type)} trailer · ${esc(conditionLabel(lead.condition))}</span>`)}
-      ${row("Ready date", esc(lead.available_date ?? ""))}
+      ${row("Ready date", esc(dateOnly(lead.available_date)))}
       ${row("Distance", lead.distance_miles ? `${lead.distance_miles.toLocaleString()} miles` : "")}
       ${row("Quote", lead.price_estimate ? `<strong>${money(lead.price_estimate)}</strong>` : "")}
       ${row("Customer notes", esc(lead.notes ?? ""))}

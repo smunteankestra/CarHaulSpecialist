@@ -1,4 +1,4 @@
-import { esc, layout, money, site, when } from "./views.ts";
+import { esc, dateOnly, layout, money, site, when } from "./views.ts";
 import { conditionLabel } from "./quote.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
@@ -214,7 +214,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Pickup contact", `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`)}
       ${row("Delivery address", `${esc(order.dest_street ?? "")}<br>${esc(order.dest_city ?? "")} ${esc(order.dest_state ?? "")} ${esc(order.dest_zip)}`)}
       ${row("Delivery contact", `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`)}
-      ${row("Ready date", esc(order.ready_date ?? ""))}
+      ${row("Ready date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
       ${row("Price", `<strong>${money(order.price)}</strong>`)}
       ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}<br><span class="muted small">${esc(order.carrier_mc ?? "")} · ${esc(order.carrier_phone ?? "")}</span>` : "")}
@@ -427,7 +427,7 @@ export function invoicePage(invoice: InvoiceRow, order: OrderRow): string {
     <div><p class="eyebrow">Invoice</p><h1 class="page-title">${esc(invoice.number)}</h1></div>
     <button class="btn btn-ghost no-print" onclick="window.print()">Print</button>
   </div>
-  <p class="muted small">Issued ${when(invoice.issued_at)}${invoice.due_at ? ` · due ${new Date(invoice.due_at).toLocaleDateString()}` : ""} · status ${esc(invoice.status)}</p>
+  <p class="muted small">Issued ${when(invoice.issued_at)}${invoice.due_at ? ` · due ${dateOnly(invoice.due_at)}` : ""} · status ${esc(invoice.status)}</p>
 
   <table class="table">
     <tbody>
@@ -457,7 +457,7 @@ export function adminUsersPage(
       <td>${esc(user.name ?? "—")}</td>
       <td>${esc(ROLE_LABELS[user.role as Role] ?? user.role)}</td>
       <td>${user.active ? '<span class="badge badge-delivered">Active</span>' : '<span class="badge badge-cancelled">Disabled</span>'}</td>
-      <td class="muted small">${user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "never"}</td>
+      <td class="muted small">${user.last_login_at ? when(user.last_login_at) : "never"}</td>
       <td>
         <form method="post" action="/admin/users/${user.id}/reset" class="inline-form">
           <button class="btn btn-ghost btn-small" type="submit">New password</button>
