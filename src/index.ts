@@ -19,6 +19,8 @@ import {
 } from "./orders.ts";
 import { conditionLabel, lookupZip, parseCondition, priceQuote, roadMiles, type TransportType } from "./quote.ts";
 import { stateCode, stateName } from "./states.ts";
+import { loadStaffPerformance, parseStaffMetric, parseStaffPeriod } from "./staff.ts";
+import { staffPerformancePage } from "./views-staff.ts";
 import {
   accountPage,
   adminOrderPage,
@@ -1253,6 +1255,16 @@ app.get("/admin/invoices/:id", async (c) => {
   if (!order) return c.html(notFoundPage(), 404);
 
   return c.html(invoicePage(invoice, order));
+});
+
+app.get("/admin/staff", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const period = parseStaffPeriod(c.req.query("period"));
+  const metric = parseStaffMetric(c.req.query("metric"));
+  const data = await loadStaffPerformance(c.env.DB, period, metric);
+  return c.html(staffPerformancePage(data, user));
 });
 
 app.get("/admin/users", async (c) => {

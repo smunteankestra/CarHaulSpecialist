@@ -1384,7 +1384,7 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false, phot
 <section class="wrap section" id="quotes">
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Quote requests</h1>
-      <nav class="admin-nav"><a href="/admin/orders">Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a></nav>
+      <nav class="admin-nav"><a href="/admin/orders">Orders</a><a href="/admin/staff">Performance</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a></nav>
     </div>
     <div class="admin-user"><span class="muted small">${esc(email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
   </div>

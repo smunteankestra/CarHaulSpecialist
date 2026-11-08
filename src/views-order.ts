@@ -806,7 +806,7 @@ export function adminOrdersPage(
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
     <nav class="admin-nav">
-      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
+      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a><a href="/admin/staff">Performance</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
     </nav>
   </div>
   <div class="filter-row filter-row-orders">
@@ -1026,6 +1026,7 @@ export function adminUsersPage(
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Staff accounts</h1>
       <nav class="admin-nav">
         <a href="/admin/orders">Orders</a>
+        <a href="/admin/staff">Performance</a>
         <a href="/admin/users" class="active">Staff</a>
         <a href="/admin/account">Account</a>
       </nav>
@@ -1081,7 +1082,15 @@ export function accountPage(user: UserRow, message?: string, error?: string): st
     body: `
 <section class="wrap section narrow-wrap">
   <div class="admin-head">
-    <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Your account</h1></div>
+    <div>
+      <p class="eyebrow">Dispatch</p><h1 class="page-title">Your account</h1>
+      <nav class="admin-nav">
+        <a href="/admin/orders">Orders</a>
+        <a href="/admin/staff">Performance</a>
+        ${user.role === "admin" ? '<a href="/admin/users">Staff</a>' : ""}
+        <a href="/admin/account" class="active">Account</a>
+      </nav>
+    </div>
   </div>
   <p class="muted small">${esc(user.email)} · ${esc(ROLE_LABELS[user.role as Role] ?? user.role)}</p>
 
