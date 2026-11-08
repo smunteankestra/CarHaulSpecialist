@@ -1,4 +1,5 @@
 import { LEAD_STATUSES, LEAD_STATUS_LABELS, type LeadStatus } from "./leads.ts";
+import { conditionLabel } from "./quote.ts";
 
 export const site = {
   name: "Bond Auto Transport",
@@ -118,6 +119,7 @@ export interface QuoteFormValues {
 
 export function quoteForm(values: QuoteFormValues = {}, error?: string): string {
   const v = (key: keyof QuoteFormValues) => esc(values[key] ?? "");
+  const condition = values.condition || "running";
   return `<form class="quote-form" method="post" action="/quote" enctype="multipart/form-data">
   ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
   <div class="field-row">
@@ -157,8 +159,9 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     <label class="field">
       <span>Condition</span>
       <select name="condition">
-        <option value="running"${values.condition !== "non-running" ? " selected" : ""}>Runs and drives</option>
-        <option value="non-running"${values.condition === "non-running" ? " selected" : ""}>Not running</option>
+        <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
+        <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" || condition === "non-running" ? " selected" : ""}>Inoperable (steer and roll)</option>
+        <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
       </select>
     </label>
     <label class="field">
@@ -427,7 +430,8 @@ export function pricingPage(): string {
     <tbody>
       <tr><td>Rate per mile</td><td>from $0.95</td><td>from $1.35</td></tr>
       <tr><td>Minimum charge</td><td>$125 local, $450 long-haul</td><td>$175 local, $650 long-haul</td></tr>
-      <tr><td>Not running</td><td>+ $150</td><td>+ $150</td></tr>
+      <tr><td>Inoperable (steer and roll)</td><td>+ $150</td><td>+ $150</td></tr>
+      <tr><td>Inoperable (doesn't steer/roll/no keys)</td><td>+ $250</td><td>+ $250</td></tr>
       <tr><td>Oversize or lifted</td><td>+ $200</td><td>+ $200</td></tr>
       <tr><td>Deposit to book</td><td>20%</td><td>20%</td></tr>
     </tbody>
@@ -581,7 +585,7 @@ function leadModal(lead: LeadRow): string {
     <table class="table detail-table"><tbody>
       ${row("Customer", `${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span>`)}
       ${row("Route", `${placeLabel(lead.origin_city, lead.origin_state, lead.origin_zip)} → ${placeLabel(lead.dest_city, lead.dest_state, lead.dest_zip)}`)}
-      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(lead.transport_type)} trailer · ${esc(lead.condition === "non-running" ? "not running" : "runs and drives")}</span>`)}
+      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(lead.transport_type)} trailer · ${esc(conditionLabel(lead.condition))}</span>`)}
       ${row("Ready date", esc(lead.available_date ?? ""))}
       ${row("Distance", lead.distance_miles ? `${lead.distance_miles.toLocaleString()} miles` : "")}
       ${row("Quote", lead.price_estimate ? `<strong>${money(lead.price_estimate)}</strong>` : "")}
@@ -608,7 +612,7 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false): str
       (lead) => `<tr>
       <td><a class="row-link" href="#quote-${lead.id}">${lead.id}</a></td>
       <td>${esc(lead.name)}<br><span class="muted small">${esc(lead.email)} · ${esc(lead.phone)}</span></td>
-      <td>${esc(lead.origin_zip)} → ${esc(lead.dest_zip)}<br><span class="muted small">${esc(lead.transport_type)} · ${esc(lead.condition)}</span></td>
+      <td>${esc(lead.origin_zip)} → ${esc(lead.dest_zip)}<br><span class="muted small">${esc(lead.transport_type)} · ${esc(conditionLabel(lead.condition))}</span></td>
       <td>${lead.distance_miles ? `${lead.distance_miles.toLocaleString()} mi` : "—"}</td>
       <td>${lead.price_estimate ? money(lead.price_estimate) : "—"}</td>
       <td>${leadStatusBadge(lead.status)}</td>

@@ -1,4 +1,5 @@
 import { esc, layout, money, site, when } from "./views.ts";
+import { conditionLabel } from "./quote.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
   CUSTOMER_STAGES,
@@ -39,6 +40,7 @@ export interface BookValues {
 
 export function bookPage(values: BookValues, price: number | null, error?: string): string {
   const v = (key: keyof BookValues) => esc(values[key] ?? "");
+  const condition = values.condition || "running";
   const hidden = Object.entries(values)
     .filter(([key]) => key === "lead_id")
     .map(([key, value]) => `<input type="hidden" name="${key}" value="${esc(value)}">`)
@@ -81,8 +83,9 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
         </label>
         <label class="field"><span>Condition</span>
           <select name="condition">
-            <option value="running"${values.condition !== "non-running" ? " selected" : ""}>Runs and drives</option>
-            <option value="non-running"${values.condition === "non-running" ? " selected" : ""}>Not running</option>
+            <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
+            <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" || condition === "non-running" ? " selected" : ""}>Inoperable (steer and roll)</option>
+            <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
           </select>
         </label>
       </div>
@@ -163,7 +166,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
     <div class="card">
       <h3>Shipment</h3>
       <p>${esc([order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "Vehicle")}</p>
-      <p class="muted small">${esc(order.transport_type)} trailer · ${esc(order.condition === "non-running" ? "not running" : "runs and drives")}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</p>
+      <p class="muted small">${esc(order.transport_type)} trailer · ${esc(conditionLabel(order.condition))}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</p>
       <p class="muted small">Price ${money(order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
       ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
     </div>
@@ -199,7 +202,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Created", when(order.created_at))}
       ${row("Last updated", when(order.updated_at))}
       ${row("Customer", `${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</span>`)}
-      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${esc(order.condition === "non-running" ? "not running" : "runs and drives")}</span>`)}
+      ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${esc(conditionLabel(order.condition))}</span>`)}
       ${row("VIN", esc(order.vin ?? ""))}
       ${row("Pickup address", `${esc(order.origin_street ?? "")}<br>${esc(order.origin_city ?? "")} ${esc(order.origin_state ?? "")} ${esc(order.origin_zip)}`)}
       ${row("Pickup contact", `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`)}
@@ -234,8 +237,8 @@ function orderModal(order: OrderRow): string {
     <form method="post" action="/admin/orders/${order.id}/status" class="status-actions">
       <input type="hidden" name="next" value="${esc(anchor)}">
       ${ORDER_STATUSES.map(
-        (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
-      ).join("")}
+    (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
+  ).join("")}
     </form>
 
     <h3 class="section-title mt">Assign carrier</h3>

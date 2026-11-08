@@ -15,7 +15,7 @@ import {
   type OrderEventRow,
   type OrderRow,
 } from "./orders.ts";
-import { lookupZip, priceQuote, roadMiles, type TransportType, type VehicleCondition } from "./quote.ts";
+import { lookupZip, parseCondition, priceQuote, roadMiles, type TransportType } from "./quote.ts";
 import {
   accountPage,
   adminOrderPage,
@@ -107,7 +107,7 @@ app.post("/quote", async (c) => {
   if (photo && photo.size > MAX_PHOTO_BYTES) return invalid("That photo is larger than 5 MB. Choose a smaller one.");
 
   const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
-  const condition: VehicleCondition = values.condition === "non-running" ? "non-running" : "running";
+  const condition = parseCondition(values.condition ?? "running");
 
   const [origin, destination] = await Promise.all([
     lookupZip(values.origin_zip ?? ""),
@@ -221,7 +221,7 @@ async function priceFor(values: BookValues): Promise<{ distance: number | null; 
   if (!origin || !destination) return { distance: null, price: null };
   const distance = roadMiles(origin, destination);
   const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
-  const condition: VehicleCondition = values.condition === "non-running" ? "non-running" : "running";
+  const condition = parseCondition(values.condition ?? "running");
   return { distance, price: priceQuote(distance, transport, condition, false).total };
 }
 
@@ -258,7 +258,7 @@ app.post("/book/submit", async (c) => {
     customerEmail: values.email,
     customerPhone: values.phone,
     transportType: values.transport_type === "enclosed" ? "enclosed" : "open",
-    condition: values.condition === "non-running" ? "non-running" : "running",
+    condition: parseCondition(values.condition ?? "running"),
     vehicleYear: values.vehicle_year ?? "",
     vehicleMake: values.vehicle_make ?? "",
     vehicleModel: values.vehicle_model ?? "",

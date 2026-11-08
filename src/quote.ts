@@ -9,6 +9,7 @@ export interface PricingRules {
   openPerMile: number;
   enclosedPerMile: number;
   inopFee: number;
+  noSteerFee: number;
   oversizeFee: number;
   depositPercent: number;
   minimums: MinimumBand[];
@@ -18,6 +19,7 @@ export const DEFAULT_RULES: PricingRules = {
   openPerMile: 0.95,
   enclosedPerMile: 1.35,
   inopFee: 150,
+  noSteerFee: 250,
   oversizeFee: 200,
   depositPercent: 20,
   minimums: [
@@ -30,7 +32,28 @@ export const DEFAULT_RULES: PricingRules = {
 };
 
 export type TransportType = "open" | "enclosed";
-export type VehicleCondition = "running" | "non-running";
+export type VehicleCondition =
+  | "running"
+  | "inoperable_steer_roll"
+  | "inoperable_no_steer"
+  | "non-running";
+
+export const CONDITION_LABELS: Record<VehicleCondition, string> = {
+  running: "Run and drive",
+  inoperable_steer_roll: "Inoperable (steer and roll)",
+  inoperable_no_steer: "Inoperable (doesn't steer/roll/no keys)",
+  "non-running": "Inoperable (steer and roll)",
+};
+
+export function parseCondition(value: string): VehicleCondition {
+  if (value === "inoperable_no_steer") return "inoperable_no_steer";
+  if (value === "inoperable_steer_roll" || value === "non-running") return "inoperable_steer_roll";
+  return "running";
+}
+
+export function conditionLabel(value: string): string {
+  return CONDITION_LABELS[value as VehicleCondition] ?? value;
+}
 
 export interface Place {
   zip: string;
@@ -112,7 +135,8 @@ export function priceQuote(
   const raw = distanceMiles * perMile;
   const minimumApplied = raw < minimum;
   const base = Math.round(minimumApplied ? minimum : raw);
-  const conditionFee = condition === "non-running" ? rules.inopFee : 0;
+  const conditionFee =
+    condition === "running" ? 0 : condition === "inoperable_no_steer" ? rules.noSteerFee : rules.inopFee;
   const sizeFee = oversize ? rules.oversizeFee : 0;
   const total = base + conditionFee + sizeFee;
 

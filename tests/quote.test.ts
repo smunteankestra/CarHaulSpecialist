@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_RULES, haversineMiles, priceQuote, roadMiles } from "../src/quote.ts";
+import { DEFAULT_RULES, conditionLabel, haversineMiles, parseCondition, priceQuote, roadMiles } from "../src/quote.ts";
 
 const miami = { zip: "33101", city: "Miami", state: "FL", lat: 25.7791, lng: -80.1978 };
 const newYork = { zip: "10001", city: "New York", state: "NY", lat: 40.7506, lng: -73.9972 };
@@ -68,10 +68,28 @@ test("enclosed costs more than open on the same route", () => {
   assert.equal(enclosed.total, 1350);
 });
 
-test("a non-running vehicle adds the inoperable fee", () => {
+test("both inoperable conditions add their fee, and the legacy value maps to steer-and-roll", () => {
   const running = priceQuote(1000, "open", "running", false);
-  const dead = priceQuote(1000, "open", "non-running", false);
-  assert.equal(dead.total - running.total, DEFAULT_RULES.inopFee);
+  const steerRoll = priceQuote(1000, "open", "inoperable_steer_roll", false);
+  const noSteer = priceQuote(1000, "open", "inoperable_no_steer", false);
+  const legacy = priceQuote(1000, "open", "non-running", false);
+
+  assert.equal(steerRoll.total - running.total, DEFAULT_RULES.inopFee);
+  assert.equal(noSteer.total - running.total, DEFAULT_RULES.noSteerFee);
+  assert.equal(legacy.total, steerRoll.total);
+});
+
+test("conditions normalize legacy values and label all options", () => {
+  assert.equal(parseCondition("running"), "running");
+  assert.equal(parseCondition("non-running"), "inoperable_steer_roll");
+  assert.equal(parseCondition("inoperable_steer_roll"), "inoperable_steer_roll");
+  assert.equal(parseCondition("inoperable_no_steer"), "inoperable_no_steer");
+  assert.equal(parseCondition("unknown"), "running");
+
+  assert.equal(conditionLabel("running"), "Run and drive");
+  assert.equal(conditionLabel("inoperable_steer_roll"), "Inoperable (steer and roll)");
+  assert.equal(conditionLabel("inoperable_no_steer"), "Inoperable (doesn't steer/roll/no keys)");
+  assert.equal(conditionLabel("non-running"), "Inoperable (steer and roll)");
 });
 
 test("oversize adds the size fee on top of condition", () => {
