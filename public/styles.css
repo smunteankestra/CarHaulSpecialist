@@ -1841,3 +1841,18 @@ select.payment-select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(242, 106, 27, 0.18);
 }
+
+/* keep the footer at the bottom of the page */
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1 0 auto;
+}
+
+.site-footer {
+  margin-top: auto;
+}
