@@ -157,7 +157,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
       </select>
     </label>
     <label class="field">
-      <span>Condition</span>
+      <span>Vehicle condition</span>
       <select name="condition">
         <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
         <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" || condition === "non-running" ? " selected" : ""}>Inoperable (steer and roll)</option>

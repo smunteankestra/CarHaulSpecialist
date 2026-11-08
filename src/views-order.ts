@@ -82,7 +82,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
             <option value="enclosed"${values.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
           </select>
         </label>
-        <label class="field"><span>Condition</span>
+        <label class="field"><span>Vehicle condition</span>
           <select name="condition">
             <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
             <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" || condition === "non-running" ? " selected" : ""}>Inoperable (steer and roll)</option>
