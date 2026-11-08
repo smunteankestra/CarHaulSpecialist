@@ -759,6 +759,93 @@ if (location.pathname.indexOf('/admin') !== 0) {
   });
 })();
 </script>
+<script>
+(function () {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-quote-steps]"), function (form) {
+    var steps = Array.prototype.slice.call(form.querySelectorAll("[data-step]"));
+    var indicators = Array.prototype.slice.call(form.querySelectorAll("[data-step-indicator]"));
+    if (!steps.length) return;
+    var current = 0;
+
+    function fields(index) {
+      return Array.prototype.slice.call(steps[index].querySelectorAll("input, select, textarea")).filter(function (field) {
+        return field.type !== "hidden" && !field.disabled;
+      });
+    }
+
+    function invalidField(index) {
+      var list = fields(index);
+      for (var i = 0; i < list.length; i++) {
+        if (!list[i].checkValidity()) return list[i];
+      }
+      return null;
+    }
+
+    function show(index, focus) {
+      current = Math.max(0, Math.min(steps.length - 1, index));
+      steps.forEach(function (step, i) {
+        step.hidden = i !== current;
+        step.classList.toggle("is-active", i === current);
+      });
+      indicators.forEach(function (indicator, i) {
+        indicator.classList.toggle("active", i === current);
+        indicator.classList.toggle("completed", i < current);
+        if (i === current) indicator.setAttribute("aria-current", "step");
+        else indicator.removeAttribute("aria-current");
+      });
+      if (focus) {
+        var first = fields(current)[0];
+        if (first) first.focus({ preventScroll: true });
+      }
+    }
+
+    function validate(index) {
+      var field = invalidField(index);
+      if (field) {
+        field.reportValidity();
+        return false;
+      }
+      return true;
+    }
+
+    form.addEventListener("click", function (event) {
+      var next = event.target.closest("[data-next-step]");
+      if (next) {
+        event.preventDefault();
+        if (!validate(current)) return;
+        show(current + 1, true);
+        return;
+      }
+      var prev = event.target.closest("[data-prev-step]");
+      if (prev) {
+        event.preventDefault();
+        show(current - 1, true);
+        return;
+      }
+      var target = event.target.closest("[data-step-target]");
+      if (target) {
+        event.preventDefault();
+        var index = Number(target.getAttribute("data-step-target")) - 1;
+        if (index < current) show(index, true);
+      }
+    });
+
+    form.addEventListener("submit", function (event) {
+      for (var i = 0; i < steps.length; i++) {
+        var field = invalidField(i);
+        if (field) {
+          event.preventDefault();
+          show(i, true);
+          field.reportValidity();
+          return;
+        }
+      }
+    });
+
+    show(0, false);
+  });
+})();
+</script>
 </body>
 </html>`;
 }
@@ -805,35 +892,34 @@ export function datePicker(name: string, value: string, allowPast = false): stri
 export function quoteForm(values: QuoteFormValues = {}, error?: string): string {
   const v = (key: keyof QuoteFormValues) => esc(values[key] ?? "");
   const condition = values.condition || "running";
-  return `<form class="quote-form" method="post" action="/get-quote" enctype="multipart/form-data">
+  return `<form class="quote-form" method="post" action="/get-quote" enctype="multipart/form-data" novalidate data-quote-steps>
   ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
-  <div class="field-row">
-    <label class="field">
-      <span>Pickup ZIP *</span>
-      <input name="origin_zip" inputmode="numeric" maxlength="5" required value="${v("origin_zip")}" placeholder="e.g. 33101">
-    </label>
-    <label class="field">
-      <span>Delivery ZIP *</span>
-      <input name="dest_zip" inputmode="numeric" maxlength="5" required value="${v("dest_zip")}" placeholder="e.g. 10001">
-    </label>
+  <div class="quote-steps" aria-label="Quote progress">
+    <button type="button" class="quote-step-indicator active" data-step-indicator="1" data-step-target="1" aria-current="step">
+      <span class="quote-step-num">1</span><span class="quote-step-label">Destination</span>
+    </button>
+    <span class="quote-step-dots" aria-hidden="true"></span>
+    <button type="button" class="quote-step-indicator" data-step-indicator="2" data-step-target="2">
+      <span class="quote-step-num">2</span><span class="quote-step-label">Vehicle</span>
+    </button>
+    <span class="quote-step-dots" aria-hidden="true"></span>
+    <button type="button" class="quote-step-indicator" data-step-indicator="3" data-step-target="3">
+      <span class="quote-step-num">3</span><span class="quote-step-label">Date</span>
+    </button>
   </div>
 
-  <div class="field-row">
-    <label class="field">
-      <span>Vehicle year</span>
-      <input name="vehicle_year" maxlength="4" value="${v("vehicle_year")}" placeholder="2019">
-    </label>
-    <label class="field">
-      <span>Make</span>
-      <input name="vehicle_make" value="${v("vehicle_make")}" placeholder="Toyota">
-    </label>
-    <label class="field">
-      <span>Model</span>
-      <input name="vehicle_model" value="${v("vehicle_model")}" placeholder="Camry">
-    </label>
-  </div>
+  <section class="quote-step" data-step="1">
+    <div class="field-row">
+      <label class="field">
+        <span>Pickup ZIP *</span>
+        <input name="origin_zip" inputmode="numeric" maxlength="5" required value="${v("origin_zip")}" placeholder="e.g. 33101">
+      </label>
+      <label class="field">
+        <span>Delivery ZIP *</span>
+        <input name="dest_zip" inputmode="numeric" maxlength="5" required value="${v("dest_zip")}" placeholder="e.g. 10001">
+      </label>
+    </div>
 
-  <div class="field-row">
     <div class="field">
       <span>Transport</span>
       <select name="transport_type" aria-label="Transport">
@@ -841,6 +927,26 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
         <option value="enclosed"${values.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
       </select>
     </div>
+
+    <button class="btn btn-accent btn-block" type="button" data-next-step>Start my quote</button>
+  </section>
+
+  <section class="quote-step" data-step="2" hidden>
+    <div class="field-row">
+      <label class="field">
+        <span>Vehicle year</span>
+        <input name="vehicle_year" maxlength="4" value="${v("vehicle_year")}" placeholder="2019">
+      </label>
+      <label class="field">
+        <span>Make</span>
+        <input name="vehicle_make" value="${v("vehicle_make")}" placeholder="Toyota">
+      </label>
+      <label class="field">
+        <span>Model</span>
+        <input name="vehicle_model" value="${v("vehicle_model")}" placeholder="Camry">
+      </label>
+    </div>
+
     <div class="field">
       <span>Vehicle condition</span>
       <select name="condition" aria-label="Vehicle condition">
@@ -849,52 +955,64 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
         <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
       </select>
     </div>
+
+    <div class="step-actions">
+      <button class="btn btn-ghost" type="button" data-prev-step>Back</button>
+      <button class="btn btn-accent" type="button" data-next-step>Continue to date</button>
+    </div>
+  </section>
+
+  <section class="quote-step" data-step="3" hidden>
     <div class="field">
-      <span>Pickup date</span>
+      <span>When is the vehicle ready for pickup?</span>
       ${datePicker("available_date", values.available_date ?? "")}
     </div>
-  </div>
 
-  <div class="field-row">
-    <label class="field">
-      <span>Your name *</span>
-      <input name="name" required value="${v("name")}" autocomplete="name">
-    </label>
-    <label class="field">
-      <span>Email *</span>
-      <input name="email" type="email" required value="${v("email")}" autocomplete="email">
-    </label>
-    <label class="field">
-      <span>Phone *</span>
-      <input name="phone" required value="${v("phone")}" autocomplete="tel" placeholder="(305) 555-0134">
-    </label>
-  </div>
-
-  <label class="field">
-    <span>Anything we should know?</span>
-    <textarea name="notes" rows="3" placeholder="Modifications, tight access, second vehicle…">${v("notes")}</textarea>
-  </label>
-
-  <div class="field">
-    <span>Vehicle photos (optional)</span>
-    <div class="photo-upload">
-      <label class="photo-drop">
-        <input class="photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple>
-        <span class="photo-plus" aria-hidden="true">+</span>
-        <strong>Add vehicle photos</strong>
-        <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
+    <div class="field-row">
+      <label class="field">
+        <span>Your name *</span>
+        <input name="name" required value="${v("name")}" autocomplete="name">
       </label>
-      <div class="photo-preview" hidden></div>
-      <p class="photo-count muted small" hidden></p>
-      <p class="photo-warning" role="status" hidden></p>
-      <p class="photo-error form-error" role="alert" hidden></p>
+      <label class="field">
+        <span>Where should we send your quote? *</span>
+        <input name="email" type="email" required value="${v("email")}" autocomplete="email">
+      </label>
+      <label class="field">
+        <span>Phone *</span>
+        <input name="phone" required value="${v("phone")}" autocomplete="tel" placeholder="(305) 555-0134">
+      </label>
     </div>
-  </div>
 
-  <button class="btn btn-accent btn-block" type="submit">See my price</button>
-  <p class="form-note">No card needed. We quote from your route, then a dispatcher confirms the pickup window.</p>
+    <label class="field">
+      <span>Anything we should know?</span>
+      <textarea name="notes" rows="3" placeholder="Modifications, tight access, second vehicle…">${v("notes")}</textarea>
+    </label>
+
+    <div class="field">
+      <span>Vehicle photos (optional)</span>
+      <div class="photo-upload">
+        <label class="photo-drop">
+          <input class="photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple>
+          <span class="photo-plus" aria-hidden="true">+</span>
+          <strong>Add vehicle photos</strong>
+          <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
+        </label>
+        <div class="photo-preview" hidden></div>
+        <p class="photo-count muted small" hidden></p>
+        <p class="photo-warning" role="status" hidden></p>
+        <p class="photo-error form-error" role="alert" hidden></p>
+      </div>
+    </div>
+
+    <div class="step-actions">
+      <button class="btn btn-ghost" type="button" data-prev-step>Back</button>
+      <button class="btn btn-accent" type="submit">See my price</button>
+    </div>
+    <p class="form-note">No card needed. We quote from your route, then a dispatcher confirms the pickup window.</p>
+  </section>
 </form>`;
 }
+
 
 export function homePage(): string {
   return layout({

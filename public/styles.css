@@ -2350,3 +2350,95 @@ main {
   text-align: right;
   font-weight: 600;
 }
+
+/* quote wizard */
+.quote-steps {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.quote-step-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--muted);
+  cursor: default;
+}
+
+.quote-step-indicator.completed {
+  cursor: pointer;
+}
+
+.quote-step-num {
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef2f6;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.quote-step-indicator.active .quote-step-num {
+  background: var(--accent);
+  color: #fff;
+}
+
+.quote-step-indicator.completed .quote-step-num {
+  background: var(--ink);
+  color: #fff;
+  font-size: 0;
+}
+
+.quote-step-indicator.completed .quote-step-num::before {
+  content: "✓";
+  font-size: 0.8rem;
+}
+
+.quote-step-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.quote-step-indicator.active .quote-step-label {
+  color: var(--text);
+}
+
+.quote-step-dots {
+  flex: 1;
+  border-top: 1px dashed #d7e0e8;
+}
+
+.quote-step {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.quote-step[hidden] {
+  display: none;
+}
+
+.step-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.step-actions .btn {
+  flex: 1;
+}
+
+@media (min-width: 640px) {
+  .quote-step[data-step="3"] .field-row .field > span {
+    display: block;
+    min-height: 2.3em;
+  }
+}
