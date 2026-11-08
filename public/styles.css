@@ -1260,3 +1260,62 @@ a.card:hover {
 .form-section-date {
   font-weight: 700;
 }
+
+/* booking photo upload */
+.photo-upload {
+  margin-top: 0.2rem;
+}
+
+.photo-drop {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 0.15rem;
+  padding: 1.4rem 1rem;
+  border: 1.5px dashed #c7d4e0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfdff, #f5f9fc);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.photo-drop:hover,
+.photo-drop:focus-within {
+  border-color: var(--accent);
+  background: #fff8f2;
+  box-shadow: 0 0 0 3px rgba(242, 106, 27, 0.12);
+}
+
+.photo-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.photo-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.3rem;
+  line-height: 1;
+  font-weight: 600;
+  box-shadow: 0 6px 14px rgba(242, 106, 27, 0.3);
+}
+
+.photo-drop strong {
+  font-size: 0.98rem;
+}
+
+.photo-sub {
+  color: var(--muted);
+  font-size: 0.8rem;
+}

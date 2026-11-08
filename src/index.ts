@@ -27,6 +27,7 @@ import {
   invoicePage,
   trackPage,
   type BookValues,
+  type OrderPhotoRow,
 } from "./views-order.ts";
 import {
   createUser,
@@ -256,8 +257,9 @@ app.post("/quote", async (c) => {
   );
 });
 
-function bookValuesFrom(body: Record<string, unknown>): BookValues {
-  const pick = (key: keyof BookValues) => String(body[key] ?? "").trim();
+function bookValuesFrom(body: FormData | Record<string, unknown>): BookValues {
+  const pick = (key: keyof BookValues) =>
+    String(body instanceof FormData ? (body.get(key) ?? "") : (body[key] ?? "")).trim();
   return {
     name: pick("name"),
     email: pick("email"),
@@ -280,7 +282,9 @@ function bookValuesFrom(body: Record<string, unknown>): BookValues {
     vehicle_model: pick("vehicle_model"),
     transport_type: pick("transport_type") || "open",
     condition: pick("condition") || "running",
-    ready_date: pick("ready_date") || String(body.available_date ?? "").trim(),
+    ready_date:
+      pick("ready_date") ||
+      String(body instanceof FormData ? (body.get("available_date") ?? "") : (body.available_date ?? "")).trim(),
     notes: pick("notes"),
     lead_id: pick("lead_id"),
     order_token: pick("order_token"),
@@ -299,13 +303,14 @@ async function priceFor(values: BookValues): Promise<{ distance: number | null; 
 app.get("/book", (c) => c.html(bookPage({}, null)));
 
 app.post("/book", async (c) => {
-  const values = bookValuesFrom(await c.req.parseBody());
+  const values = bookValuesFrom(await c.req.formData());
   const { price } = await priceFor(values);
   return c.html(bookPage(values, price));
 });
 
 app.post("/book/submit", async (c) => {
-  const values = bookValuesFrom(await c.req.parseBody());
+  const form = await c.req.formData();
+  const values = bookValuesFrom(form);
   const invalid = (message: string) => c.html(bookPage(values, null, message), 400);
 
   if (!values.name || !values.email || !values.phone) return invalid("Name, email and phone are required.");
@@ -315,6 +320,13 @@ app.post("/book/submit", async (c) => {
   }
   if (!values.origin_contact || !values.origin_phone || !values.dest_contact || !values.dest_phone) {
     return invalid("A contact name and phone are required at both ends.");
+  }
+
+  const photos = form.getAll("photo").filter((entry): entry is File => entry instanceof File && entry.size > 0);
+  if (photos.length > MAX_PHOTOS) return invalid(`Add up to ${MAX_PHOTOS} photos.`);
+  for (const photo of photos) {
+    if (!PHOTO_TYPES.has(photo.type)) return invalid("Upload JPEG, PNG or WebP photos.");
+    if (photo.size > MAX_PHOTO_BYTES) return invalid("Each photo must be 5 MB or smaller.");
   }
 
   const { distance, price } = await priceFor(values);
@@ -360,6 +372,32 @@ app.post("/book/submit", async (c) => {
     quotedOrder && quotedOrder.status === "quoted"
       ? await confirmOrder(c.env.DB, quotedOrder.id, orderInput, "customer")
       : quotedOrder ?? (await createOrder(c.env.DB, orderInput));
+
+  if (photos.length) {
+    const stored: string[] = [];
+    for (const photo of photos) {
+      const key = `orders/${crypto.randomUUID()}.${PHOTO_TYPES.get(photo.type) ?? "jpg"}`;
+      await c.env.UPLOADS.put(key, await photo.arrayBuffer(), {
+        metadata: { contentType: photo.type },
+      });
+      stored.push(key);
+    }
+    try {
+      const now = Date.now();
+      await c.env.DB.batch(
+        stored.map((key) =>
+          c.env.DB.prepare("INSERT INTO order_photos (order_id, photo_key, created_at) VALUES (?, ?, ?)").bind(
+            order.id,
+            key,
+            now,
+          ),
+        ),
+      );
+    } catch (error) {
+      await Promise.all(stored.map((key) => c.env.UPLOADS.delete(key)));
+      throw error;
+    }
+  }
 
   if (leadId) {
     await c.env.DB.prepare(
@@ -595,6 +633,28 @@ app.get("/admin/photos/:id", async (c) => {
   });
 });
 
+app.get("/admin/order-photos/:id", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const photo = await c.env.DB.prepare("SELECT photo_key FROM order_photos WHERE id = ?")
+    .bind(id)
+    .first<{ photo_key: string }>();
+  if (!photo) return c.notFound();
+
+  const object = await c.env.UPLOADS.getWithMetadata<{ contentType?: string }>(photo.photo_key, "arrayBuffer");
+  if (!object.value) return c.notFound();
+
+  return new Response(object.value, {
+    headers: {
+      "content-type": object.metadata?.contentType ?? "application/octet-stream",
+      "cache-control": "private, max-age=3600",
+      "x-content-type-options": "nosniff",
+    },
+  });
+});
+
 app.get("/admin/orders", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.redirect("/admin/login", 303);
@@ -606,7 +666,17 @@ app.get("/admin/orders", async (c) => {
     : c.env.DB.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 200");
   const { results } = await statement.all<OrderRow>();
 
-  return c.html(adminOrdersPage(results, status, user.role === "admin"));
+  const photos = results.length
+    ? (
+        await c.env.DB.prepare(
+          `SELECT * FROM order_photos WHERE order_id IN (${results.map(() => "?").join(",")}) ORDER BY id`,
+        )
+          .bind(...results.map((order) => order.id))
+          .all<OrderPhotoRow>()
+      ).results
+    : [];
+
+  return c.html(adminOrdersPage(results, status, user.role === "admin", photos));
 });
 
 app.get("/admin/orders/:id", async (c) => {
@@ -617,12 +687,13 @@ app.get("/admin/orders/:id", async (c) => {
   const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
   if (!order) return c.html(notFoundPage(), 404);
 
-  const [{ results: events }, { results: invoices }] = await Promise.all([
+  const [{ results: events }, { results: invoices }, { results: photos }] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id").bind(id).all<OrderEventRow>(),
     c.env.DB.prepare("SELECT * FROM invoices WHERE order_id = ? ORDER BY id DESC").bind(id).all<InvoiceRow>(),
+    c.env.DB.prepare("SELECT * FROM order_photos WHERE order_id = ? ORDER BY id").bind(id).all<OrderPhotoRow>(),
   ]);
 
-  return c.html(adminOrderPage(order, events, invoices, new URL(c.req.url).origin));
+  return c.html(adminOrderPage(order, events, invoices, new URL(c.req.url).origin, photos));
 });
 
 app.post("/admin/orders/:id/status", async (c) => {

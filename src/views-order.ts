@@ -12,6 +12,13 @@ import {
   type OrderStatus,
 } from "./orders.ts";
 
+export interface OrderPhotoRow {
+  id: number;
+  order_id: number;
+  photo_key: string;
+  created_at: number;
+}
+
 export interface BookValues {
   order_token?: string;
   name?: string;
@@ -100,7 +107,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
     <div class="book-form-card">
       <h2 class="section-title">Booking details</h2>
       <p class="muted">Both addresses and a contact at each end. Fields marked * are required.</p>
-    <form class="quote-form" method="post" action="/book/submit">
+    <form class="quote-form" method="post" action="/book/submit" enctype="multipart/form-data">
       ${hidden}
       ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
 
@@ -164,6 +171,16 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       <div class="field-row">
         <label class="field"><span>Ready date</span><input name="ready_date" type="date" value="${v("ready_date")}"></label>
         <label class="field"><span>Anything we should know?</span><textarea name="notes" rows="2">${v("notes")}</textarea></label>
+      </div>
+
+      <h3 class="form-section">Photos</h3>
+      <div class="photo-upload">
+        <label class="photo-drop">
+          <input class="photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <span class="photo-plus" aria-hidden="true">+</span>
+          <strong>Add vehicle photos</strong>
+          <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG or WebP · 5 MB each</span>
+        </label>
       </div>
 
       <button class="btn btn-accent btn-block" type="submit">Submit booking request</button>
@@ -466,7 +483,7 @@ function orderDetailRows(order: OrderRow): string {
   `;
 }
 
-function orderModal(order: OrderRow): string {
+function orderModal(order: OrderRow, photos: OrderPhotoRow[]): string {
   const anchor = `/admin/orders#order-${order.id}`;
 
   return `<div class="modal" id="order-${order.id}">
@@ -482,6 +499,16 @@ function orderModal(order: OrderRow): string {
     </div>
 
     <table class="table detail-table"><tbody>${orderDetailRows(order)}</tbody></table>
+
+    ${photos.length
+      ? `<h3 class="section-title mt">Vehicle photos</h3>
+    <div class="photo-grid">${photos
+        .map(
+          (photo) =>
+            `<a href="/admin/order-photos/${photo.id}" target="_blank" rel="noopener"><img class="lead-photo" src="/admin/order-photos/${photo.id}" alt="Vehicle photo for ${esc(order.number)}" loading="lazy"></a>`,
+        )
+        .join("")}</div>`
+      : ""}
 
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
@@ -518,7 +545,19 @@ function orderModal(order: OrderRow): string {
 </div>`;
 }
 
-export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = false): string {
+export function adminOrdersPage(
+  orders: OrderRow[],
+  status: string,
+  isAdmin = false,
+  photos: OrderPhotoRow[] = [],
+): string {
+  const photosByOrder = new Map<number, OrderPhotoRow[]>();
+  for (const photo of photos) {
+    const list = photosByOrder.get(photo.order_id);
+    if (list) list.push(photo);
+    else photosByOrder.set(photo.order_id, [photo]);
+  }
+
   const rows = orders
     .map(
       (order) => `<tr>
@@ -554,7 +593,7 @@ export function adminOrdersPage(orders: OrderRow[], status: string, isAdmin = fa
         ? `<p class="muted">No orders in this view.</p>`
         : `<table class="table rows-clickable"><thead><tr><th>Order</th><th>Customer</th><th>Route</th><th>Price</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
       }
-  ${orders.map(orderModal).join("")}
+  ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [])).join("")}
 </section>`,
   });
 }
@@ -564,6 +603,7 @@ export function adminOrderPage(
   events: OrderEventRow[],
   invoices: InvoiceRow[],
   baseUrl = "",
+  photos: OrderPhotoRow[] = [],
 ): string {
   const eventRows = events
     .map(
@@ -611,6 +651,16 @@ export function adminOrderPage(
   <table class="table detail-table">
     <tbody>${orderDetailRows(order)}</tbody>
   </table>
+
+  ${photos.length
+      ? `<h2 class="section-title mt">Vehicle photos</h2>
+  <div class="photo-grid">${photos
+        .map(
+          (photo) =>
+            `<a href="/admin/order-photos/${photo.id}" target="_blank" rel="noopener"><img class="lead-photo" src="/admin/order-photos/${photo.id}" alt="Vehicle photo for ${esc(order.number)}" loading="lazy"></a>`,
+        )
+        .join("")}</div>`
+      : ""}
 
   <h2 class="section-title mt">Actions</h2>
   <div class="cards two-up">
