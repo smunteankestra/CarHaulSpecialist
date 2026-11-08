@@ -875,3 +875,14 @@ a.card:hover {
   border-color: var(--accent);
   color: #fff;
 }
+
+/* lead photo */
+.lead-photo {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  border: 1px solid #d7e0e8;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #f7fafc;
+}

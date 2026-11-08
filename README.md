@@ -12,6 +12,7 @@ Built to run on Cloudflare Workers with D1, deployed from GitHub.
 | Router / HTML | Hono, server-rendered | Marketing pages need real HTML for SEO; no client framework needed for forms |
 | Database | D1 (SQLite) | Orders and leads are small, relational, and low volume |
 | Static files | Workers Assets (`public/`) | One stylesheet, no build step |
+| Uploads | Cloudflare KV (`UPLOADS`) | Optional lead photos; R2 is not enabled on the account |
 
 No bundler, no client-side JavaScript. Every form posts and re-renders on the server, so the site works with JavaScript disabled and search engines see the full page.
 
@@ -55,6 +56,12 @@ The public site reads contact details from `site` in `src/views.ts` — phone, e
 | Deposit | 20% | 20% |
 
 Distance comes from ZIP centroids looked up through `zippopotam.us`, then multiplied by 1.2 to approximate road miles. If a lookup fails the lead is still captured and the visitor is told dispatch will follow up, rather than being shown a made-up number.
+
+## Lead photos
+
+The quote form takes an optional JPEG, PNG or WebP up to 5 MB. The file is stored in the `UPLOADS` KV namespace under `leads/<uuid>.<ext>`; the lead row keeps only `photo_key`. Signed-in staff see it in the quote modal and fetch it from `/admin/leads/:id/photo`, which redirects to login when unauthenticated.
+
+Apply `migrations/0004_lead_photo.sql` before deploying. KV is used because R2 is not enabled on the account; moving to R2 later only changes the binding and the storage calls, not the column or route.
 
 ## Deploy
 

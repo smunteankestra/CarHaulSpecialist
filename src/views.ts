@@ -118,7 +118,7 @@ export interface QuoteFormValues {
 
 export function quoteForm(values: QuoteFormValues = {}, error?: string): string {
   const v = (key: keyof QuoteFormValues) => esc(values[key] ?? "");
-  return `<form class="quote-form" method="post" action="/quote">
+  return `<form class="quote-form" method="post" action="/quote" enctype="multipart/form-data">
   ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
   <div class="field-row">
     <label class="field">
@@ -186,6 +186,12 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     <span>Anything we should know?</span>
     <textarea name="notes" rows="3" placeholder="Modifications, tight access, second vehicle…">${v("notes")}</textarea>
   </label>
+
+  <label class="field">
+    <span>Vehicle photo (optional)</span>
+    <input name="photo" type="file" accept="image/jpeg,image/png,image/webp">
+  </label>
+  <p class="form-note">A clear photo helps dispatch confirm condition and loading. JPEG, PNG or WebP up to 5 MB.</p>
 
   <button class="btn btn-accent btn-block" type="submit">See my price</button>
   <p class="form-note">No card needed. We quote from your route, then a dispatcher confirms the pickup window.</p>
@@ -523,6 +529,7 @@ export interface LeadRow {
   price_estimate: number | null;
   price_is_estimate: number;
   notes: string | null;
+  photo_key: string | null;
   status: string;
   created_at: number;
 }
@@ -580,6 +587,9 @@ function leadModal(lead: LeadRow): string {
       ${row("Quote", lead.price_estimate ? `<strong>${money(lead.price_estimate)}</strong>` : "")}
       ${row("Customer notes", esc(lead.notes ?? ""))}
     </tbody></table>
+
+    ${lead.photo_key ? `<h3 class="section-title mt">Vehicle photo</h3>
+    <img class="lead-photo" src="/admin/leads/${lead.id}/photo" alt="Vehicle photo for quote #${lead.id}" loading="lazy">` : ""}
 
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/leads/${lead.id}/status" class="status-actions">

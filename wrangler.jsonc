@@ -13,6 +13,12 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
+  "kv_namespaces": [
+    {
+      "binding": "UPLOADS",
+      "id": "7639db43f96d4c88abb7a52e3d93a92c"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",

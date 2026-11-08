@@ -56,6 +56,7 @@ import {
 
 interface Bindings {
   DB: D1Database;
+  UPLOADS: KVNamespace;
   ASSETS: Fetcher;
   ADMIN_EMAIL: string;
   ADMIN_PASSWORD: string;
@@ -66,6 +67,12 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 const ZIP_PATTERN = /^\d{5}$/;
+const PHOTO_TYPES = new Map([
+  ["image/jpeg", "jpg"],
+  ["image/png", "png"],
+  ["image/webp", "webp"],
+]);
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 app.get("/", (c) => c.html(homePage()));
 
@@ -95,6 +102,10 @@ app.post("/quote", async (c) => {
   if (!ZIP_PATTERN.test(values.origin_zip ?? "")) return invalid("Pickup ZIP must be five digits.");
   if (!ZIP_PATTERN.test(values.dest_zip ?? "")) return invalid("Delivery ZIP must be five digits.");
 
+  const photo = body.photo instanceof File && body.photo.size > 0 ? body.photo : null;
+  if (photo && !PHOTO_TYPES.has(photo.type)) return invalid("Upload a JPEG, PNG or WebP photo.");
+  if (photo && photo.size > MAX_PHOTO_BYTES) return invalid("That photo is larger than 5 MB. Choose a smaller one.");
+
   const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
   const condition: VehicleCondition = values.condition === "non-running" ? "non-running" : "running";
 
@@ -106,35 +117,48 @@ app.post("/quote", async (c) => {
   const distance = origin && destination ? roadMiles(origin, destination) : null;
   const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false);
 
-  await c.env.DB.prepare(
-    `INSERT INTO leads
-       (name, email, phone, origin_zip, origin_city, origin_state, dest_zip, dest_city, dest_state,
-        transport_type, vehicle_year, vehicle_make, vehicle_model, condition, available_date,
-        distance_miles, price_estimate, price_is_estimate, notes, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'new', ?)`,
-  )
-    .bind(
-      values.name,
-      values.email,
-      values.phone,
-      values.origin_zip,
-      origin?.city ?? null,
-      origin?.state ?? null,
-      values.dest_zip,
-      destination?.city ?? null,
-      destination?.state ?? null,
-      transport,
-      values.vehicle_year || null,
-      values.vehicle_make || null,
-      values.vehicle_model || null,
-      condition,
-      values.available_date || null,
-      distance,
-      breakdown?.total ?? null,
-      values.notes || null,
-      Date.now(),
+  const photoKey = photo ? `leads/${crypto.randomUUID()}.${PHOTO_TYPES.get(photo.type) ?? "jpg"}` : null;
+  if (photo && photoKey) {
+    await c.env.UPLOADS.put(photoKey, await photo.arrayBuffer(), {
+      metadata: { contentType: photo.type },
+    });
+  }
+
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO leads
+         (name, email, phone, origin_zip, origin_city, origin_state, dest_zip, dest_city, dest_state,
+          transport_type, vehicle_year, vehicle_make, vehicle_model, condition, available_date,
+          distance_miles, price_estimate, price_is_estimate, notes, photo_key, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'new', ?)`,
     )
-    .run();
+      .bind(
+        values.name,
+        values.email,
+        values.phone,
+        values.origin_zip,
+        origin?.city ?? null,
+        origin?.state ?? null,
+        values.dest_zip,
+        destination?.city ?? null,
+        destination?.state ?? null,
+        transport,
+        values.vehicle_year || null,
+        values.vehicle_make || null,
+        values.vehicle_model || null,
+        condition,
+        values.available_date || null,
+        distance,
+        breakdown?.total ?? null,
+        values.notes || null,
+        photoKey,
+        Date.now(),
+      )
+      .run();
+  } catch (error) {
+    if (photoKey) await c.env.UPLOADS.delete(photoKey);
+    throw error;
+  }
 
   if (!breakdown || !origin || !destination || distance === null) {
     return c.html(
@@ -366,6 +390,28 @@ app.post("/admin/leads/:id/status", async (c) => {
     await c.env.DB.prepare("UPDATE leads SET status = ? WHERE id = ?").bind(status, id).run();
   }
   return c.redirect(`/admin#quote-${id}`, 303);
+});
+
+app.get("/admin/leads/:id/photo", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const lead = await c.env.DB.prepare("SELECT photo_key FROM leads WHERE id = ?")
+    .bind(id)
+    .first<{ photo_key: string | null }>();
+  if (!lead?.photo_key) return c.notFound();
+
+  const object = await c.env.UPLOADS.getWithMetadata<{ contentType?: string }>(lead.photo_key, "arrayBuffer");
+  if (!object.value) return c.notFound();
+
+  return new Response(object.value, {
+    headers: {
+      "content-type": object.metadata?.contentType ?? "application/octet-stream",
+      "cache-control": "private, max-age=3600",
+      "x-content-type-options": "nosniff",
+    },
+  });
 });
 
 app.get("/admin/orders", async (c) => {
