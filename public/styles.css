@@ -1681,3 +1681,103 @@ a.card:hover {
   padding-top: 1rem;
   margin-top: 0.4rem;
 }
+
+/* in-place order editing */
+.order-edit .order-edit-form {
+  display: none;
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.order-edit[open] .order-readonly {
+  display: none;
+}
+
+.order-edit[open] .order-edit-form {
+  display: block;
+}
+
+.edit-table td {
+  vertical-align: top;
+}
+
+.edit-table input,
+.edit-table select,
+.edit-table textarea {
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid #d8e2ec;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.85rem;
+  background: #fff;
+}
+
+.edit-table textarea {
+  resize: vertical;
+}
+
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.35rem;
+}
+
+.edit-stack {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.edit-table .field-row {
+  margin: 0;
+}
+
+.edit-table .field {
+  min-width: 0;
+}
+
+.edit-table .field span {
+  font-size: 0.68rem;
+}
+
+/* checkbox-based in-place editing */
+.order-edit-toggle {
+  display: none;
+}
+
+.order-edit-label {
+  display: flex;
+  width: max-content;
+  margin-left: auto;
+  cursor: pointer;
+}
+
+.order-edit-toggle:checked ~ .order-readonly {
+  display: none;
+}
+
+.order-edit-toggle:checked ~ .order-edit-form {
+  display: block;
+}
+
+.order-edit-bar .order-edit-form {
+  display: none;
+}
+
+.order-edit-bar {
+  position: relative;
+}
+
+.order-edit-toggle {
+  display: block;
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.order-edit-toggle:focus-visible + .order-edit-label {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

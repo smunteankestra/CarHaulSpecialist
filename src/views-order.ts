@@ -231,8 +231,7 @@ function eventLabel(kind: string): string {
   return isOrderStatus(kind) ? STATUS_LABELS[kind] : kind;
 }
 
-function timeFields(config: {
-  dateLabel: string;
+function timeSelects(config: {
   monthName: string;
   dayName: string;
   yearName: string;
@@ -240,7 +239,6 @@ function timeFields(config: {
   minuteName: string;
   ampmName: string;
   value: number | null;
-  note: string;
 }): string {
   const date = config.value ? new Date(config.value) : new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -271,8 +269,7 @@ function timeFields(config: {
     .map((value) => `<option value="${value}"${minute === value ? " selected" : ""}>${pad(value)}</option>`)
     .join("");
 
-  return `<p class="form-section form-section-date">${esc(config.dateLabel)}</p>
-      <div class="field-row">
+  return `<div class="field-row">
         <label class="field"><span>Month</span><select name="${config.monthName}">${monthOptions}</select></label>
         <label class="field"><span>Day</span><select name="${config.dayName}">${dayOptions}</select></label>
         <label class="field"><span>Year</span><select name="${config.yearName}">${yearOptions}</select></label>
@@ -284,7 +281,22 @@ function timeFields(config: {
           <option value="AM"${ampm === "AM" ? " selected" : ""}>AM</option>
           <option value="PM"${ampm === "PM" ? " selected" : ""}>PM</option>
         </select></label>
-      </div>
+      </div>`;
+}
+
+function timeFields(config: {
+  dateLabel: string;
+  monthName: string;
+  dayName: string;
+  yearName: string;
+  hourName: string;
+  minuteName: string;
+  ampmName: string;
+  value: number | null;
+  note: string;
+}): string {
+  return `<p class="form-section form-section-date">${esc(config.dateLabel)}</p>
+      ${timeSelects(config)}
       <p class="form-note">${config.note}</p>`;
 }
 
@@ -368,114 +380,132 @@ function statusFields(order: OrderRow): string {
 function orderEditForm(order: OrderRow, next: string): string {
   const condition = parseCondition(order.condition);
   const methods = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"];
-  const timeField = (label: string, prefix: string, value: number | null) =>
-    timeFields({
-      dateLabel: label,
-      monthName: `${prefix}_month`,
-      dayName: `${prefix}_day`,
-      yearName: `${prefix}_year`,
-      hourName: `${prefix}_hour`,
-      minuteName: `${prefix}_minute`,
-      ampmName: `${prefix}_ampm`,
-      value,
-      note: value ? `Saved: ${when(value)}` : "Not set.",
-    });
+  const readOnly = `<table class="table detail-table"><tbody>${orderDetailRows(order)}</tbody></table>`;
 
   return `<div class="order-edit-bar">
-  <details class="order-edit">
-    <summary class="btn btn-ghost">Edit fields</summary>
-    <form class="quote-form order-edit-form" method="post" action="/admin/orders/${order.id}/edit">
+  <input type="checkbox" id="order-edit-${order.id}" class="order-edit-toggle">
+  <label class="btn btn-ghost order-edit-label" for="order-edit-${order.id}">Edit fields</label>
+  <div class="order-readonly">${readOnly}</div>
+    <form class="order-edit-form" method="post" action="/admin/orders/${order.id}/edit">
       <input type="hidden" name="next" value="${esc(next)}">
-
-      <h3 class="form-section">Customer</h3>
-      <div class="field-row">
-        <label class="field"><span>Name</span><input name="customer_name" required value="${esc(order.customer_name)}"></label>
-        <label class="field"><span>Email</span><input name="customer_email" type="email" required value="${esc(order.customer_email)}"></label>
-        <label class="field"><span>Phone</span><input name="customer_phone" required value="${esc(order.customer_phone)}"></label>
-      </div>
-
-      <h3 class="form-section">Vehicle</h3>
-      <div class="field-row">
-        <label class="field"><span>Year</span><input name="vehicle_year" maxlength="4" value="${esc(order.vehicle_year ?? "")}"></label>
-        <label class="field"><span>Make</span><input name="vehicle_make" value="${esc(order.vehicle_make ?? "")}"></label>
-        <label class="field"><span>Model</span><input name="vehicle_model" value="${esc(order.vehicle_model ?? "")}"></label>
-      </div>
-      <div class="field-row">
-        <label class="field"><span>Transport</span><select name="transport_type">
-          <option value="open"${order.transport_type === "enclosed" ? "" : " selected"}>Open trailer</option>
-          <option value="enclosed"${order.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
-        </select></label>
-        <label class="field"><span>Vehicle condition</span><select name="condition">
-          <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
-          <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" ? " selected" : ""}>Inoperable (steer and roll)</option>
-          <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
-        </select></label>
-        <label class="field"><span>VIN</span><input name="vin" maxlength="17" value="${esc(order.vin ?? "")}"></label>
-      </div>
-
-      <h3 class="form-section">Pickup</h3>
-      <div class="field-row">
-        <label class="field"><span>Street</span><input name="origin_street" value="${esc(order.origin_street ?? "")}"></label>
-        <label class="field"><span>City</span><input name="origin_city" value="${esc(order.origin_city ?? "")}"></label>
-        <label class="field"><span>State</span><select name="origin_state">${stateOptions(order.origin_state ?? "")}</select></label>
-        <label class="field"><span>ZIP</span><input name="origin_zip" required value="${esc(order.origin_zip)}"></label>
-      </div>
-      <div class="field-row">
-        <label class="field"><span>Contact</span><input name="origin_contact" value="${esc(order.origin_contact ?? "")}"></label>
-        <label class="field"><span>Phone</span><input name="origin_phone" value="${esc(order.origin_phone ?? "")}"></label>
-      </div>
-
-      <h3 class="form-section">Delivery</h3>
-      <div class="field-row">
-        <label class="field"><span>Street</span><input name="dest_street" value="${esc(order.dest_street ?? "")}"></label>
-        <label class="field"><span>City</span><input name="dest_city" value="${esc(order.dest_city ?? "")}"></label>
-        <label class="field"><span>State</span><select name="dest_state">${stateOptions(order.dest_state ?? "")}</select></label>
-        <label class="field"><span>ZIP</span><input name="dest_zip" required value="${esc(order.dest_zip)}"></label>
-      </div>
-      <div class="field-row">
-        <label class="field"><span>Contact</span><input name="dest_contact" value="${esc(order.dest_contact ?? "")}"></label>
-        <label class="field"><span>Phone</span><input name="dest_phone" value="${esc(order.dest_phone ?? "")}"></label>
-      </div>
-
-      <h3 class="form-section">Schedule</h3>
-      <div class="field-row">
-        <label class="field"><span>Ready date</span><input name="ready_date" type="date" value="${esc(order.ready_date ?? "")}"></label>
-        <label class="field"><span>Distance (miles)</span><input name="distance_miles" type="number" min="0" value="${order.distance_miles ?? ""}"></label>
-        <label class="field"><span>Price (USD)</span><input name="price" type="number" min="0" value="${order.price}"></label>
-      </div>
-      <label class="field"><span>Customer notes</span><textarea name="notes" rows="3">${esc(order.notes ?? "")}</textarea></label>
-
-      <h3 class="form-section">Carrier</h3>
-      <div class="field-row">
-        <label class="field"><span>Company</span><input name="carrier_name" value="${esc(order.carrier_name ?? "")}"></label>
-        <label class="field"><span>MC number</span><input name="carrier_mc" value="${esc(order.carrier_mc ?? "")}"></label>
-      </div>
-      <div class="field-row">
-        <label class="field"><span>Company phone</span><input name="carrier_company_phone" value="${esc(order.carrier_company_phone ?? "")}"></label>
-        <label class="field"><span>Company email</span><input name="carrier_email" type="email" value="${esc(order.carrier_email ?? "")}"></label>
-      </div>
-      <div class="field-row">
-        <label class="field"><span>Driver name</span><input name="driver_name" value="${esc(order.driver_name ?? "")}"></label>
-        <label class="field"><span>Driver phone</span><input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}"></label>
-      </div>
-
-      <h3 class="form-section">Payment</h3>
-      <div class="field-row">
-        <label class="field"><span>Paid amount (USD)</span><input name="paid_amount" type="number" min="0" value="${order.paid_amount ?? ""}"></label>
-        <label class="field"><span>Payment method</span><select name="payment_method">
-          <option value="">Select method</option>
-          ${methods.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
-        </select></label>
-      </div>
-
-      ${timeField("Picked up at", "edit_picked_up", order.picked_up_at)}
-      ${timeField("Pickup ETA", "edit_pickup_eta", order.pickup_eta)}
-      ${timeField("Delivery ETA", "edit_delivery_eta", order.delivery_eta)}
-      ${timeField("Delivered at", "edit_delivered", order.delivered_at)}
-
+      <table class="table detail-table edit-table">
+        <tbody>
+          <tr><th>Order</th><td>${esc(order.number)}</td></tr>
+          <tr><th>Quote record</th><td>${order.lead_id ? `<a href="/admin#quote-${order.lead_id}">#${order.lead_id}</a>` : "—"}</td></tr>
+          <tr><th>Status</th><td>${statusBadge(order.status)}</td></tr>
+          <tr><th>Created</th><td>${when(order.created_at)}</td></tr>
+          <tr><th>Last updated</th><td>${when(order.updated_at)}</td></tr>
+          <tr><th>Customer</th><td><div class="edit-stack">
+            <input name="customer_name" required value="${esc(order.customer_name)}" placeholder="Name">
+            <input name="customer_email" type="email" required value="${esc(order.customer_email)}" placeholder="Email">
+            <input name="customer_phone" required value="${esc(order.customer_phone)}" placeholder="Phone">
+          </div></td></tr>
+          <tr><th>Vehicle</th><td><div class="edit-stack">
+            <div class="edit-grid">
+              <input name="vehicle_year" maxlength="4" value="${esc(order.vehicle_year ?? "")}" placeholder="Year">
+              <input name="vehicle_make" value="${esc(order.vehicle_make ?? "")}" placeholder="Make">
+              <input name="vehicle_model" value="${esc(order.vehicle_model ?? "")}" placeholder="Model">
+            </div>
+            <div class="edit-grid">
+              <select name="transport_type">
+                <option value="open"${order.transport_type === "enclosed" ? "" : " selected"}>Open trailer</option>
+                <option value="enclosed"${order.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
+              </select>
+              <select name="condition">
+                <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
+                <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" ? " selected" : ""}>Inoperable (steer and roll)</option>
+                <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
+              </select>
+            </div>
+          </div></td></tr>
+          <tr><th>VIN</th><td><input name="vin" maxlength="17" value="${esc(order.vin ?? "")}" placeholder="17 characters"></td></tr>
+          <tr><th>Pickup address</th><td><div class="edit-stack">
+            <input name="origin_street" value="${esc(order.origin_street ?? "")}" placeholder="Street">
+            <div class="edit-grid">
+              <input name="origin_city" value="${esc(order.origin_city ?? "")}" placeholder="City">
+              <select name="origin_state">${stateOptions(order.origin_state ?? "")}</select>
+              <input name="origin_zip" required value="${esc(order.origin_zip)}" placeholder="ZIP">
+            </div>
+          </div></td></tr>
+          <tr><th>Pickup contact</th><td><div class="edit-grid">
+            <input name="origin_contact" value="${esc(order.origin_contact ?? "")}" placeholder="Contact">
+            <input name="origin_phone" value="${esc(order.origin_phone ?? "")}" placeholder="Phone">
+          </div></td></tr>
+          <tr><th>Delivery address</th><td><div class="edit-stack">
+            <input name="dest_street" value="${esc(order.dest_street ?? "")}" placeholder="Street">
+            <div class="edit-grid">
+              <input name="dest_city" value="${esc(order.dest_city ?? "")}" placeholder="City">
+              <select name="dest_state">${stateOptions(order.dest_state ?? "")}</select>
+              <input name="dest_zip" required value="${esc(order.dest_zip)}" placeholder="ZIP">
+            </div>
+          </div></td></tr>
+          <tr><th>Delivery contact</th><td><div class="edit-grid">
+            <input name="dest_contact" value="${esc(order.dest_contact ?? "")}" placeholder="Contact">
+            <input name="dest_phone" value="${esc(order.dest_phone ?? "")}" placeholder="Phone">
+          </div></td></tr>
+          <tr><th>Picked up at</th><td>${timeSelects({
+            monthName: "edit_picked_up_month",
+            dayName: "edit_picked_up_day",
+            yearName: "edit_picked_up_year",
+            hourName: "edit_picked_up_hour",
+            minuteName: "edit_picked_up_minute",
+            ampmName: "edit_picked_up_ampm",
+            value: order.picked_up_at,
+          })}</td></tr>
+          <tr><th>Pickup ETA</th><td>${timeSelects({
+            monthName: "edit_pickup_eta_month",
+            dayName: "edit_pickup_eta_day",
+            yearName: "edit_pickup_eta_year",
+            hourName: "edit_pickup_eta_hour",
+            minuteName: "edit_pickup_eta_minute",
+            ampmName: "edit_pickup_eta_ampm",
+            value: order.pickup_eta,
+          })}</td></tr>
+          <tr><th>Delivery ETA</th><td>${timeSelects({
+            monthName: "edit_delivery_eta_month",
+            dayName: "edit_delivery_eta_day",
+            yearName: "edit_delivery_eta_year",
+            hourName: "edit_delivery_eta_hour",
+            minuteName: "edit_delivery_eta_minute",
+            ampmName: "edit_delivery_eta_ampm",
+            value: order.delivery_eta,
+          })}</td></tr>
+          <tr><th>Delivered at</th><td>${timeSelects({
+            monthName: "edit_delivered_month",
+            dayName: "edit_delivered_day",
+            yearName: "edit_delivered_year",
+            hourName: "edit_delivered_hour",
+            minuteName: "edit_delivered_minute",
+            ampmName: "edit_delivered_ampm",
+            value: order.delivered_at,
+          })}</td></tr>
+          <tr><th>Paid amount</th><td><input name="paid_amount" type="number" min="0" value="${order.paid_amount ?? ""}" placeholder="0"></td></tr>
+          <tr><th>Payment method</th><td><select name="payment_method">
+            <option value="">Select method</option>
+            ${methods.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
+          </select></td></tr>
+          <tr><th>Ready date</th><td><input name="ready_date" type="date" value="${esc(order.ready_date ?? "")}"></td></tr>
+          <tr><th>Distance</th><td><input name="distance_miles" type="number" min="0" value="${order.distance_miles ?? ""}" placeholder="Miles"></td></tr>
+          <tr><th>Price</th><td><input name="price" type="number" min="0" value="${order.price}" placeholder="USD"></td></tr>
+          <tr><th>Carrier</th><td><div class="edit-stack">
+            <div class="edit-grid">
+              <input name="carrier_name" value="${esc(order.carrier_name ?? "")}" placeholder="Company">
+              <input name="carrier_mc" value="${esc(order.carrier_mc ?? "")}" placeholder="MC number">
+            </div>
+            <div class="edit-grid">
+              <input name="carrier_company_phone" value="${esc(order.carrier_company_phone ?? "")}" placeholder="Company phone">
+              <input name="carrier_email" type="email" value="${esc(order.carrier_email ?? "")}" placeholder="Company email">
+            </div>
+            <div class="edit-grid">
+              <input name="driver_name" value="${esc(order.driver_name ?? "")}" placeholder="Driver name">
+              <input name="carrier_phone" value="${esc(order.carrier_phone ?? "")}" placeholder="Driver phone">
+            </div>
+          </div></td></tr>
+          <tr><th>Customer notes</th><td><textarea name="notes" rows="3">${esc(order.notes ?? "")}</textarea></td></tr>
+        </tbody>
+      </table>
       <button class="btn btn-accent btn-block" type="submit">Save changes</button>
     </form>
-  </details>
 </div>`;
 }
 
@@ -620,7 +650,7 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
       <a class="modal-close" href="#orders" aria-label="Close">×</a>
     </div>
 
-    <table class="table detail-table"><tbody>${orderDetailRows(order)}</tbody></table>
+    ${orderEditForm(order, anchor)}
 
     ${photos.length
       ? `<h3 class="section-title mt">Vehicle photos</h3>
@@ -631,8 +661,6 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
         )
         .join("")}</div>`
       : ""}
-
-    ${orderEditForm(order, anchor)}
 
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
@@ -819,9 +847,7 @@ export function adminOrderPage(
   </div>
 
   <h2 class="section-title mt">Full record</h2>
-  <table class="table detail-table">
-    <tbody>${orderDetailRows(order)}</tbody>
-  </table>
+  ${orderEditForm(order, `/admin/orders/${order.id}`)}
 
   ${photos.length
       ? `<h2 class="section-title mt">Vehicle photos</h2>
