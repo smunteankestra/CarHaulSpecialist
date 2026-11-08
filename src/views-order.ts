@@ -482,15 +482,15 @@ function orderEditForm(order: OrderRow, next: string): string {
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
   const done = new Set(events.map((event) => event.kind));
   const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
-  const timeline = CUSTOMER_STAGES.filter(
+  const reached = CUSTOMER_STAGES.filter(
     (stage) =>
       stage === "quoted" ||
       done.has(stage) ||
       order.status === stage ||
       (order.status !== "cancelled" && current >= ORDER_STATUSES.indexOf(stage)),
-  )
-    .map((stage) => `<li class="reached"><strong>${esc(STATUS_LABELS[stage])}</strong></li>`)
-    .join("");
+  );
+  const lastStage = order.status === "cancelled" ? "cancelled" : (reached[reached.length - 1] ?? "quoted");
+  const timeline = `<li class="reached"><strong>${esc(STATUS_LABELS[lastStage])}</strong></li>`;
 
   const bookingHidden = Object.entries({
     name: order.customer_name,
