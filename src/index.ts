@@ -19,6 +19,9 @@ import {
 } from "./orders.ts";
 import { conditionLabel, lookupZip, parseCondition, priceQuote, roadMiles, type TransportType } from "./quote.ts";
 import { stateCode, stateName } from "./states.ts";
+import { BLOG_POSTS, findBlogPost } from "./blog.ts";
+import { LEGACY_PAGES } from "./content.ts";
+import { blogIndexPage, blogPostPage, legacyPage } from "./views-content.ts";
 import { loadStaffPerformance, parseStaffMetric, parseStaffPeriod } from "./staff.ts";
 import { staffPerformancePage } from "./views-staff.ts";
 import {
@@ -56,11 +59,36 @@ import {
   pricingPage,
   quotePage,
   servicePage,
+  site,
   when,
   type LeadPhotoRow,
   type LeadRow,
   type QuoteFormValues,
 } from "./views.ts";
+
+
+const SITEMAP_PATHS = [
+  "/",
+  "/quote",
+  "/book",
+  "/services/open",
+  "/services/enclosed",
+  "/services/expedited",
+  "/services/door-to-door",
+  "/how-it-works",
+  "/pricing",
+  "/faq",
+  "/contact",
+  "/about",
+  "/reviews",
+  "/our-partners",
+  "/who-we-serve",
+  "/transport-options",
+  "/blog",
+  ...BLOG_POSTS.map((post) => `/post/${post.slug}`),
+  "/terms",
+  "/privacy",
+];
 
 interface Bindings {
   DB: D1Database;
@@ -553,6 +581,39 @@ app.get("/faq", (c) => c.html(faqPage()));
 app.get("/contact", (c) => c.html(contactPage()));
 app.get("/terms", (c) => c.html(legalPage("terms")));
 app.get("/privacy", (c) => c.html(legalPage("privacy")));
+
+
+for (const slug of Object.keys(LEGACY_PAGES)) {
+  app.get(`/${slug}`, (c) => c.html(legacyPage(slug) ?? notFoundPage()));
+}
+
+app.get("/blog", (c) => c.html(blogIndexPage()));
+app.get("/post/:slug", (c) => {
+  const post = findBlogPost(c.req.param("slug"));
+  return post ? c.html(blogPostPage(post)) : c.html(notFoundPage(), 404);
+});
+
+app.get("/get-quote", (c) => c.redirect("/", 301));
+app.get("/booking-form", (c) => c.redirect("/book", 301));
+app.get("/enclosed-vehicle-transport", (c) => c.redirect("/services/enclosed", 301));
+app.get("/open-vehicle-transport", (c) => c.redirect("/services/open", 301));
+app.get("/app-landing-page", (c) => c.redirect("/", 301));
+
+app.get("/sitemap.xml", (c) => {
+  const lastmod = new Date().toISOString().slice(0, 10);
+  const urls = SITEMAP_PATHS.map(
+    (path) => `<url><loc>${site.url}${path}</loc><lastmod>${lastmod}</lastmod></url>`,
+  ).join("");
+  return c.body(
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`,
+    200,
+    { "content-type": "application/xml; charset=utf-8" },
+  );
+});
+
+app.get("/robots.txt", (c) =>
+  c.text(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /track/\nSitemap: ${site.url}/sitemap.xml\n`),
+);
 
 async function sessionUser(c: {
   env: Bindings;

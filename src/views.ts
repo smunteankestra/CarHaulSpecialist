@@ -70,12 +70,16 @@ export function conditionTag(condition: string): string {
   return condition === "running" ? esc(label) : `<strong class="condition-alert">${esc(label)}</strong>`;
 }
 
+const GA_MEASUREMENT_ID = "G-N6GGYZY28S";
+
 const NAV = [
   { href: "/services/open", label: "Open transport" },
   { href: "/services/enclosed", label: "Enclosed transport" },
   { href: "/how-it-works", label: "How it works" },
   { href: "/pricing", label: "Pricing" },
   { href: "/faq", label: "FAQ" },
+  { href: "/reviews", label: "Reviews" },
+  { href: "/blog", label: "Blog" },
   { href: "/contact", label: "Contact" },
 ];
 
@@ -100,6 +104,24 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
     areaServed: "United States",
     url: canonicalUrl ?? site.url,
   })}</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script>
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+if (location.pathname.indexOf('/admin') !== 0) {
+  gtag('config', '${GA_MEASUREMENT_ID}');
+  try {
+    var params = new URLSearchParams(location.search);
+    var ref = document.referrer ? new URL(document.referrer).hostname : '';
+    gtag('event', 'traffic_source', {
+      source: params.get('utm_source') || ref || 'direct',
+      medium: params.get('utm_medium') || (params.get('gclid') ? 'cpc' : 'organic'),
+      campaign: params.get('utm_campaign') || ''
+    });
+  } catch (error) {}
+}
+</script>
 </head>
 <body>
 <header class="site-header">
@@ -126,6 +148,8 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
       <a href="/services/enclosed">Enclosed transport</a>
       <a href="/services/expedited">Expedited pickup</a>
       <a href="/services/door-to-door">Door to door</a>
+      <a href="/transport-options">Transport options</a>
+      <a href="/who-we-serve">Who we serve</a>
     </div>
     <div>
       <p class="footer-heading">Company</p>
@@ -133,6 +157,10 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
       <a href="/pricing">Pricing</a>
       <a href="/faq">FAQ</a>
       <a href="/contact">Contact</a>
+      <a href="/about">About us</a>
+      <a href="/reviews">Reviews</a>
+      <a href="/blog">Blog</a>
+      <a href="/our-partners">Our partners</a>
     </div>
     <div>
       <p class="footer-heading">Reach dispatch</p>
