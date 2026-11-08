@@ -59,11 +59,46 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
     description: "Confirm the addresses, contacts and vehicle details so dispatch can assign a carrier.",
     canonical: "/book",
     body: `
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">Booking</p>
+      <h1>Book your transport.</h1>
+      <p class="lede">We need both addresses and a contact at each end. Dispatch confirms the carrier and the pickup window after you submit.</p>
+      <ul class="ticks">
+        <li>No card required to book</li>
+        <li>Both addresses and contacts in one form</li>
+        <li>Dispatch confirms the carrier before pickup</li>
+      </ul>
+    </div>
+    <aside class="hero-card">
+      <p class="eyebrow">Your quoted price</p>
+      <p class="price">${price === null ? "To confirm" : money(price)}</p>
+      <p class="muted small">${price === null ? "Dispatch will confirm the price against the actual lane." : "Based on your route and trailer type. Dispatch confirms before pickup."}</p>
+      <ul class="breakdown">
+        <li><span>Payment</span><span>On delivery</span></li>
+        <li><span>Deposit</span><span>None online</span></li>
+        <li><span>Due now</span><span>$0</span></li>
+      </ul>
+      <p class="muted small">No card is charged now.</p>
+    </aside>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap trust-row">
+    <div><strong>No card required</strong><span>Book now, pay on delivery</span></div>
+    <div><strong>Vetted carriers</strong><span>Active insurance checked before assignment</span></div>
+    <div><strong>Real dispatcher</strong><span>A person owns your order start to finish</span></div>
+    <div><strong>7 days</strong><span>Dispatch availability</span></div>
+  </div>
+</section>
+
 <section class="wrap section">
-  <p class="eyebrow">Booking</p>
-  <h1 class="page-title">Book your transport</h1>
-  <p class="lede narrow">We need both addresses and a contact at each end. Dispatch confirms the carrier and the pickup window after you submit.</p>
-  <div class="quote-layout">
+  <div class="book-layout">
+    <div class="book-form-card">
+      <h2 class="section-title">Booking details</h2>
+      <p class="muted">Both addresses and a contact at each end. Fields marked * are required.</p>
     <form class="quote-form" method="post" action="/book/submit">
       ${hidden}
       ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
@@ -133,19 +168,34 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       <button class="btn btn-accent btn-block" type="submit">Submit booking request</button>
       <p class="form-note">No card is charged now. Dispatch confirms the carrier and price before pickup.</p>
     </form>
+    </div>
 
-    <aside class="quote-side">
-      <div class="price-card">
-        <p class="eyebrow">Quoted price</p>
-        <p class="price">${price === null ? "To confirm" : money(price)}</p>
-        <p class="muted small">${price === null ? "Dispatch will confirm the price against the actual lane." : "Based on your route and trailer type. Dispatch confirms before pickup."}</p>
-        <ul class="breakdown">
-          <li><span>Payment</span><span>On delivery</span></li>
-          <li><span>Deposit</span><span>None online</span></li>
+    <aside class="book-side">
+      <div class="card">
+        <h3>Need a hand?</h3>
+        <p class="muted small">Call or email dispatch and we will book it with you.</p>
+        <p><a class="btn btn-ghost btn-small" href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">Call ${esc(site.phone)}</a></p>
+        <p class="muted small"><a href="mailto:${esc(site.email)}">${esc(site.email)}</a></p>
+      </div>
+      <div class="card">
+        <h3>What to have ready</h3>
+        <ul class="ticks">
+          <li>Pickup and delivery addresses</li>
+          <li>A contact name and phone at both ends</li>
+          <li>Vehicle year, make, model and VIN</li>
         </ul>
       </div>
     </aside>
   </div>
+</section>
+
+<section class="wrap section">
+  <h2 class="section-title">What happens next</h2>
+  <ol class="steps">
+    <li><span class="step-num">1</span><h3>Send the details</h3><p>Both addresses and a contact at each end. That is enough to book.</p></li>
+    <li><span class="step-num">2</span><h3>Dispatch confirms the carrier</h3><p>We confirm the carrier, the pickup window and the price before anything is charged.</p></li>
+    <li><span class="step-num">3</span><h3>Track it to the door</h3><p>You get the carrier, the driver contact and status updates until delivery.</p></li>
+  </ol>
 </section>`,
   });
 }
