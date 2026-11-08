@@ -604,7 +604,7 @@ export function adminOrdersPage(
       <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
     </nav>
   </div>
-  <div class="filter-row">
+  <div class="filter-row filter-row-orders">
     <a href="${filterHref("all")}"${status === "all" ? ' class="chip active"' : ' class="chip"'}>All</a>
     ${ORDER_STATUSES.map(
       (value) => `<a href="${filterHref(value)}"${status === value ? ' class="chip active"' : ' class="chip"'}>${esc(STATUS_LABELS[value])}</a>`,
