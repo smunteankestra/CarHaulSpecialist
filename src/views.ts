@@ -574,6 +574,8 @@ export interface LeadRow {
   distance_miles: number | null;
   price_estimate: number | null;
   price_is_estimate: number;
+  broker_fee: number | null;
+  carrier_fee: number | null;
   notes: string | null;
   status: string;
   created_at: number;
@@ -636,9 +638,18 @@ function leadModal(lead: LeadRow, photos: LeadPhotoRow[]): string {
       ${row("Vehicle", `${esc(vehicle)}<br><span class="muted small">${esc(lead.transport_type)} trailer · ${conditionTag(lead.condition)}</span>`)}
       ${row("Ready date", esc(dateOnly(lead.available_date)))}
       ${row("Distance", lead.distance_miles ? `${lead.distance_miles.toLocaleString()} miles` : "")}
-      ${row("Quote", lead.price_estimate ? `<strong>${money(lead.price_estimate)}</strong>` : "")}
       ${row("Customer notes", esc(lead.notes ?? ""))}
     </tbody></table>
+
+    <h3 class="section-title mt">Pricing</h3>
+    <form class="quote-form" method="post" action="/admin/leads/${lead.id}/fees">
+      <div class="field-row">
+        <label class="field"><span>Quoted price</span><input type="text" readonly value="${lead.price_estimate ? money(lead.price_estimate) : "—"}"></label>
+        <label class="field"><span>Broker fee</span><input name="broker_fee" type="number" min="0" step="1" value="${lead.broker_fee ?? ""}" placeholder="0"></label>
+        <label class="field"><span>Carrier fee</span><input name="carrier_fee" type="number" min="0" step="1" value="${lead.carrier_fee ?? ""}" placeholder="0"></label>
+      </div>
+      <button class="btn btn-accent btn-inline" type="submit">Save fees</button>
+    </form>
 
     ${photos.length
       ? `<h3 class="section-title mt">Vehicle photos</h3>
@@ -678,7 +689,10 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false, phot
         }</td>
       <td>${esc(lead.origin_zip)} → ${esc(lead.dest_zip)}<br><span class="muted small">${esc(lead.transport_type)} · ${conditionTag(lead.condition)}</span></td>
       <td>${lead.distance_miles ? `${lead.distance_miles.toLocaleString()} mi` : "—"}</td>
-      <td>${lead.price_estimate ? money(lead.price_estimate) : "—"}</td>
+      <td>${lead.price_estimate ? money(lead.price_estimate) : "—"}${lead.broker_fee !== null || lead.carrier_fee !== null
+          ? `<br><span class="muted small">Broker ${lead.broker_fee !== null ? money(lead.broker_fee) : "—"} · Carrier ${lead.carrier_fee !== null ? money(lead.carrier_fee) : "—"}</span>`
+          : ""
+        }</td>
       <td>${leadStatusBadge(lead.status)}</td>
       <td class="muted small">${when(lead.created_at)}</td>
     </tr>`;

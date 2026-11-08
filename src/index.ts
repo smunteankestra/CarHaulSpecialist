@@ -431,6 +431,25 @@ app.post("/admin/leads/:id/status", async (c) => {
   return c.redirect(`/admin#quote-${id}`, 303);
 });
 
+app.post("/admin/leads/:id/fees", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const fee = (name: string) => {
+    const raw = String(body[name] ?? "").trim();
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+  };
+
+  await c.env.DB.prepare("UPDATE leads SET broker_fee = ?, carrier_fee = ? WHERE id = ?")
+    .bind(fee("broker_fee"), fee("carrier_fee"), id)
+    .run();
+  return c.redirect(`/admin#quote-${id}`, 303);
+});
+
 app.get("/admin/photos/:id", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.redirect("/admin/login", 303);

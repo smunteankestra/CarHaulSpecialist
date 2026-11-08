@@ -1,0 +1,2 @@
+ALTER TABLE leads ADD COLUMN broker_fee INTEGER;
+ALTER TABLE leads ADD COLUMN carrier_fee INTEGER;
