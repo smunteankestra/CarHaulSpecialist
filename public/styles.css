@@ -1856,3 +1856,31 @@ main {
 .site-footer {
   margin-top: auto;
 }
+
+/* larger admin navigation */
+.admin-nav {
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.admin-nav a {
+  padding: 0.55rem 1.05rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  background: #fff;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.admin-nav a:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #fff8f2;
+}
+
+.admin-nav a.active,
+.admin-nav a.active:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
