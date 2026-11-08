@@ -1,5 +1,4 @@
 import { esc, conditionTag, dateOnly, layout, money, site, when } from "./views.ts";
-import { conditionLabel } from "./quote.ts";
 import { US_STATES, stateCode, stateName } from "./states.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
@@ -182,7 +181,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
     <div class="card">
       <h3>Shipment</h3>
       <p>${esc([order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "Vehicle")}</p>
-      <p class="muted small">${esc(order.transport_type)} trailer · ${esc(conditionLabel(order.condition))}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</p>
+      <p class="muted small">${esc(order.transport_type)} trailer · ${conditionTag(order.condition)}${order.vin ? ` · VIN ${esc(order.vin)}` : ""}</p>
       <p class="muted small">Price ${money(order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
       ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
     </div>
