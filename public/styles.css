@@ -935,25 +935,48 @@ a.card:hover {
 }
 
 .status-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.4rem;
 }
 
 .status-actions button.chip {
-  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 46px;
+  padding: 0.5rem 0.4rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
   font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.15s ease;
 }
 
 .status-actions button.chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(11, 22, 32, 0.12);
+  border-color: var(--chip-active);
 }
 
 .status-actions button.chip.active {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--chip-active);
+  border-color: var(--chip-active);
   color: #fff;
+  box-shadow: 0 4px 14px rgba(11, 22, 32, 0.18);
+}
+
+@media (max-width: 720px) {
+  .status-actions {
+    grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+  }
 }
 
 /* lead photo */

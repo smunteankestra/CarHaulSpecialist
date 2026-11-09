@@ -692,7 +692,7 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
       <input type="hidden" name="next" value="${esc(anchor)}">
       ${statusFields(order)}
       <div class="status-actions">${ORDER_STATUSES.map(
-    (value) => `<button class="chip${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
+    (value) => `<button class="chip chip-status-${value}${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
   ).join("")}</div>
     </form>
 
