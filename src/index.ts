@@ -128,14 +128,25 @@ function notify(
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Admin pages are per-session; never let a browser or edge cache them.
+const PRIVATE_HEADERS = {
+  "Cache-Control": "no-store, must-revalidate",
+  "X-Robots-Tag": "noindex, nofollow, noarchive",
+};
+
 app.use("/admin", async (c, next) => {
   await next();
-  c.header("Cache-Control", "no-store, must-revalidate");
+  for (const [key, value] of Object.entries(PRIVATE_HEADERS)) c.header(key, value);
 });
 
 app.use("/admin/*", async (c, next) => {
   await next();
-  c.header("Cache-Control", "no-store, must-revalidate");
+  for (const [key, value] of Object.entries(PRIVATE_HEADERS)) c.header(key, value);
+});
+
+// Tracking links are per-customer; never index them.
+app.use("/track/*", async (c, next) => {
+  await next();
+  c.header("X-Robots-Tag", "noindex, nofollow");
 });
 
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
@@ -626,6 +637,10 @@ app.get("/post/:slug", (c) => {
 
 app.get("/open-vehicle-transport", (c) => c.html(servicePage("open", "/open-vehicle-transport") ?? notFoundPage()));
 app.get("/enclosed-vehicle-transport", (c) => c.html(servicePage("enclosed", "/enclosed-vehicle-transport") ?? notFoundPage()));
+
+// The old Wix store had no products; keep the URLs alive rather than 404.
+app.get("/category/:slug", (c) => c.redirect("/", 301));
+app.get("/store/:slug", (c) => c.redirect("/", 301));
 
 app.get("/sitemap.xml", (c) => {
   const lastmod = new Date().toISOString().slice(0, 10);
