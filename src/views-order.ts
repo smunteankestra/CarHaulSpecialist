@@ -791,18 +791,41 @@ function statusConfirmUi(): string {
     if (event.key === "Escape" && !box.hidden) close();
   });
 
+  var CYCLE_MS = 2400;
+  var LOOPS = 3;
+
   yes.addEventListener("click", function () {
     if (!pending) return;
     var button = pending;
     var form = button.form;
+    var failed = false;
 
     body.hidden = true;
     card.classList.add("is-loading");
     loading.hidden = false;
     if (!frame.getAttribute("src")) frame.setAttribute("src", frame.getAttribute("data-src") || "/loader/whip");
 
-    if (form && form.requestSubmit) form.requestSubmit(button);
-    else if (form) form.submit();
+    // Send the change immediately so the server works while the animation plays,
+    // then reload once all three loops have finished.
+    if (form && window.fetch) {
+      var data = new FormData(form);
+      if (button.name) data.append(button.name, button.value);
+      fetch(form.action, { method: "POST", body: data, credentials: "same-origin" })
+        .then(function (response) {
+          if (!response.ok) failed = true;
+        })
+        .catch(function () {
+          failed = true;
+        });
+    }
+
+    window.setTimeout(function () {
+      if (failed && form) {
+        form.submit();
+        return;
+      }
+      window.location.reload();
+    }, CYCLE_MS * LOOPS);
   });
 
   var prefetch = document.createElement("link");
