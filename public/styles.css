@@ -2551,3 +2551,72 @@ main {
   color: var(--muted);
   font-size: 0.8rem;
 }
+
+/* status change confirmation + loader */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 12, 22, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 60;
+}
+
+.confirm-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.3rem 1.4rem;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+
+.confirm-card h3 {
+  margin-bottom: 0.35rem;
+  font-size: 1.1rem;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+}
+
+.confirm-actions .btn {
+  flex: 1;
+  text-align: center;
+}
+
+.load-overlay {
+  position: fixed;
+  inset: 0;
+  background: #080c16;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.load-overlay iframe {
+  width: min(92vw, 760px);
+  height: min(66vh, 520px);
+  border: 0;
+  background: transparent;
+}
+
+.load-caption {
+  color: #c7d5e3;
+  font-size: 0.88rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.confirm-backdrop[hidden],
+.load-overlay[hidden] {
+  display: none;
+}

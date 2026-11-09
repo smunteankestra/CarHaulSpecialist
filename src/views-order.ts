@@ -733,6 +733,76 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
 </div>`;
 }
 
+function statusConfirmUi(): string {
+  return `
+<div class="confirm-backdrop" id="statusConfirm" hidden>
+  <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="statusConfirmTitle">
+    <h3 id="statusConfirmTitle">Change status?</h3>
+    <p class="muted" id="statusConfirmText"></p>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-ghost" id="statusConfirmNo">No, keep it</button>
+      <button type="button" class="btn btn-accent" id="statusConfirmYes">Yes, change it</button>
+    </div>
+  </div>
+</div>
+
+<div class="load-overlay" id="statusLoading" hidden>
+  <iframe title="Updating status" data-src="/loader/whip"></iframe>
+  <p class="load-caption" id="statusLoadingText">Updating status…</p>
+</div>
+
+<script>
+(function () {
+  var pending = null;
+  var box = document.getElementById("statusConfirm");
+  var text = document.getElementById("statusConfirmText");
+  var yes = document.getElementById("statusConfirmYes");
+  var no = document.getElementById("statusConfirmNo");
+  var overlay = document.getElementById("statusLoading");
+  var frame = overlay ? overlay.querySelector("iframe") : null;
+  if (!box || !overlay || !frame) return;
+
+  function close() {
+    box.hidden = true;
+    pending = null;
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest ? event.target.closest('.status-actions button[type="submit"]') : null;
+    if (!button) return;
+    event.preventDefault();
+    pending = button;
+    text.textContent = "Set this order to " + (button.textContent || "").trim() + "?";
+    box.hidden = false;
+    yes.focus();
+  });
+
+  no.addEventListener("click", close);
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && !box.hidden) close();
+  });
+
+  yes.addEventListener("click", function () {
+    if (!pending) return;
+    var button = pending;
+    var form = button.form;
+    box.hidden = true;
+
+    if (!frame.getAttribute("src")) frame.setAttribute("src", frame.getAttribute("data-src") || "/loader/whip");
+    overlay.hidden = false;
+    if (form && form.requestSubmit) form.requestSubmit(button);
+    else if (form) form.submit();
+  });
+
+  var prefetch = document.createElement("link");
+  prefetch.rel = "prefetch";
+  prefetch.as = "document";
+  prefetch.href = "/loader/whip";
+  document.head.appendChild(prefetch);
+})();
+</script>`;
+}
+
 export function adminOrdersPage(
   orders: OrderRow[],
   status: string,
@@ -823,6 +893,7 @@ export function adminOrdersPage(
     </tr></thead><tbody>${rows}</tbody></table>`
       }
   ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [], eventsByOrder.get(order.id) ?? [])).join("")}
+  ${statusConfirmUi()}
 </section>`,
   });
 }
@@ -947,6 +1018,7 @@ export function adminOrderPage(
 
   <h2 class="section-title mt">History</h2>
   <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${eventRows}</tbody></table>
+  ${statusConfirmUi()}
 </section>`,
   });
 }
