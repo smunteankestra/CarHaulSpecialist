@@ -1215,3 +1215,84 @@ export function accountPage(user: UserRow, message?: string, error?: string): st
 </section>`,
   });
 }
+
+export interface TelegramChat {
+  id: string;
+  type: string;
+  title: string;
+  last: number;
+}
+
+export function telegramPage(
+  target: string | null,
+  fromEnv: boolean,
+  chats: TelegramChat[],
+  message?: string,
+  error?: string,
+): string {
+  const rows = chats
+    .map(
+      (chat) => `<tr>
+      <td><code>${esc(chat.id)}</code></td>
+      <td>${esc(chat.type)}</td>
+      <td>${esc(chat.title)}</td>
+      <td class="muted small">${new Date(chat.last * 1000).toLocaleString()}</td>
+      <td><form method="post" action="/admin/telegram" class="inline-form">
+        <input type="hidden" name="chat_id" value="${esc(chat.id)}">
+        <button class="btn btn-ghost btn-small" type="submit">Use this chat</button>
+      </form></td>
+    </tr>`,
+    )
+    .join("");
+
+  return layout({
+    title: "Telegram — Bond Auto Transport",
+    description: "Dispatch console.",
+    body: `
+<section class="wrap section">
+  <div class="admin-head">
+    <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Telegram notifications</h1>
+      <nav class="admin-nav">
+        <a href="/admin/orders">Orders</a>
+        <a href="/admin/telegram" class="active">Telegram</a>
+        <a href="/admin/account">Account</a>
+      </nav>
+    </div>
+  </div>
+
+  ${message ? `<div class="flash"><strong>${esc(message)}</strong></div>` : ""}
+  ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
+
+  <div class="cards two-up">
+    <div class="card">
+      <h3>Where notifications go</h3>
+      <p>${target ? `<code>${esc(target)}</code>` : '<span class="muted">Not configured</span>'}</p>
+      <p class="muted small">${fromEnv ? "From the TELEGRAM_CHAT_ID secret." : "Saved in the console."}</p>
+      <form class="quote-form" method="post" action="/admin/telegram">
+        <label class="field"><span>Chat IDs, comma separated</span><input name="chat_id" value="${esc(target ?? "")}" placeholder="8804648927, 1235945689"></label>
+        <button class="btn btn-accent" type="submit">Save recipients</button>
+      </form>
+      <form method="post" action="/admin/telegram/test" class="mt">
+        <button class="btn btn-ghost" type="submit">Send a test message</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Who receives it</h3>
+      <p class="muted small">A bot only sends to chat IDs you list here. Sharing the bot link with someone just opens a private chat between them and the bot — they receive nothing until their ID is added.</p>
+      <p class="muted small">Every ID in the box gets every notification. Use a group ID (starts with <code>-</code>) if you would rather manage the audience in Telegram.</p>
+      <p class="muted small">To notify several people, put them all in a <strong>group</strong>, add the bot to that group, then use the group's chat ID (it starts with <code>-</code>). Everyone in the group sees the messages.</p>
+      <p class="muted small">A private chat ID is positive, a group ID is negative, and a supergroup starts with <code>-100</code>.</p>
+    </div>
+  </div>
+
+  <h2 class="section-title mt">Recent chats the bot has seen</h2>
+  <p class="muted small">Send a message in the group (or press Start in the bot) and reload this page.</p>
+  ${
+    chats.length === 0
+      ? `<p class="muted">No recent updates. If a webhook is registered, Telegram stops returning updates here.</p>`
+      : `<table class="table"><thead><tr><th>Chat ID</th><th>Type</th><th>Name</th><th>Last message</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+  }
+</section>`,
+  });
+}

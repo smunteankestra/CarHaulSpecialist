@@ -26,6 +26,7 @@ import { loadStaffPerformance, parseStaffMetric, parseStaffPeriod } from "./staf
 import { staffPerformancePage } from "./views-staff.ts";
 import {
   accountPage,
+  telegramPage,
   adminOrderPage,
   adminOrdersPage,
   adminUsersPage,
@@ -102,22 +103,59 @@ interface Bindings {
   TELEGRAM_CHAT_ID?: string;
 }
 
-async function sendTelegram(env: Bindings, text: string): Promise<void> {
+async function getSetting(db: D1Database, key: string): Promise<string | null> {
+  const row = await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+async function setSetting(db: D1Database, key: string, value: string): Promise<void> {
+  await db
+    .prepare(
+      "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    )
+    .bind(key, value, Date.now())
+    .run();
+}
+
+function parseChatIds(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/[,\s]+/)
+    .map((part) => part.trim())
+    .filter((part) => /^-?\d{5,20}$/.test(part));
+}
+
+/** The console setting wins over the environment variable, so recipients can change without a deploy. */
+async function telegramTargets(env: Bindings, db: D1Database): Promise<string[]> {
+  const stored = await getSetting(db, "telegram_chat_id").catch(() => null);
+  const ids = parseChatIds(stored);
+  return ids.length > 0 ? ids : parseChatIds(env.TELEGRAM_CHAT_ID);
+}
+
+async function sendTelegram(env: Bindings, db: D1Database, text: string): Promise<boolean> {
   const token = env.TELEGRAM_BOT_TOKEN;
-  const chatId = env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 3900), disable_web_page_preview: true }),
-  });
+  const chatIds = await telegramTargets(env, db);
+  if (!token || chatIds.length === 0) return false;
+
+  const results = await Promise.all(
+    chatIds.map((chatId) =>
+      fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 3900), disable_web_page_preview: true }),
+      })
+        .then((response) => response.ok)
+        .catch(() => false),
+    ),
+  );
+  return results.some(Boolean);
 }
 
 function notify(
   c: { env: Bindings; executionCtx?: { waitUntil: (promise: Promise<unknown>) => void } },
   text: string,
 ): void {
-  const promise = sendTelegram(c.env, text).catch(() => {});
+  const promise = sendTelegram(c.env, c.env.DB, text).catch(() => {});
   try {
     c.executionCtx?.waitUntil(promise);
   } catch {
@@ -1514,6 +1552,76 @@ app.post("/admin/users/:id/active", async (c) => {
   const body = await c.req.parseBody();
   await setActive(c.env.DB, id, String(body.active ?? "1") === "1");
   return c.redirect("/admin/users", 303);
+});
+
+app.get("/admin/telegram", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  if (user.role !== "admin") return c.html(notFoundPage(), 404);
+
+  const stored = await getSetting(c.env.DB, "telegram_chat_id").catch(() => null);
+  const targets = await telegramTargets(c.env, c.env.DB);
+
+  let chats: Array<{ id: string; type: string; title: string; last: number }> = [];
+  const token = c.env.TELEGRAM_BOT_TOKEN;
+  if (token) {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=20`);
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        result?: Array<{ message?: { chat?: { id: number; type: string; title?: string; username?: string; first_name?: string }; date?: number } }>;
+      };
+      if (payload.ok && payload.result) {
+        const seen = new Map<string, { id: string; type: string; title: string; last: number }>();
+        for (const update of payload.result) {
+          const chat = update.message?.chat;
+          if (!chat) continue;
+          const id = String(chat.id);
+          const title = chat.title ?? chat.username ?? chat.first_name ?? "(no name)";
+          seen.set(id, { id, type: chat.type, title, last: update.message?.date ?? 0 });
+        }
+        chats = [...seen.values()].sort((a, b) => b.last - a.last);
+      }
+    } catch {
+      chats = [];
+    }
+  }
+
+  return c.html(telegramPage(targets.join(", "), !stored, chats));
+});
+
+app.post("/admin/telegram", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  if (user.role !== "admin") return c.html(notFoundPage(), 404);
+
+  const body = await c.req.parseBody();
+  const raw = String(body.chat_id ?? "").trim();
+  const ids = parseChatIds(raw);
+  if (ids.length === 0) {
+    return c.html(telegramPage(raw, false, [], undefined, "That does not look like a chat ID."), 400);
+  }
+
+  await setSetting(c.env.DB, "telegram_chat_id", ids.join(","));
+  return c.redirect("/admin/telegram", 303);
+});
+
+app.post("/admin/telegram/test", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  if (user.role !== "admin") return c.html(notFoundPage(), 404);
+
+  const sent = await sendTelegram(c.env, c.env.DB, "Test message from the Bond Auto Transport console.");
+  const targets = await telegramTargets(c.env, c.env.DB);
+  return c.html(
+    telegramPage(
+      targets.join(", "),
+      false,
+      [],
+      sent ? `Test message sent to ${targets.length} chat${targets.length === 1 ? "" : "s"}.` : undefined,
+      sent ? undefined : "Telegram rejected the message. Check the bot token and that the bot is in that chat.",
+    ),
+  );
 });
 
 app.get("/admin/account", async (c) => {
