@@ -646,7 +646,6 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Pick up ETA", order.pickup_eta ? when(order.pickup_eta) : "")}
       ${row("Delivery ETA", order.delivery_eta ? when(order.delivery_eta) : "")}
       ${row("Delivered at", order.delivered_at ? when(order.delivered_at) : "")}
-      ${row("Paid amount", order.paid_amount !== null ? money(order.paid_amount) : "")}
       ${row("Payment method", esc(order.payment_method ?? ""))}
       ${row("Pickup date", esc(dateOnly(order.ready_date)))}
       ${row("Distance", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
@@ -655,6 +654,7 @@ function orderDetailRows(order: OrderRow): string {
       ${row("Broker fee", order.broker_fee !== null ? money(order.broker_fee) : "")}
       ${row("Carrier fee", order.carrier_fee !== null ? money(order.carrier_fee) : "")}
       ${row("Total price", order.broker_fee !== null || order.carrier_fee !== null ? `<strong>${money((order.broker_fee ?? 0) + (order.carrier_fee ?? 0))}</strong>` : "")}
+      ${row("Paid amount", order.paid_amount !== null ? `<strong>${money(order.paid_amount)}</strong>` : "")}
       ${row("Carrier", order.carrier_name ? `${esc(order.carrier_name)}${carrierLine ? `<br><span class="muted small">${esc(carrierLine)}</span>` : ""}${driverLine ? `<br><span class="muted small">Driver: ${esc(driverLine)}</span>` : ""}` : "")}
       ${row("Customer notes", esc(order.notes ?? ""))}
   `;
