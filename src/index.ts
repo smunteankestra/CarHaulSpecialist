@@ -127,6 +127,17 @@ function notify(
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+// Admin pages are per-session; never let a browser or edge cache them.
+app.use("/admin", async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-store, must-revalidate");
+});
+
+app.use("/admin/*", async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-store, must-revalidate");
+});
+
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 const ZIP_PATTERN = /^\d{5}$/;
 const PHOTO_TYPES = new Map([
