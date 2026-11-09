@@ -736,35 +736,41 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
 function statusConfirmUi(): string {
   return `
 <div class="confirm-backdrop" id="statusConfirm" hidden>
-  <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="statusConfirmTitle">
-    <h3 id="statusConfirmTitle">Change status?</h3>
-    <p class="muted" id="statusConfirmText"></p>
-    <div class="confirm-actions">
-      <button type="button" class="btn btn-ghost" id="statusConfirmNo">No, keep it</button>
-      <button type="button" class="btn btn-accent" id="statusConfirmYes">Yes, change it</button>
+  <div class="confirm-card" id="statusConfirmCard" role="dialog" aria-modal="true" aria-labelledby="statusConfirmTitle">
+    <div id="statusConfirmBody">
+      <h3 id="statusConfirmTitle">Change status?</h3>
+      <p class="muted" id="statusConfirmText"></p>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-ghost" id="statusConfirmNo">No, keep it</button>
+        <button type="button" class="btn btn-accent" id="statusConfirmYes">Yes, change it</button>
+      </div>
+    </div>
+    <div class="confirm-loading" id="statusLoading" hidden>
+      <iframe title="Updating status" data-src="/loader/whip"></iframe>
+      <p class="load-caption" id="statusLoadingText">Updating status…</p>
     </div>
   </div>
-</div>
-
-<div class="load-overlay" id="statusLoading" hidden>
-  <iframe title="Updating status" data-src="/loader/whip"></iframe>
-  <p class="load-caption" id="statusLoadingText">Updating status…</p>
 </div>
 
 <script>
 (function () {
   var pending = null;
   var box = document.getElementById("statusConfirm");
+  var card = document.getElementById("statusConfirmCard");
+  var body = document.getElementById("statusConfirmBody");
   var text = document.getElementById("statusConfirmText");
   var yes = document.getElementById("statusConfirmYes");
   var no = document.getElementById("statusConfirmNo");
-  var overlay = document.getElementById("statusLoading");
-  var frame = overlay ? overlay.querySelector("iframe") : null;
-  if (!box || !overlay || !frame) return;
+  var loading = document.getElementById("statusLoading");
+  var frame = loading ? loading.querySelector("iframe") : null;
+  if (!box || !card || !body || !loading || !frame) return;
 
   function close() {
     box.hidden = true;
     pending = null;
+    body.hidden = false;
+    loading.hidden = true;
+    card.classList.remove("is-loading");
   }
 
   document.addEventListener("click", function (event) {
@@ -773,6 +779,9 @@ function statusConfirmUi(): string {
     event.preventDefault();
     pending = button;
     text.textContent = "Set this order to " + (button.textContent || "").trim() + "?";
+    body.hidden = false;
+    loading.hidden = true;
+    card.classList.remove("is-loading");
     box.hidden = false;
     yes.focus();
   });
@@ -786,10 +795,12 @@ function statusConfirmUi(): string {
     if (!pending) return;
     var button = pending;
     var form = button.form;
-    box.hidden = true;
 
+    body.hidden = true;
+    card.classList.add("is-loading");
+    loading.hidden = false;
     if (!frame.getAttribute("src")) frame.setAttribute("src", frame.getAttribute("data-src") || "/loader/whip");
-    overlay.hidden = false;
+
     if (form && form.requestSubmit) form.requestSubmit(button);
     else if (form) form.submit();
   });

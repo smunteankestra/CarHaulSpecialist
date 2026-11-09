@@ -2552,7 +2552,7 @@ main {
   font-size: 0.8rem;
 }
 
-/* status change confirmation + loader */
+/* status change confirmation + in-card loader */
 .confirm-backdrop {
   position: fixed;
   inset: 0;
@@ -2571,6 +2571,13 @@ main {
   max-width: 380px;
   width: 100%;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  transition: max-width 0.18s ease;
+}
+
+.confirm-card.is-loading {
+  max-width: 560px;
+  background: #080c16;
+  padding: 0.9rem 0.9rem 0.5rem;
 }
 
 .confirm-card h3 {
@@ -2589,34 +2596,30 @@ main {
   text-align: center;
 }
 
-.load-overlay {
-  position: fixed;
-  inset: 0;
-  background: #080c16;
-  z-index: 70;
+.confirm-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
+  gap: 0.3rem;
 }
 
-.load-overlay iframe {
-  width: min(92vw, 760px);
-  height: min(66vh, 520px);
+.confirm-loading iframe {
+  width: 100%;
+  height: 300px;
   border: 0;
   background: transparent;
 }
 
 .load-caption {
   color: #c7d5e3;
-  font-size: 0.88rem;
-  letter-spacing: 0.06em;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
 }
 
 .confirm-backdrop[hidden],
-.load-overlay[hidden] {
+.confirm-loading[hidden] {
   display: none;
 }
