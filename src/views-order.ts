@@ -807,12 +807,19 @@ function statusConfirmUi(): string {
 
     // Send the change immediately so the server works while the animation plays,
     // then reload once all three loops have finished.
+    var destination = null;
     if (form && window.fetch) {
       var data = new FormData(form);
       if (button.name) data.append(button.name, button.value);
-      fetch(form.action, { method: "POST", body: data, credentials: "same-origin" })
+      fetch(form.action, { method: "POST", body: data, credentials: "same-origin", headers: { "x-async": "1" } })
         .then(function (response) {
-          if (!response.ok) failed = true;
+          if (!response.ok) {
+            failed = true;
+            return;
+          }
+          return response.json().then(function (payload) {
+            if (payload && payload.redirect) destination = payload.redirect;
+          });
         })
         .catch(function () {
           failed = true;
@@ -822,6 +829,10 @@ function statusConfirmUi(): string {
     window.setTimeout(function () {
       if (failed && form) {
         form.submit();
+        return;
+      }
+      if (destination) {
+        window.location.assign(destination);
         return;
       }
       window.location.reload();

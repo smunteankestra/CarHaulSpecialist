@@ -1108,7 +1108,10 @@ app.post("/admin/orders/:id/status", async (c) => {
       `Order ${order.number} status\n${fromLabel} → ${STATUS_LABELS[status]}\nby ${user.email}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
     );
   }
-  return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
+  // Land on the tab the order now belongs to, scrolled to the order itself.
+  const destination = `/admin/orders?status=${status}#order-${id}`;
+  if (c.req.header("x-async") === "1") return c.json({ ok: true, redirect: destination });
+  return c.redirect(destination, 303);
 });
 
 app.post("/admin/orders/:id/edit", async (c) => {
