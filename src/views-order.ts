@@ -687,17 +687,6 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
         .join("")}</div>`
       : ""}
 
-    ${events.length
-      ? `<h3 class="section-title mt">History</h3>
-    <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${events
-        .slice(-8)
-        .map(
-          (event) =>
-            `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(eventLabel(event.kind))}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
-        )
-        .join("")}</tbody></table>`
-      : ""}
-
     <h3 class="section-title mt">Change status</h3>
     <form method="post" action="/admin/orders/${order.id}/status" class="quote-form">
       <input type="hidden" name="next" value="${esc(anchor)}">
@@ -729,6 +718,17 @@ function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEvent
       <a class="btn btn-ghost" href="/admin/orders/${order.id}">Open full record</a>
       <a class="btn btn-ghost" href="/track/${esc(order.token)}">Customer view</a>
     </div>
+
+    ${events.length
+      ? `<h3 class="section-title mt">History</h3>
+    <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${events
+        .slice(-8)
+        .map(
+          (event) =>
+            `<tr><td class="muted small">${when(event.created_at)}</td><td>${esc(eventLabel(event.kind))}</td><td>${esc(event.note ?? "")}</td><td class="muted small">${esc(event.actor ?? "")}</td></tr>`,
+        )
+        .join("")}</tbody></table>`
+      : ""}
   </div>
 </div>`;
 }
