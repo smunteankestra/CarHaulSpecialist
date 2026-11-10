@@ -2031,7 +2031,6 @@ export function quotePage(options: {
         })
         .join("");
     const VEHICLE_KEYS = ["vehicle_year", "vehicle_make", "vehicle_model", "condition"];
-    const hidden = hiddenFor();
     const hiddenBase = hiddenFor(VEHICLE_KEYS);
     let rowId = 0;
     const editRow = (label: string, value: string, omit: readonly string[], editor: string) => {
@@ -2095,10 +2094,7 @@ export function quotePage(options: {
           <li><span>Deposit to reserve</span><span>${money(result.deposit)}</span></li>
           <li><span>Due now</span><span class="is-free">$0</span></li>
         </ul>
-        <form method="post" action="/quote">
-          ${(result.units?.length ?? 0) > 1 ? hiddenBase + unitHidden() : hidden}
-          <button class="btn btn-accent btn-block" type="submit">Continue to booking</button>
-        </form>
+        <a class="btn btn-accent btn-block" href="/">Start a new quote</a>
         <p class="muted small">No card is charged now. Dispatch confirms the carrier and pickup window first.</p>
       </div>
 
@@ -2252,7 +2248,7 @@ const SERVICE_PAGES: Record<string, { title: string; intro: string; points: stri
   enclosed: {
     title: "Enclosed vehicle transport",
     intro:
-      "Hard-sided trailers for cars that should not see weather, gravel or a parking lot overnight: classics, exotics, low-mileage collector cars and anything with paint you care about.",
+      "Hard-sided trailers for cars that should never see weather, gravel or an overnight parking lot. Think classics, exotics, low-mileage collector cars, and anything whose paint you care about.",
     points: [
       "Fully enclosed, single or multi-car trailers",
       "Soft straps and wheel baskets rather than chains",
@@ -2386,7 +2382,7 @@ export function contactPage(): string {
   <div class="cards">
     <div class="card"><h3>Phone</h3><p><a href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">${esc(site.phone)}</a></p><p class="muted small">${esc(site.hours)}</p></div>
     <div class="card"><h3>Email</h3><p><a href="mailto:${esc(site.email)}">${esc(site.email)}</a></p><p class="muted small">We reply within one business hour.</p></div>
-    <div class="card"><h3>Quote first</h3><p><a href="/get-quote">Get an instant price</a></p><p class="muted small">Fastest route to a booking.</p></div>
+    <div class="card"><h3>Quote first</h3><p><a class="btn btn-accent btn-block" href="/get-quote">Get an instant price</a></p><p class="muted small">Fastest route to a booking.</p></div>
     <div class="card"><h3>Company</h3><p>${esc(site.legalName)}</p><p class="muted small">${esc(site.address)} · ${esc(site.mc)} · ${esc(site.dot)}</p></div>
   </div>
 </section>`,

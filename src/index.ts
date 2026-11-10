@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
 import { SESSION_COOKIE, sessionMaxAge, signSession, timingSafeEqual, verifySession } from "./auth.ts";
+import { contractDocx, contractDocument } from "./contract.ts";
 import { isLeadStatus } from "./leads.ts";
 import { buildInvoiceMail, sendMail } from "./mail.ts";
 import {
@@ -106,6 +107,7 @@ interface Bindings {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
   RESEND_API_KEY?: string;
+  MAIL_FROM?: string;
 }
 
 async function getSetting(db: D1Database, key: string): Promise<string | null> {
@@ -1773,6 +1775,65 @@ app.post("/admin/orders/:id/field", async (c) => {
   return c.redirect(back, 303);
 });
 
+/** Mark one invoice as paid; the order's payment state follows from the two invoices. */
+app.post("/admin/orders/:id/invoice/:kind/paid", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const kind = c.req.param("kind") === "carrier" ? "carrier" : "client";
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  const now = Date.now();
+  await c.env.DB.prepare(
+    "INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, ?, ?, ?, ?)",
+  )
+    .bind(id, `invoice_${kind}_paid`, `${kind === "carrier" ? "Carrier" : "Client"} invoice marked paid`, user.email, now)
+    .run();
+
+  const { results: events } = await c.env.DB.prepare("SELECT kind FROM order_events WHERE order_id = ?").bind(id).all<{
+    kind: string;
+  }>();
+  const clientPaid = events.some((event) => event.kind === "invoice_client_paid");
+  const carrierPaid = events.some((event) => event.kind === "invoice_carrier_paid");
+  const state = clientPaid && carrierPaid ? "full" : clientPaid || carrierPaid ? "partial" : "unpaid";
+  await c.env.DB.prepare("UPDATE orders SET payment_state = ?, updated_at = ? WHERE id = ?").bind(state, now, id).run();
+
+  notify(c, `💰 Invoice paid on ${order.number}\n${kind === "carrier" ? "Carrier" : "Client"} invoice\nby ${user.email}`);
+  return c.redirect(`/admin/orders?status=paid#order-${id}`, 303);
+});
+
+/** Draft contract: printable, and downloadable when ?download=1. */
+app.get("/admin/orders/:id/contract", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  const { results: units } = await c.env.DB.prepare("SELECT * FROM order_units WHERE order_id = ? ORDER BY position")
+    .bind(id)
+    .all<OrderUnitRow>();
+
+  if (c.req.query("download") === "1") {
+    if (c.req.query("format") === "html") {
+      return c.body(contractDocument(order, units), 200, {
+        "content-type": "text/html; charset=utf-8",
+        "content-disposition": `attachment; filename="Transportation-Agreement-${order.number}.html"`,
+      });
+    }
+    // Word by default: dispatch edits these in Word before sending them out.
+    const docx = contractDocx(order, units);
+    return c.body(docx.buffer.slice(docx.byteOffset, docx.byteOffset + docx.byteLength) as ArrayBuffer, 200, {
+      "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "content-disposition": `attachment; filename="Transportation-Agreement-${order.number}.docx"`,
+    });
+  }
+  return c.html(contractDocument(order, units));
+});
+
 /** Send the client or carrier invoice for a paid order. */
 app.post("/admin/orders/:id/invoice/:kind/send", async (c) => {
   const user = await sessionUser(c);
@@ -1805,8 +1866,10 @@ app.post("/admin/orders/:id/invoice/:kind/send", async (c) => {
     .bind(amount, Date.now(), id)
     .run();
 
-  const mail = buildInvoiceMail({ ...order, invoice_amount: amount }, kind);
-  if (!mail) return fail("Invoice email is not configured yet — waiting on the template and mail credentials.");
+  const mail = buildInvoiceMail(
+    { ...order, invoice_amount: amount, track_url: `${new URL(c.req.url).origin}/track/${order.token}` },
+    kind,
+  );
 
   try {
     await sendMail(c.env, { to, subject: mail.subject, html: mail.html });

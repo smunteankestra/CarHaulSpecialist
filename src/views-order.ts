@@ -229,6 +229,8 @@ function eventLabel(kind: string): string {
   if (kind === "requested") return "Quoted";
   if (kind === "invoice_client") return "Client invoice sent";
   if (kind === "invoice_carrier") return "Carrier invoice sent";
+  if (kind === "invoice_client_paid") return "Client invoice paid";
+  if (kind === "invoice_carrier_paid") return "Carrier invoice paid";
   if (kind === "in_transit") return "Picked up";
   if (kind === "edited") return "Edited";
   return isOrderStatus(kind) ? STATUS_LABELS[kind] : kind;
@@ -660,10 +662,11 @@ function paymentStateBadge(state: string, paidAmount: number | null): string {
   return '<span class="badge badge-unpaid">Not paid</span>';
 }
 
-/** Send button plus sent state for one invoice kind. */
+/** Send button plus sent/paid state for one invoice kind. */
 function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" | "carrier"): string {
   const to = kind === "carrier" ? order.carrier_email : order.customer_email;
   const sent = events.some((event) => event.kind === `invoice_${kind}`);
+  const paid = events.some((event) => event.kind === `invoice_${kind}_paid`);
   const label = kind === "carrier" ? "Carrier invoice" : "Client invoice";
   const button = to
     ? `<button class="btn btn-accent btn-small" type="submit">Send to ${kind}</button>`
@@ -672,15 +675,51 @@ function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" 
     kind === "client"
       ? (order.client_invoice_amount ?? order.final_quote ?? order.price)
       : (order.carrier_invoice_amount ?? order.carrier_fee ?? 0);
-  return `<form method="post" action="/admin/orders/${order.id}/invoice/${kind}/send" class="invoice-action" data-kind="${kind}" data-to="${esc(to ?? "")}">
-      <div class="invoice-action-head">
-        <strong>${label}</strong>
-        ${sent ? '<span class="badge badge-paid">Sent</span>' : '<span class="muted small">Not sent</span>'}
+  return `<div class="invoice-card">
+      <form method="post" action="/admin/orders/${order.id}/invoice/${kind}/send" class="invoice-action" data-kind="${kind}" data-to="${esc(to ?? "")}">
+        <div class="invoice-action-head">
+          <strong>${label}</strong>
+          ${paid ? '<span class="badge badge-paid">Paid</span>' : sent ? '<span class="badge badge-sent">Sent</span>' : '<span class="badge badge-unpaid">Not sent</span>'}
+        </div>
+        <span class="muted small">${to ? esc(to) : "Add an email on this order first"}</span>
+        <label class="field invoice-amount"><span>Amount (USD)</span><input name="amount" type="number" min="0" step="1" value="${amount ?? ""}" required></label>
+        ${button}
+      </form>
+      ${paid
+        ? ""
+        : `<form method="post" action="/admin/orders/${order.id}/invoice/${kind}/paid" class="invoice-paid">
+        <button class="btn btn-ghost btn-small" type="submit">Mark ${kind} invoice paid</button>
+      </form>`}
+    </div>`;
+}
+
+/** A contract exists once the order reached the draft step (and survives later statuses). */
+function hasContract(order: OrderRow, events: OrderEventRow[]): boolean {
+  if (order.status === "cancelled") return events.some((event) => event.kind === "contract_draft");
+  return ORDER_STATUSES.indexOf(order.status as OrderStatus) >= ORDER_STATUSES.indexOf("contract_draft");
+}
+
+/** Full-page contract preview inside a modal, plus a download link. */
+function contractModal(order: OrderRow): string {
+  const eyebrow = order.status === "contract_draft" ? "Contract draft" : "Contract";
+  return `<div class="modal" id="contract-${order.id}">
+  <a class="modal-backdrop" href="#order-${order.id}" aria-label="Close"></a>
+  <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-label="Draft contract">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">${eyebrow}</p>
+        <h2>${esc(order.number)}</h2>
       </div>
-      <span class="muted small">${to ? esc(to) : "Add an email on this order first"}</span>
-      <label class="field invoice-amount"><span>Amount (USD)</span><input name="amount" type="number" min="0" step="1" value="${amount ?? ""}" required></label>
-      ${button}
-    </form>`;
+      <a class="modal-close" href="#order-${order.id}" aria-label="Close">×</a>
+    </div>
+    <iframe class="contract-frame" src="/admin/orders/${order.id}/contract" loading="lazy" title="Draft contract"></iframe>
+    <div class="modal-actions mt">
+      <a class="btn btn-accent" href="/admin/orders/${order.id}/contract?download=1">Download Word (.docx)</a>
+      <a class="btn btn-ghost" href="/admin/orders/${order.id}/contract?download=1&amp;format=html">Download HTML</a>
+      <a class="btn btn-ghost" href="#order-${order.id}">Back to order</a>
+    </div>
+  </div>
+</div>`;
 }
 
 export function orderModal(
@@ -725,6 +764,14 @@ export function orderModal(
         (value) => `<button class="chip chip-status-${value}${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
       ).join("")}</div>
     </form>
+
+    ${hasContract(order, events)
+      ? `<h3 class="section-title mt">${order.status === "contract_draft" ? "Contract draft" : "Contract"}</h3>
+    <div class="modal-actions">
+      <a class="btn btn-accent" href="#contract-${order.id}">${order.status === "contract_draft" ? "View draft contract" : "View contract"}</a>
+      <a class="btn btn-ghost" href="/admin/orders/${order.id}/contract?download=1">Download Word</a>
+    </div>`
+      : ""}
 
     ${order.status === "paid"
       ? `<h3 class="section-title mt">Invoices</h3>
@@ -869,6 +916,25 @@ function invoiceConfirmUi(): string {
         close();
         form.submit();
       });
+  });
+})();
+</script>`;
+}
+
+/** Reload the contract iframe each time it opens, so edits made in the order show up. */
+function contractFrameRefresh(): string {
+  return `<script>
+(function () {
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest ? event.target.closest('a[href^="#contract-"]') : null;
+    if (!link) return;
+    var modal = document.getElementById((link.getAttribute("href") || "").slice(1));
+    if (!modal) return;
+    var frame = modal.querySelector("iframe");
+    if (!frame) return;
+    var base = (frame.getAttribute("data-src") || frame.getAttribute("src") || "").split("?")[0];
+    frame.setAttribute("data-src", base);
+    frame.setAttribute("src", base + "?t=" + Date.now());
   });
 })();
 </script>`;
@@ -1037,10 +1103,10 @@ export function adminOrdersPage(
 
   const invoiceCell = (order: OrderRow, kind: "client" | "carrier") => {
     if (order.status !== "paid") return '<span class="muted small">—</span>';
-    const sent = (eventsByOrder.get(order.id) ?? []).some((event) => event.kind === `invoice_${kind}`);
-    return sent
-      ? '<span class="badge badge-paid">Sent</span>'
-      : '<span class="muted small">Not sent</span>';
+    const events = eventsByOrder.get(order.id) ?? [];
+    if (events.some((event) => event.kind === `invoice_${kind}_paid`)) return '<span class="badge badge-paid">Paid</span>';
+    if (events.some((event) => event.kind === `invoice_${kind}`)) return '<span class="badge badge-sent">Sent</span>';
+    return '<span class="badge badge-unpaid">Not sent</span>';
   };
 
   const rows = orders
@@ -1098,8 +1164,10 @@ export function adminOrdersPage(
     </tr></thead><tbody>${rows}</tbody></table></div>`
       }
   ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [], eventsByOrder.get(order.id) ?? [], errorOrder === null || errorOrder === order.id ? error : undefined, unitsByOrder.get(order.id) ?? [])).join("")}
+  ${orders.filter((order) => hasContract(order, eventsByOrder.get(order.id) ?? [])).map(contractModal).join("")}
   ${statusConfirmUi()}
   ${invoiceConfirmUi()}
+  ${contractFrameRefresh()}
   ${fieldSaveAsync()}
 </section>`,
   });
@@ -1152,6 +1220,13 @@ export function adminOrderPage(
     <input class="copy-field" readonly value="${esc(baseUrl)}/track/${esc(order.token)}" onclick="this.select()">
     <p class="muted small">Send this to the customer. No password needed; it shows status, carrier and invoices only.</p>
   </div>
+
+  ${hasContract(order, events)
+      ? `<div class="modal-actions mt">
+    <a class="btn btn-accent" href="/admin/orders/${order.id}/contract">View contract</a>
+    <a class="btn btn-ghost" href="/admin/orders/${order.id}/contract?download=1">Download Word</a>
+  </div>`
+      : ""}
 
   <h2 class="section-title mt">Full record</h2>
   ${orderFieldsTable(order, `/admin/orders/${order.id}`)}
@@ -1238,6 +1313,7 @@ export function adminOrderPage(
   <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${eventRows}</tbody></table>
   ${statusConfirmUi()}
   ${invoiceConfirmUi()}
+  ${contractFrameRefresh()}
   ${fieldSaveAsync()}
 </section>`,
   });

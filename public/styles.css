@@ -179,8 +179,14 @@ p {
 
 .lede {
   font-size: 1.05rem;
-  color: #c3d2df;
+  line-height: 1.6;
+  color: #33475b;
   max-width: 46ch;
+}
+
+/* on the dark hero the lede needs the pale tone; elsewhere it must stay dark */
+.hero .lede {
+  color: #c3d2df;
 }
 
 .lede.narrow {
@@ -3238,4 +3244,36 @@ main {
 .unit-remove-btn:hover {
   background: #fdecea;
   border-color: #d98b82;
+}
+
+/* contract preview modal */
+.modal-card-wide {
+  max-width: 980px;
+}
+
+.contract-frame {
+  width: 100%;
+  height: 68vh;
+  border: 1px solid #e3eaf0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+/* invoice cards: send form plus mark-paid action */
+.invoice-card {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.invoice-card .invoice-action {
+  height: 100%;
+}
+
+.invoice-paid {
+  margin: 0;
+}
+
+.badge-sent {
+  background: #e0f2fe;
+  color: #075985;
 }
