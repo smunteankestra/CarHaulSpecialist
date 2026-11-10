@@ -18,7 +18,7 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   assigned: "Carrier assigned",
   picked_up: "Picked up",
   delivered: "Delivered",
-  paid: "Paid",
+  paid: "Payments",
   cancelled: "Cancelled",
 };
 
@@ -117,6 +117,9 @@ export interface OrderRow {
   dest_phone: string | null;
   ready_date: string | null;
   ready_asap: number;
+  payment_state: string;
+  client_invoice_amount: number | null;
+  carrier_invoice_amount: number | null;
   distance_miles: number | null;
   price: number;
   final_quote: number | null;
@@ -138,6 +141,20 @@ export interface OrderRow {
   delivered_at: number | null;
   paid_amount: number | null;
   payment_method: string | null;
+}
+
+export interface OrderUnitRow {
+  id: number;
+  order_id: number;
+  position: number;
+  vehicle_year: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vin: string | null;
+  vehicle_type: string | null;
+  condition: string | null;
+  price: number | null;
+  created_at: number;
 }
 
 export interface OrderEventRow {

@@ -1,4 +1,4 @@
-import { esc, MONTH_NAMES, conditionPicker, conditionTag, dateOnly, datePicker, layout, money, site, transportPicker, whenHtml } from "./views.ts";
+import { esc, MONTH_NAMES, conditionPicker, conditionTag, dateOnly, datePicker, infoTip, layout, money, site, transportPicker, whenHtml } from "./views.ts";
 import { US_STATES, stateCode, stateName } from "./states.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
@@ -10,6 +10,7 @@ import {
   type OrderEventRow,
   type OrderRow,
   type OrderStatus,
+  type OrderUnitRow,
 } from "./orders.ts";
 
 export interface OrderPhotoRow {
@@ -55,12 +56,21 @@ function stateOptions(selected: string | undefined): string {
   ).join("")}`;
 }
 
-export function bookPage(values: BookValues, price: number | null, error?: string): string {
+export type ExtraUnit = { year: string; make: string; model: string; condition: string };
+
+export function bookPage(values: BookValues, price: number | null, error?: string, extras: ExtraUnit[] = []): string {
   const v = (key: keyof BookValues) => esc(values[key] ?? "");
   const condition = values.condition || "running";
   const hidden = Object.entries(values)
     .filter(([key]) => key === "lead_id" || key === "order_token")
     .map(([key, value]) => `<input type="hidden" name="${key}" value="${esc(value)}">`)
+    .join("");
+  // Extra vehicles carry through to the booking submit untouched.
+  const unitHidden = extras
+    .map((unit, index) => {
+      const n = index + 2;
+      return `<input type="hidden" name="vehicle_year_${n}" value="${esc(unit.year)}"><input type="hidden" name="vehicle_make_${n}" value="${esc(unit.make)}"><input type="hidden" name="vehicle_model_${n}" value="${esc(unit.model)}"><input type="hidden" name="condition_${n}" value="${esc(unit.condition)}">`;
+    })
     .join("");
 
   return layout({
@@ -100,7 +110,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       <h2 class="section-title">Booking details</h2>
       <p class="muted">Both addresses and a contact at each end. Fields marked * are required.</p>
     <form class="quote-form" method="post" action="/book/submit" enctype="multipart/form-data">
-      ${hidden}
+      ${hidden}${unitHidden}
       ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
 
       <h3 class="form-section">Customer</h3>
@@ -117,13 +127,15 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
         <label class="field"><span>Model</span><input name="vehicle_model" value="${v("vehicle_model")}"></label>
       </div>
       <div class="field-row">
-        <label class="field"><span>VIN</span><input name="vin" maxlength="17" value="${v("vin")}" placeholder="17 characters"></label>
-        <div class="field"><span>Transport</span>
-          ${transportPicker(values.transport_type)}
-        </div>
-        <div class="field"><span>Vehicle condition</span>
-          ${conditionPicker(condition)}
-        </div>
+        <label class="field"><span>VIN${infoTip("17 characters on the dashboard or driver's door. Optional, but it speeds up dispatch.")}</span><input name="vin" maxlength="17" value="${v("vin")}" placeholder="17 characters"></label>
+      </div>
+      <div class="field">
+        <span>Transport${infoTip("Open is the cheapest option; enclosed protects paintwork on classics and exotics.")}</span>
+        ${transportPicker(values.transport_type)}
+      </div>
+      <div class="field">
+        <span>Vehicle condition${infoTip("A vehicle that cannot be driven needs a winch or forklift, which adds a fee.")}</span>
+        ${conditionPicker(condition)}
       </div>
 
       <a class="btn btn-accent btn-inline" href="/booking-form" target="_blank" rel="noopener">Add another vehicle</a>
@@ -215,6 +227,8 @@ function statusBadge(status: string, decorated = false): string {
 
 function eventLabel(kind: string): string {
   if (kind === "requested") return "Quoted";
+  if (kind === "invoice_client") return "Client invoice sent";
+  if (kind === "invoice_carrier") return "Carrier invoice sent";
   if (kind === "in_transit") return "Picked up";
   if (kind === "edited") return "Edited";
   return isOrderStatus(kind) ? STATUS_LABELS[kind] : kind;
@@ -289,20 +303,6 @@ function timeFields(config: {
       <p class="form-note">${config.note}</p>`;
 }
 
-function pickupFields(order: OrderRow): string {
-  return timeFields({
-    dateLabel: "Picked up date",
-    monthName: "picked_up_month",
-    dayName: "picked_up_day",
-    yearName: "picked_up_year",
-    hourName: "picked_up_hour",
-    minuteName: "picked_up_minute",
-    ampmName: "picked_up_ampm",
-    value: order.picked_up_at,
-    note: order.picked_up_at ? `Saved: ${whenHtml(order.picked_up_at)}` : "Choose the pickup date and time in AM/PM.",
-  });
-}
-
 function pickupEtaFields(order: OrderRow): string {
   return timeFields({
     dateLabel: "Pickup ETA",
@@ -314,34 +314,6 @@ function pickupEtaFields(order: OrderRow): string {
     ampmName: "pickup_eta_ampm",
     value: order.pickup_eta,
     note: order.pickup_eta ? `Pickup ETA: ${whenHtml(order.pickup_eta)}` : "Choose the estimated pickup time in AM/PM.",
-  });
-}
-
-function deliveryEtaFields(order: OrderRow): string {
-  return timeFields({
-    dateLabel: "Delivery ETA",
-    monthName: "delivery_eta_month",
-    dayName: "delivery_eta_day",
-    yearName: "delivery_eta_year",
-    hourName: "delivery_eta_hour",
-    minuteName: "delivery_eta_minute",
-    ampmName: "delivery_eta_ampm",
-    value: order.delivery_eta,
-    note: order.delivery_eta ? `Delivery ETA: ${whenHtml(order.delivery_eta)}` : "Choose the estimated delivery time in AM/PM.",
-  });
-}
-
-function deliveredFields(order: OrderRow): string {
-  return timeFields({
-    dateLabel: "Delivered date",
-    monthName: "delivered_month",
-    dayName: "delivered_day",
-    yearName: "delivered_year",
-    hourName: "delivered_hour",
-    minuteName: "delivered_minute",
-    ampmName: "delivered_ampm",
-    value: order.delivered_at,
-    note: order.delivered_at ? `Delivered: ${whenHtml(order.delivered_at)}` : "Choose the delivery date and time in AM/PM.",
   });
 }
 
@@ -362,13 +334,13 @@ function statusFields(order: OrderRow): string {
   if (order.status === "cancelled") return "";
   if (order.status === "contract_draft") return pickupEtaFields(order);
   if (order.status === "confirmed") return "";
-  if (order.status === "assigned") return pickupEtaFields(order);
-  if (order.status === "picked_up") return `${pickupFields(order)}${deliveryEtaFields(order)}`;
-  if (order.status === "delivered") return `${pickupFields(order)}${deliveredFields(order)}`;
+  if (order.status === "assigned") return "";
+  if (order.status === "picked_up") return "";
+  if (order.status === "delivered") return "";
   return paymentFields(order);
 }
 
-export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[]): string {
+export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[], justBooked = false): string {
   const done = new Set(events.map((event) => event.kind));
   const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
   const reached = CUSTOMER_STAGES.filter(
@@ -416,6 +388,12 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
     description: `Status of shipment ${order.number}.`,
     body: `
 <section class="wrap section">
+  ${justBooked
+      ? `<div class="call-banner">
+    <strong>We will call you shortly.</strong>
+    <span>Expect a call from dispatch — we confirm the carrier and the pickup window before anything is charged.</span>
+  </div>`
+      : ""}
   <p class="eyebrow">Shipment</p>
   <h1 class="page-title">${esc(order.number)} ${statusBadge(order.status)}</h1>
   <p class="muted">${esc(order.origin_city ?? order.origin_zip)}, ${esc(stateName(order.origin_state))} → ${esc(order.dest_city ?? order.dest_zip)}, ${esc(stateName(order.dest_state))}</p>
@@ -497,6 +475,12 @@ function dueSpan(value: string | number | null, html: string): string {
   return `<span class="${urgencyClass(value)}" data-due="${esc(iso)}">${html}</span>`;
 }
 
+/** Delivery ETA is today or already past: handle this order first. */
+function isDeliveryDue(value: number | null): boolean {
+  const days = daysAway(value);
+  return days !== null && days <= 0;
+}
+
 const DATE_GROUPS = new Set(["picked_up_at", "pickup_eta", "delivery_eta", "delivered_at"]);
 
 const PAYMENT_METHODS = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"];
@@ -506,18 +490,26 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
   const carrierLine = [order.carrier_mc, order.carrier_company_phone, order.carrier_email].filter(Boolean).join(" · ");
   const driverLine = [order.driver_name, order.carrier_phone].filter(Boolean).join(" · ");
   const value = (html: string) => html || '<span class="muted">—</span>';
-  // Booked → Contract draft needs these five; show them in red until filled.
-  const bookedStep = order.status === "confirmed";
+  // Fields the current step needs before it can advance; shown in red until filled.
+  const requiredGroups = new Set<string>(
+    order.status === "confirmed"
+      ? ["pickup_eta", "delivery_eta", "final_quote", "broker_fee", "carrier_fee"]
+      : order.status === "picked_up"
+        ? ["picked_up_at", "delivery_eta"]
+        : order.status === "delivered"
+          ? ["delivered_at"]
+          : [],
+  );
   // Carrier assigned: money rows get a yellow highlight so the price block stands out.
   const priceStep = order.status === "assigned";
   const priceMark = (html: string) => (priceStep && html ? `<span class="price-mark">${html}</span>` : html);
-  const requiredValue = (filled: boolean, html: string) =>
-    bookedStep && !filled ? '<span class="due-red">Required</span>' : value(html);
+  const requiredValue = (group: string, filled: boolean, html: string) =>
+    requiredGroups.has(group) && !filled ? '<span class="due-red">Required</span>' : value(html);
   const plain = (label: string, html: string) => `<tr><th>${esc(label)}</th><td>${value(html)}</td></tr>`;
   const editable = (label: string, group: string, html: string, editor: string, filled = true) => `<tr><th>${esc(label)}</th><td>
       <input type="checkbox" id="edit-${order.id}-${group}" class="row-edit-toggle">
       <div class="field-view">
-        <div class="field-value">${requiredValue(filled, html)}</div>
+        <div class="field-value">${requiredValue(group, filled, html)}</div>
         <label class="field-edit-btn${group === "broker_fee" ? " field-edit-btn--alert" : ""}" for="edit-${order.id}-${group}" title="Edit ${esc(label)}" aria-label="Edit ${esc(label)}">✎</label>
       </div>
       <form class="field-editor" method="post" action="/admin/orders/${order.id}/field">
@@ -597,11 +589,17 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
     `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`,
     `<div class="edit-grid">${text("dest_contact", "Contact name", order.dest_contact)}${text("dest_phone", "Phone", order.dest_phone)}</div>`,
   )}
-      ${editable("Picked up at", "picked_up_at", order.picked_up_at ? whenHtml(order.picked_up_at) : "", dateTime("picked_up_at", "Date & time", order.picked_up_at))}
       ${editable("Pick up ETA", "pickup_eta", dueSpan(order.pickup_eta, order.pickup_eta ? whenHtml(order.pickup_eta) : ""), dateTime("pickup_eta", "Date & time", order.pickup_eta), Boolean(order.pickup_eta))}
+      ${editable("Picked up at", "picked_up_at", order.picked_up_at ? whenHtml(order.picked_up_at) : "", dateTime("picked_up_at", "Date & time", order.picked_up_at), Boolean(order.picked_up_at))}
       ${editable("Delivery ETA", "delivery_eta", dueSpan(order.delivery_eta, order.delivery_eta ? whenHtml(order.delivery_eta) : ""), dateTime("delivery_eta", "Date & time", order.delivery_eta), Boolean(order.delivery_eta))}
-      ${editable("Delivered at", "delivered_at", order.delivered_at ? whenHtml(order.delivered_at) : "", dateTime("delivered_at", "Date & time", order.delivered_at))}
+      ${editable("Delivered at", "delivered_at", order.delivered_at ? whenHtml(order.delivered_at) : "", dateTime("delivered_at", "Date & time", order.delivered_at), Boolean(order.delivered_at))}
       ${editable("Payment method", "payment_method", esc(order.payment_method ?? ""), `<select name="payment_method"><option value="">Select method</option>${PAYMENT_METHODS.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}</select>`)}
+      ${editable(
+        "Payment status",
+        "payment_state",
+        paymentStateBadge(order.payment_state, order.paid_amount),
+        `<select name="payment_state">${PAYMENT_STATES.map(([value, label]) => `<option value="${value}"${(order.payment_state || "unpaid") === value ? " selected" : ""}>${label}</option>`).join("")}</select>`,
+      )}
       ${editable(
         "Pickup date",
         "ready_date",
@@ -647,7 +645,51 @@ function historyRows(events: OrderEventRow[], limit?: number): string {
     .join("");
 }
 
-export function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: OrderEventRow[] = [], error?: string): string {
+const PAYMENT_STATES: [string, string][] = [
+  ["unpaid", "Not paid"],
+  ["partial", "Partially paid"],
+  ["full", "Paid in full"],
+];
+
+/** Payment state badge; partial payments carry the amount received. */
+function paymentStateBadge(state: string, paidAmount: number | null): string {
+  if (state === "full") return '<span class="badge badge-paid">Paid in full</span>';
+  if (state === "partial") {
+    return `<span class="badge badge-partial">Partially paid${paidAmount !== null ? ` ${money(paidAmount)}` : ""}</span>`;
+  }
+  return '<span class="badge badge-unpaid">Not paid</span>';
+}
+
+/** Send button plus sent state for one invoice kind. */
+function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" | "carrier"): string {
+  const to = kind === "carrier" ? order.carrier_email : order.customer_email;
+  const sent = events.some((event) => event.kind === `invoice_${kind}`);
+  const label = kind === "carrier" ? "Carrier invoice" : "Client invoice";
+  const button = to
+    ? `<button class="btn btn-accent btn-small" type="submit">Send to ${kind}</button>`
+    : `<button class="btn btn-ghost btn-small" type="submit" disabled>No ${kind} email</button>`;
+  const amount =
+    kind === "client"
+      ? (order.client_invoice_amount ?? order.final_quote ?? order.price)
+      : (order.carrier_invoice_amount ?? order.carrier_fee ?? 0);
+  return `<form method="post" action="/admin/orders/${order.id}/invoice/${kind}/send" class="invoice-action" data-kind="${kind}" data-to="${esc(to ?? "")}">
+      <div class="invoice-action-head">
+        <strong>${label}</strong>
+        ${sent ? '<span class="badge badge-paid">Sent</span>' : '<span class="muted small">Not sent</span>'}
+      </div>
+      <span class="muted small">${to ? esc(to) : "Add an email on this order first"}</span>
+      <label class="field invoice-amount"><span>Amount (USD)</span><input name="amount" type="number" min="0" step="1" value="${amount ?? ""}" required></label>
+      ${button}
+    </form>`;
+}
+
+export function orderModal(
+  order: OrderRow,
+  photos: OrderPhotoRow[],
+  events: OrderEventRow[] = [],
+  error?: string,
+  units: OrderUnitRow[] = [],
+): string {
   const anchor = `/admin/orders#order-${order.id}`;
 
   return `<div class="modal" id="order-${order.id}">
@@ -683,6 +725,24 @@ export function orderModal(order: OrderRow, photos: OrderPhotoRow[], events: Ord
         (value) => `<button class="chip chip-status-${value}${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
       ).join("")}</div>
     </form>
+
+    ${order.status === "paid"
+      ? `<h3 class="section-title mt">Invoices</h3>
+    <div class="invoice-actions">
+      ${invoiceAction(order, events, "client")}
+      ${invoiceAction(order, events, "carrier")}
+    </div>`
+      : ""}
+
+    ${units.length > 1
+      ? `<h3 class="section-title mt">Vehicles</h3>
+    <table class="table"><thead><tr><th>#</th><th>Vehicle</th><th>Condition</th><th>Price</th></tr></thead><tbody>${units
+        .map(
+          (unit) =>
+            `<tr><td>${unit.position}</td><td>${esc([unit.vehicle_year, unit.vehicle_make, unit.vehicle_model].filter(Boolean).join(" ") || "—")}${unit.vin ? `<br><span class="muted small">${esc(unit.vin)}</span>` : ""}</td><td>${conditionTag(unit.condition ?? "running")}</td><td>${unit.price !== null ? money(unit.price) : "—"}</td></tr>`,
+        )
+        .join("")}</tbody></table>`
+      : ""}
 
     <div class="modal-actions mt">
       <a class="btn btn-ghost" href="/admin/orders/${order.id}">Open full record</a>
@@ -724,6 +784,91 @@ function fieldSaveAsync(): string {
         modal.innerHTML = fresh.innerHTML;
       })
       .catch(function () { form.submit(); });
+  });
+})();
+</script>`;
+}
+
+/** Confirm recipient and amount before an invoice goes out. */
+function invoiceConfirmUi(): string {
+  return `
+<div class="confirm-backdrop" id="invoiceConfirm" hidden>
+  <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="invoiceConfirmTitle">
+    <h3 id="invoiceConfirmTitle">Send invoice?</h3>
+    <dl class="confirm-rows">
+      <div><dt>To</dt><dd id="invoiceConfirmTo"></dd></div>
+      <div><dt>Amount</dt><dd id="invoiceConfirmAmount"></dd></div>
+    </dl>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-ghost" id="invoiceConfirmEdit">Edit</button>
+      <button type="button" class="btn btn-accent" id="invoiceConfirmYes">Yes, send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var box = document.getElementById("invoiceConfirm");
+  var toEl = document.getElementById("invoiceConfirmTo");
+  var amountEl = document.getElementById("invoiceConfirmAmount");
+  var titleEl = document.getElementById("invoiceConfirmTitle");
+  var yes = document.getElementById("invoiceConfirmYes");
+  var edit = document.getElementById("invoiceConfirmEdit");
+  if (!box || !yes || !edit) return;
+  var pending = null;
+
+  function close() {
+    box.hidden = true;
+    pending = null;
+    yes.disabled = false;
+    yes.textContent = "Yes, send";
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest ? event.target.closest(".invoice-action button[type=submit]") : null;
+    if (!button) return;
+    var form = button.form;
+    if (!form) return;
+    event.preventDefault();
+    var amount = form.querySelector('input[name="amount"]');
+    if (!amount || !amount.value) {
+      amount.reportValidity();
+      return;
+    }
+    pending = form;
+    titleEl.textContent = (form.getAttribute("data-kind") === "carrier" ? "Send carrier invoice?" : "Send client invoice?");
+    toEl.textContent = form.getAttribute("data-to") || "—";
+    amountEl.textContent = "$" + Number(amount.value).toLocaleString();
+    box.hidden = false;
+    yes.focus();
+  });
+
+  edit.addEventListener("click", close);
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape" || box.hidden) return;
+    event.preventDefault();
+    close();
+  });
+
+  yes.addEventListener("click", function () {
+    if (!pending) return;
+    var form = pending;
+    var modal = form.closest(".modal");
+    yes.disabled = true;
+    yes.textContent = "Sending…";
+    fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin" })
+      .then(function (response) { return response.text(); })
+      .then(function (html) {
+        close();
+        if (!modal) { window.location.reload(); return; }
+        var fresh = new DOMParser().parseFromString(html, "text/html").getElementById(modal.id);
+        if (fresh) modal.innerHTML = fresh.innerHTML;
+        else window.location.reload();
+      })
+      .catch(function () {
+        close();
+        form.submit();
+      });
   });
 })();
 </script>`;
@@ -856,6 +1001,7 @@ export function adminOrdersPage(
   counts: Record<string, number> = {},
   errorOrder: number | null = null,
   error?: string,
+  unitsByOrder: Map<number, OrderUnitRow[]> = new Map(),
 ): string {
   const photosByOrder = new Map<number, OrderPhotoRow[]>();
   for (const photo of photos) {
@@ -889,15 +1035,26 @@ export function adminOrdersPage(
     return `/admin/orders${query ? `?${query}` : ""}`;
   };
 
+  const invoiceCell = (order: OrderRow, kind: "client" | "carrier") => {
+    if (order.status !== "paid") return '<span class="muted small">—</span>';
+    const sent = (eventsByOrder.get(order.id) ?? []).some((event) => event.kind === `invoice_${kind}`);
+    return sent
+      ? '<span class="badge badge-paid">Sent</span>'
+      : '<span class="muted small">Not sent</span>';
+  };
+
   const rows = orders
     .map(
-      (order) => `<tr>
+      (order) => `<tr${order.status !== "paid" && isDeliveryDue(order.delivery_eta) ? ' class="row-due"' : ""}>
       <td><a class="row-link" href="#order-${order.id}">${esc(order.number)}</a></td>
       <td>${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_phone)}</span></td>
       <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}</span></td>
       <td>${order.distance_miles ? `${order.distance_miles.toLocaleString()} mi` : "—"}</td>
       <td>${money(order.price)}</td>
-      <td>${statusBadge(order.status, true)}</td>
+      <td>${order.status === "paid" ? paymentStateBadge(order.payment_state, order.paid_amount) : statusBadge(order.status, true)}</td>
+      <td class="muted small">${order.delivery_eta ? dueSpan(order.delivery_eta, whenHtml(order.delivery_eta)) : "—"}</td>
+      <td>${invoiceCell(order, "client")}</td>
+      <td>${invoiceCell(order, "carrier")}</td>
       <td class="muted small">${whenHtml(order.created_at)}</td>
     </tr>`,
     )
@@ -927,18 +1084,22 @@ export function adminOrdersPage(
   </div>
   ${orders.length === 0
         ? `<p class="muted">No orders in this view.</p>`
-        : `<table class="table rows-clickable"><thead><tr>
+        : `<div class="table-scroll"><table class="table rows-clickable"><thead><tr>
       <th>${sortLink("order", "Order")}</th>
       <th>${sortLink("customer", "Customer")}</th>
       <th>${sortLink("route", "Route")}</th>
       <th>${sortLink("distance", "Distance")}</th>
       <th>${sortLink("price", "Price")}</th>
       <th>${sortLink("status", "Status")}</th>
+      <th>Delivery ETA</th>
+      <th>Client invoice</th>
+      <th>Carrier invoice</th>
       <th>${sortLink("created", "Created")}</th>
-    </tr></thead><tbody>${rows}</tbody></table>`
+    </tr></thead><tbody>${rows}</tbody></table></div>`
       }
-  ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [], eventsByOrder.get(order.id) ?? [], errorOrder === null || errorOrder === order.id ? error : undefined)).join("")}
+  ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [], eventsByOrder.get(order.id) ?? [], errorOrder === null || errorOrder === order.id ? error : undefined, unitsByOrder.get(order.id) ?? [])).join("")}
   ${statusConfirmUi()}
+  ${invoiceConfirmUi()}
   ${fieldSaveAsync()}
 </section>`,
   });
@@ -951,6 +1112,7 @@ export function adminOrderPage(
   baseUrl = "",
   photos: OrderPhotoRow[] = [],
   error?: string,
+  units: OrderUnitRow[] = [],
 ): string {
   const eventRows = historyRows(events);
 
@@ -993,6 +1155,16 @@ export function adminOrderPage(
 
   <h2 class="section-title mt">Full record</h2>
   ${orderFieldsTable(order, `/admin/orders/${order.id}`)}
+
+  ${units.length > 1
+      ? `<h2 class="section-title mt">Vehicles</h2>
+  <table class="table"><thead><tr><th>#</th><th>Vehicle</th><th>Condition</th><th>Price</th></tr></thead><tbody>${units
+      .map(
+        (unit) =>
+          `<tr><td>${unit.position}</td><td>${esc([unit.vehicle_year, unit.vehicle_make, unit.vehicle_model].filter(Boolean).join(" ") || "—")}</td><td>${conditionTag(unit.condition ?? "running")}</td><td>${unit.price !== null ? money(unit.price) : "—"}</td></tr>`,
+      )
+      .join("")}</tbody></table>`
+      : ""}
 
   ${photos.length
         ? `<h2 class="section-title mt">Vehicle photos</h2>
@@ -1065,6 +1237,7 @@ export function adminOrderPage(
   <h2 class="section-title mt">History</h2>
   <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${eventRows}</tbody></table>
   ${statusConfirmUi()}
+  ${invoiceConfirmUi()}
   ${fieldSaveAsync()}
 </section>`,
   });

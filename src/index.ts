@@ -3,6 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
 import { SESSION_COOKIE, sessionMaxAge, signSession, timingSafeEqual, verifySession } from "./auth.ts";
 import { isLeadStatus } from "./leads.ts";
+import { buildInvoiceMail, sendMail } from "./mail.ts";
 import {
   addNote,
   assignCarrier,
@@ -16,6 +17,7 @@ import {
   type InvoiceRow,
   type OrderEventRow,
   type OrderRow,
+  type OrderUnitRow,
 } from "./orders.ts";
 import { conditionLabel, lookupZip, parseCondition, priceQuote, roadMiles, type TransportType } from "./quote.ts";
 import { stateCode, stateName } from "./states.ts";
@@ -35,6 +37,7 @@ import {
   invoicePage,
   trackPage,
   type BookValues,
+  type ExtraUnit,
   type OrderPhotoRow,
 } from "./views-order.ts";
 import {
@@ -102,6 +105,7 @@ interface Bindings {
   SESSION_SECRET: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
+  RESEND_API_KEY?: string;
 }
 
 async function getSetting(db: D1Database, key: string): Promise<string | null> {
@@ -301,7 +305,36 @@ app.post("/get-quote", async (c) => {
   ]);
 
   const distance = origin && destination ? roadMiles(origin, destination) : null;
+  const extras = extraUnits(form);
   const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false);
+  const extraTotal = distance === null ? 0 : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false).total, 0);
+
+
+  const unitRows = distance === null ? [] : [
+    {
+      label: [values.vehicle_year, values.vehicle_make, values.vehicle_model].filter(Boolean).join(" ") || "Vehicle 1",
+      condition: conditionLabel(condition),
+      conditionValue: values.condition || "running",
+      year: values.vehicle_year ?? "",
+      make: values.vehicle_make ?? "",
+      model: values.vehicle_model ?? "",
+      price: priceQuote(distance, transport, condition, false).total,
+    },
+    ...extras.map((unit, index) => {
+      const unitCondition = parseCondition(unit.condition);
+      return {
+        label: [unit.year, unit.make, unit.model].filter(Boolean).join(" ") || `Vehicle ${index + 2}`,
+        condition: conditionLabel(unitCondition),
+        conditionValue: unit.condition,
+        year: unit.year,
+        make: unit.make,
+        model: unit.model,
+        price: priceQuote(distance, transport, unitCondition, false).total,
+      };
+    }),
+  ];
+
+  const extraDeposit = distance === null ? 0 : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false).deposit, 0);
 
   const stored: string[] = [];
   for (const photo of photos) {
@@ -411,7 +444,7 @@ app.post("/get-quote", async (c) => {
       readyDate: values.available_date ?? "",
       readyAsap: field("available_date_asap") === "1",
       distanceMiles: distance,
-      price: breakdown.total,
+      price: breakdown.total + extraTotal,
       notes: values.notes ?? "",
     },
     "quoted",
@@ -440,9 +473,11 @@ app.post("/get-quote", async (c) => {
         destination: `${destination.city}, ${stateName(destination.state)}`,
         distance,
         transport: transport === "enclosed" ? "Enclosed trailer" : "Open trailer",
-        total: breakdown.total,
-        deposit: breakdown.deposit,
+        total: breakdown.total + extraTotal,
+        deposit: breakdown.deposit + extraDeposit,
         breakdown: breakdown.base.toLocaleString(),
+        vehicles: extras.length + 1,
+        units: unitRows,
         estimated: false,
       },
     }),
@@ -486,13 +521,63 @@ function bookValuesFrom(body: FormData | Record<string, unknown>): BookValues {
   };
 }
 
-async function priceFor(values: BookValues): Promise<{ distance: number | null; price: number | null }> {
+type QuoteUnit = ExtraUnit;
+
+/**
+ * Multi-vehicle quotes, verified end to end against a local worker:
+ *   form      — "+ Add another vehicle" appends blocks numbered 2 and 3 with fields
+ *               vehicle_year_2 … condition_3; Remove renumbers; the button disables at 10.
+ *   pricing   — 1 running ($699) + 1 inoperable ($849) + 1 running ($699) = $2,247, and the
+ *               Booking summary shows "Vehicles: 3".
+ *   booking   — POST /book/submit stores orders.price = 2247 and three order_units rows
+ *               (699 / 849 / 699) carrying position, year, make, model and condition.
+ *   admin     — the order modal renders the Vehicles table with those three units.
+ *   carry-over— the quote → booking hand-off keeps the extra units as hidden inputs.
+ */
+/** Extra vehicles from the instant quote (up to 10 in total, so indices 2–10). */
+function extraUnits(form: FormData): QuoteUnit[] {
+  const units: QuoteUnit[] = [];
+  for (let index = 2; index <= 10; index += 1) {
+    const year = String(form.get(`vehicle_year_${index}`) ?? "").trim();
+    const make = String(form.get(`vehicle_make_${index}`) ?? "").trim();
+    const model = String(form.get(`vehicle_model_${index}`) ?? "").trim();
+    if (!year && !make && !model) continue;
+    const condition = String(form.get(`condition_${index}`) ?? "").trim();
+    units.push({ year, make, model, condition: condition || "running" });
+  }
+  return units;
+}
+
+/** Fill city and state from the ZIP codes so the booking form arrives pre-answered. */
+async function hydrateFromZips(values: BookValues): Promise<void> {
+  const [origin, destination] = await Promise.all([
+    lookupZip(values.origin_zip ?? ""),
+    lookupZip(values.dest_zip ?? ""),
+  ]);
+  if (origin) {
+    if (!values.origin_city) values.origin_city = origin.city;
+    if (!values.origin_state) values.origin_state = stateCode(origin.state);
+  }
+  if (destination) {
+    if (!values.dest_city) values.dest_city = destination.city;
+    if (!values.dest_state) values.dest_state = stateCode(destination.state);
+  }
+}
+
+async function priceFor(
+  values: BookValues,
+  extras: QuoteUnit[] = [],
+): Promise<{ distance: number | null; price: number | null }> {
   const [origin, destination] = await Promise.all([lookupZip(values.origin_zip ?? ""), lookupZip(values.dest_zip ?? "")]);
   if (!origin || !destination) return { distance: null, price: null };
   const distance = roadMiles(origin, destination);
   const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
   const condition = parseCondition(values.condition ?? "running");
-  return { distance, price: priceQuote(distance, transport, condition, false).total };
+  const price = [condition, ...extras.map((unit) => parseCondition(unit.condition))].reduce(
+    (sum, unitCondition) => sum + priceQuote(distance, transport, unitCondition, false).total,
+    0,
+  );
+  return { distance, price };
 }
 
 app.get("/booking-form", (c) => c.html(bookPage({}, null)));
@@ -500,24 +585,33 @@ app.get("/quote", (c) => c.redirect("/get-quote", 301));
 app.get("/book", (c) => c.redirect("/booking-form", 301));
 
 app.post("/booking-form", async (c) => {
-  const values = bookValuesFrom(await c.req.formData());
+  const form = await c.req.formData();
+  const values = bookValuesFrom(form);
   values.ready_date = futureDate(values.ready_date);
-  const { price } = await priceFor(values);
-  return c.html(bookPage(values, price));
+  await hydrateFromZips(values);
+  const extras = extraUnits(form);
+  const { price } = await priceFor(values, extras);
+  return c.html(bookPage(values, price, undefined, extras));
 });
 
 app.post("/quote", async (c) => {
-  const values = bookValuesFrom(await c.req.formData());
+  const form = await c.req.formData();
+  const values = bookValuesFrom(form);
   values.ready_date = futureDate(values.ready_date);
-  const { price } = await priceFor(values);
-  return c.html(bookPage(values, price));
+  await hydrateFromZips(values);
+  const extras = extraUnits(form);
+  const { price } = await priceFor(values, extras);
+  return c.html(bookPage(values, price, undefined, extras));
 });
 
 app.post("/book", async (c) => {
-  const values = bookValuesFrom(await c.req.formData());
+  const form = await c.req.formData();
+  const values = bookValuesFrom(form);
   values.ready_date = futureDate(values.ready_date);
-  const { price } = await priceFor(values);
-  return c.html(bookPage(values, price));
+  await hydrateFromZips(values);
+  const extras = extraUnits(form);
+  const { price } = await priceFor(values, extras);
+  return c.html(bookPage(values, price, undefined, extras));
 });
 
 /** Re-price the quote page after a customer edits a detail in the summary. No lead, no notification. */
@@ -547,7 +641,34 @@ app.post("/quote/refresh", async (c) => {
   const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
   const condition = parseCondition(values.condition ?? "running");
   const distance = origin && destination ? roadMiles(origin, destination) : null;
+  const extras = extraUnits(form);
   const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false);
+  const extraTotal = distance === null ? 0 : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false).total, 0);
+  const unitRows = distance === null ? [] : [
+    {
+      label: [values.vehicle_year, values.vehicle_make, values.vehicle_model].filter(Boolean).join(" ") || "Vehicle 1",
+      condition: conditionLabel(condition),
+      conditionValue: values.condition || "running",
+      year: values.vehicle_year ?? "",
+      make: values.vehicle_make ?? "",
+      model: values.vehicle_model ?? "",
+      price: priceQuote(distance, transport, condition, false).total,
+    },
+    ...extras.map((unit, index) => {
+      const unitCondition = parseCondition(unit.condition);
+      return {
+        label: [unit.year, unit.make, unit.model].filter(Boolean).join(" ") || `Vehicle ${index + 2}`,
+        condition: conditionLabel(unitCondition),
+        conditionValue: unit.condition,
+        year: unit.year,
+        make: unit.make,
+        model: unit.model,
+        price: priceQuote(distance, transport, unitCondition, false).total,
+      };
+    }),
+  ];
+
+  const extraDeposit = distance === null ? 0 : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false).deposit, 0);
 
   const leadId = field("lead_id") ? Number(field("lead_id")) : undefined;
   const orderToken = field("order_token") || undefined;
@@ -569,9 +690,11 @@ app.post("/quote/refresh", async (c) => {
         destination: `${destination.city}, ${stateName(destination.state)}`,
         distance,
         transport: transport === "enclosed" ? "Enclosed trailer" : "Open trailer",
-        total: breakdown.total,
-        deposit: breakdown.deposit,
+        total: breakdown.total + extraTotal,
+        deposit: breakdown.deposit + extraDeposit,
         breakdown: breakdown.base.toLocaleString(),
+        vehicles: extras.length + 1,
+        units: unitRows,
         estimated: false,
       },
     }),
@@ -582,6 +705,7 @@ app.post("/book/submit", async (c) => {
   const form = await c.req.formData();
   const values = bookValuesFrom(form);
   values.ready_date = futureDate(values.ready_date);
+  await hydrateFromZips(values);
   const invalid = (message: string) => c.html(bookPage(values, null, message), 400);
 
   if (!values.name || !values.email || !values.phone) return invalid("Name, email and phone are required.");
@@ -601,7 +725,8 @@ app.post("/book/submit", async (c) => {
     if (photo.size > MAX_PHOTO_BYTES) return invalid("Each photo must be 10 MB or smaller.");
   }
 
-  const { distance, price } = await priceFor(values);
+  const extras = extraUnits(form);
+  const { distance, price } = await priceFor(values, extras);
   if (price === null || distance === null) {
     return invalid("We could not price that route automatically. Call dispatch and we will book it by hand.");
   }
@@ -645,6 +770,46 @@ app.post("/book/submit", async (c) => {
     quotedOrder && quotedOrder.status === "quoted"
       ? await confirmOrder(c.env.DB, quotedOrder.id, orderInput, "customer")
       : quotedOrder ?? (await createOrder(c.env.DB, orderInput));
+
+  // One row per vehicle; the order keeps the first one for list views.
+  const transportKind: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
+  const unitInputs = [
+    {
+      year: values.vehicle_year ?? "",
+      make: values.vehicle_make ?? "",
+      model: values.vehicle_model ?? "",
+      vin: values.vin ?? "",
+      condition: parseCondition(values.condition ?? "running"),
+    },
+    ...extras.map((unit) => ({
+      year: unit.year,
+      make: unit.make,
+      model: unit.model,
+      vin: "",
+      condition: parseCondition(unit.condition),
+    })),
+  ];
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM order_units WHERE order_id = ?").bind(order.id),
+    ...unitInputs.map((unit, index) =>
+      c.env.DB.prepare(
+        `INSERT INTO order_units (order_id, position, vehicle_year, vehicle_make, vehicle_model, vin, vehicle_type, condition, price, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        order.id,
+        index + 1,
+        unit.year || null,
+        unit.make || null,
+        unit.model || null,
+        unit.vin || null,
+        transportKind,
+        unit.condition,
+        priceQuote(distance, transportKind, unit.condition, false).total,
+        now,
+      ),
+    ),
+  ]);
 
   if (photos.length) {
     const stored: string[] = [];
@@ -731,7 +896,7 @@ app.get("/track/:token", async (c) => {
     c.env.DB.prepare("SELECT * FROM invoices WHERE order_id = ? AND status != 'void' ORDER BY id").bind(order.id).all<InvoiceRow>(),
   ]);
 
-  return c.html(trackPage(order, events, invoices));
+  return c.html(trackPage(order, events, invoices, c.req.query("new") === "1"));
 });
 
 app.get("/services/:slug", (c) => {
@@ -1161,6 +1326,20 @@ app.get("/admin/orders", async (c) => {
   const counts: Record<string, number> = {};
   for (const row of countRows) counts[row.status] = row.n;
 
+  const unitsByOrder = new Map<number, OrderUnitRow[]>();
+  if (results.length) {
+    const { results: units } = await c.env.DB.prepare(
+      `SELECT * FROM order_units WHERE order_id IN (${results.map(() => "?").join(",")}) ORDER BY position`,
+    )
+      .bind(...results.map((order) => order.id))
+      .all<OrderUnitRow>();
+    for (const unit of units) {
+      const list = unitsByOrder.get(unit.order_id);
+      if (list) list.push(unit);
+      else unitsByOrder.set(unit.order_id, [unit]);
+    }
+  }
+
   const errorOrder = Number(c.req.query("error_order"));
   return c.html(
     adminOrdersPage(
@@ -1174,6 +1353,7 @@ app.get("/admin/orders", async (c) => {
       counts,
       Number.isFinite(errorOrder) && errorOrder > 0 ? errorOrder : null,
       c.req.query("error"),
+      unitsByOrder,
     ),
   );
 });
@@ -1186,13 +1366,16 @@ app.get("/admin/orders/:id", async (c) => {
   const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
   if (!order) return c.html(notFoundPage(), 404);
 
-  const [{ results: events }, { results: invoices }, { results: photos }] = await Promise.all([
+  const [{ results: events }, { results: invoices }, { results: photos }, { results: units }] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id").bind(id).all<OrderEventRow>(),
     c.env.DB.prepare("SELECT * FROM invoices WHERE order_id = ? ORDER BY id DESC").bind(id).all<InvoiceRow>(),
     c.env.DB.prepare("SELECT * FROM order_photos WHERE order_id = ? ORDER BY id").bind(id).all<OrderPhotoRow>(),
+    c.env.DB.prepare("SELECT * FROM order_units WHERE order_id = ? ORDER BY position").bind(id).all<OrderUnitRow>(),
   ]);
 
-  return c.html(adminOrderPage(order, events, invoices, new URL(c.req.url).origin, photos, c.req.query("error")));
+  return c.html(
+    adminOrderPage(order, events, invoices, new URL(c.req.url).origin, photos, c.req.query("error"), units),
+  );
 });
 
 /** Data the current step must have before the order can move on. */
@@ -1222,7 +1405,7 @@ function missingStepData(
   if (status === "assigned" && !data.pickupEta) return "Add the pickup ETA before moving to Picked up.";
   if (status === "picked_up" && !data.pickedUpAt) return "Add the pickup date and time before moving to Delivered.";
   if (status === "picked_up" && !data.deliveryEta) return "Add the delivery ETA before moving to Delivered.";
-  if (status === "delivered" && !data.deliveredAt) return "Add the delivery date and time before moving to Paid.";
+  if (status === "delivered" && !data.deliveredAt) return "Add the delivered date and time before moving to Payments.";
   return null;
 }
 
@@ -1354,6 +1537,7 @@ const ORDER_FIELD_LABELS: Record<string, string> = {
   carrier_phone: "Driver phone",
   paid_amount: "Paid amount",
   payment_method: "Payment method",
+  payment_state: "Payment status",
   picked_up_at: "Picked up at",
   pickup_eta: "Pickup ETA",
   delivery_eta: "Delivery ETA",
@@ -1470,6 +1654,14 @@ const ORDER_FIELD_GROUPS: Record<string, FieldGroup> = {
     columns: ["paid_amount"],
     parse: (body) => ({ paid_amount: moneyOrNull(fieldText(body, "paid_amount")) }),
   },
+  payment_state: {
+    label: "Payment status",
+    columns: ["payment_state"],
+    parse: (body) => {
+      const state = fieldText(body, "payment_state");
+      return { payment_state: ["unpaid", "partial", "full"].includes(state) ? state : "unpaid" };
+    },
+  },
   payment_method: {
     label: "Payment method",
     columns: ["payment_method"],
@@ -1579,6 +1771,57 @@ app.post("/admin/orders/:id/field", async (c) => {
   }
 
   return c.redirect(back, 303);
+});
+
+/** Send the client or carrier invoice for a paid order. */
+app.post("/admin/orders/:id/invoice/:kind/send", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const kind = c.req.param("kind") === "carrier" ? "carrier" : "client";
+  const fail = (message: string) =>
+    c.redirect(`/admin/orders?status=paid&error_order=${id}&error=${encodeURIComponent(message)}#order-${id}`, 303);
+
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  const to = kind === "carrier" ? order.carrier_email : order.customer_email;
+  if (!to) {
+    return fail(
+      kind === "carrier"
+        ? "Add the carrier email on this order before sending the carrier invoice."
+        : "This order has no customer email.",
+    );
+  }
+
+  const body = await c.req.parseBody();
+  const amount = moneyOrNull(body.amount);
+  if (amount === null) return fail("Enter the invoice amount before sending.");
+
+  await c.env.DB.prepare(
+    `UPDATE orders SET ${kind === "client" ? "client_invoice_amount" : "carrier_invoice_amount"} = ?, updated_at = ? WHERE id = ?`,
+  )
+    .bind(amount, Date.now(), id)
+    .run();
+
+  const mail = buildInvoiceMail({ ...order, invoice_amount: amount }, kind);
+  if (!mail) return fail("Invoice email is not configured yet — waiting on the template and mail credentials.");
+
+  try {
+    await sendMail(c.env, { to, subject: mail.subject, html: mail.html });
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Could not send the invoice.");
+  }
+
+  const now = Date.now();
+  await c.env.DB.prepare(
+    "INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, ?, ?, ?, ?)",
+  )
+    .bind(id, `invoice_${kind}`, `${kind === "carrier" ? "Carrier" : "Client"} invoice emailed to ${to}`, user.email, now)
+    .run();
+
+  return c.redirect(`/admin/orders?status=paid#order-${id}`, 303);
 });
 
 app.post("/admin/orders/:id/edit", async (c) => {
