@@ -16,7 +16,7 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
   contacted: "Contacted",
   quote_sent: "Quoted",
-  confirmed: "Confirmed",
+  confirmed: "Booked",
   assigned: "Carrier assigned",
   picked_up: "Picked up",
   delivered: "Delivered",

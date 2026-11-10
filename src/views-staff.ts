@@ -1,6 +1,14 @@
-import { esc, layout, money, when } from "./views.ts";
+import { esc, layout, money, whenHtml } from "./views.ts";
 import type { UserRow } from "./users.ts";
-import type { StaffBucket, StaffMetric, StaffPerformance, StaffPeriod, StaffSeries } from "./staff.ts";
+import type {
+  RevenueTrends,
+  StaffBucket,
+  StaffMetric,
+  StaffPerformance,
+  StaffPeriod,
+  StaffSeries,
+  TrendSeries,
+} from "./staff.ts";
 
 interface ChartSeries {
   name: string;
@@ -118,7 +126,28 @@ function legend(series: ChartSeries[]): string {
     .join("")}</div>`;
 }
 
-export function staffPerformancePage(data: StaffPerformance, viewer: UserRow): string {
+function trendChart(trend: TrendSeries): string {
+  const series: ChartSeries[] = [
+    { name: "Revenue", color: "#76a03c", values: trend.revenue },
+    { name: "Broker profit", color: "#33475b", values: trend.profit },
+  ];
+  return trend.revenueTotal > 0 || trend.profitTotal > 0
+    ? `${barChart(trend.buckets, series, "money", "revenue")}${legend(series)}`
+    : '<p class="muted">No paid orders in this range.</p>';
+}
+
+const TREND_LABELS: Record<"day" | "week" | "month", string> = {
+  day: "Per day — last 14 days",
+  week: "Per week — last 12 weeks",
+  month: "Per month — last 12 months",
+};
+
+export function staffPerformancePage(
+  data: StaffPerformance,
+  viewer: UserRow,
+  trends: RevenueTrends,
+  marketing: { ads: number },
+): string {
   const href = (period: StaffPeriod, metric: StaffMetric) => `/admin/staff?period=${period}&metric=${metric}`;
   const periodTabs = (Object.keys(PERIOD_LABELS) as StaffPeriod[])
     .map(
@@ -140,7 +169,7 @@ export function staffPerformancePage(data: StaffPerformance, viewer: UserRow): s
     data.series.reduce((sum, item) => sum + (item.revenue[index] ?? 0), 0),
   );
   const revenueSeries: ChartSeries[] = revenueValues.some((value) => value > 0)
-    ? [{ name: "Revenue", color: "#f26a1b", values: revenueValues }]
+    ? [{ name: "Revenue", color: "#76a03c", values: revenueValues }]
     : [];
 
   const formatComparison = (value: number) =>
@@ -171,12 +200,13 @@ export function staffPerformancePage(data: StaffPerformance, viewer: UserRow): s
       <td>${item.totalEdits.toLocaleString()}</td>
       <td>${item.orders.toLocaleString()}</td>
       <td>${money(item.totalRevenue)}</td>
-      <td class="muted small">${item.lastActivity ? when(item.lastActivity) : "—"}</td>
+      <td class="muted small">${item.lastActivity ? whenHtml(item.lastActivity) : "—"}</td>
     </tr>`,
     )
     .join("");
 
   return layout({
+    admin: true,
     title: "Staff performance — Bond Auto Transport",
     description: "Dispatch performance by staff, period and metric.",
     body: `
@@ -207,16 +237,57 @@ export function staffPerformancePage(data: StaffPerformance, viewer: UserRow): s
   <div class="card chart-card">
     <h3>${METRIC_LABELS[data.metric]} by staff per ${PERIOD_LABELS[data.period].toLowerCase()}</h3>
     ${metricSeries.length
-      ? `${barChart(data.buckets, metricSeries, data.metric === "revenue" ? "money" : "number", data.metric)}${legend(metricSeries)}`
-      : '<p class="muted">No activity in this period.</p>'}
+        ? `${barChart(data.buckets, metricSeries, data.metric === "revenue" ? "money" : "number", data.metric)}${legend(metricSeries)}`
+        : '<p class="muted">No activity in this period.</p>'}
   </div>
 
   <div class="card chart-card">
     <h3>Total revenue per ${PERIOD_LABELS[data.period].toLowerCase()}</h3>
     ${revenueSeries.length
-      ? barChart(data.buckets, revenueSeries, "money", "revenue")
-      : '<p class="muted">No paid orders in this period.</p>'}
+        ? barChart(data.buckets, revenueSeries, "money", "revenue")
+        : '<p class="muted">No paid orders in this period.</p>'}
   </div>
+
+  <h2 class="section-title mt">Revenue and profit</h2>
+  <div class="card chart-card">
+    <h3>${TREND_LABELS.day}</h3>
+    ${trendChart(trends.day)}
+  </div>
+  <div class="card chart-card">
+    <h3>${TREND_LABELS.week}</h3>
+    ${trendChart(trends.week)}
+  </div>
+  <div class="card chart-card">
+    <h3>${TREND_LABELS.month}</h3>
+    ${trendChart(trends.month)}
+  </div>
+
+  <h2 class="section-title mt">AdSense share of profit</h2>
+  <form class="card quote-form" method="post" action="/admin/staff/marketing">
+    <div class="field-row">
+      <label class="field"><span>AdSense % of broker profit</span><input name="ads_percent" type="number" min="0" max="100" step="0.1" value="${marketing.ads}"></label>
+    </div>
+    <button class="btn btn-accent btn-small" type="submit">Save percentage</button>
+    <p class="form-note">Applied to broker profit — the sum of broker fees on paid orders. Dispatchers can see the numbers; only admins can change the percentage.</p>
+  </form>
+
+  <table class="table">
+    <thead><tr><th>Range</th><th>Paid orders</th><th>Revenue</th><th>Broker profit</th><th>AdSense (${marketing.ads}%)</th><th>Kept</th></tr></thead>
+    <tbody>${(["day", "week", "month"] as const)
+        .map((key) => {
+          const trend = trends[key];
+          const ads = Math.round((trend.profitTotal * marketing.ads) / 100);
+          return `<tr>
+      <td>${TREND_LABELS[key]}</td>
+      <td>${trend.orderTotal.toLocaleString()}</td>
+      <td>${money(trend.revenueTotal)}</td>
+      <td>${money(trend.profitTotal)}</td>
+      <td>${money(ads)}</td>
+      <td><strong>${money(trend.profitTotal - ads)}</strong></td>
+    </tr>`;
+        })
+        .join("")}</tbody>
+  </table>
 
   <h2 class="section-title mt">Staff comparison</h2>
   <p class="muted small">${METRIC_LABELS[data.metric]} — today, this week, this month and this year.</p>

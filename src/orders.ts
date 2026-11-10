@@ -1,6 +1,7 @@
 export const ORDER_STATUSES = [
   "quoted",
   "confirmed",
+  "contract_draft",
   "assigned",
   "picked_up",
   "delivered",
@@ -12,7 +13,8 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export const STATUS_LABELS: Record<OrderStatus, string> = {
   quoted: "Quoted",
-  confirmed: "Confirmed",
+  confirmed: "Booked",
+  contract_draft: "Contract draft",
   assigned: "Carrier assigned",
   picked_up: "Picked up",
   delivered: "Delivered",
@@ -81,6 +83,7 @@ export interface NewOrder {
   destContact: string;
   destPhone: string;
   readyDate: string;
+  readyAsap?: boolean;
   distanceMiles: number | null;
   price: number;
   notes: string;
@@ -113,6 +116,7 @@ export interface OrderRow {
   dest_contact: string | null;
   dest_phone: string | null;
   ready_date: string | null;
+  ready_asap: number;
   distance_miles: number | null;
   price: number;
   final_quote: number | null;
@@ -168,8 +172,8 @@ export async function createOrder(db: D1Database, input: NewOrder, status: Order
           vehicle_year, vehicle_make, vehicle_model, vin,
           origin_street, origin_city, origin_state, origin_zip, origin_contact, origin_phone,
           dest_street, dest_city, dest_state, dest_zip, dest_contact, dest_phone,
-          ready_date, distance_miles, price, status, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ready_date, ready_asap, distance_miles, price, status, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       "pending",
@@ -197,6 +201,7 @@ export async function createOrder(db: D1Database, input: NewOrder, status: Order
       input.destContact || null,
       input.destPhone || null,
       input.readyDate || null,
+      input.readyAsap ? 1 : 0,
       input.distanceMiles,
       input.price,
       status,

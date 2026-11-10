@@ -32,7 +32,8 @@ test("only known statuses are accepted", () => {
 });
 
 test("quoted is the first status and paid replaces closed", () => {
-  assert.deepEqual(ORDER_STATUSES.slice(0, 3), ["quoted", "confirmed", "assigned"]);
+  assert.deepEqual(ORDER_STATUSES.slice(0, 4), ["quoted", "confirmed", "contract_draft", "assigned"]);
+  assert.equal(ORDER_STATUSES.includes("contract_signed" as never), false);
   assert.ok(ORDER_STATUSES.includes("paid"));
   assert.equal((ORDER_STATUSES as readonly string[]).includes("closed"), false);
   assert.equal((ORDER_STATUSES as readonly string[]).includes("requested"), false);

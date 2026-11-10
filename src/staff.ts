@@ -40,7 +40,7 @@ export interface StaffPerformance {
 }
 
 const COLORS = [
-  "#f26a1b",
+  "#76a03c",
   "#0f766e",
   "#3730a3",
   "#6b21a8",
@@ -128,6 +128,83 @@ function buildBuckets(period: StaffPeriod): { buckets: StaffBucket[]; since: num
     });
   }
   return { buckets, since: first.getTime() };
+}
+
+export interface TrendSeries {
+  buckets: StaffBucket[];
+  revenue: number[];
+  profit: number[];
+  orders: number[];
+  revenueTotal: number;
+  profitTotal: number;
+  orderTotal: number;
+}
+
+export interface RevenueTrends {
+  day: TrendSeries;
+  week: TrendSeries;
+  month: TrendSeries;
+}
+
+function emptyTrend(period: StaffPeriod): TrendSeries {
+  const { buckets } = buildBuckets(period);
+  return {
+    buckets,
+    revenue: Array(buckets.length).fill(0),
+    profit: Array(buckets.length).fill(0),
+    orders: Array(buckets.length).fill(0),
+    revenueTotal: 0,
+    profitTotal: 0,
+    orderTotal: 0,
+  };
+}
+
+/** Paid revenue and broker profit bucketed per day, week and month in one pass. */
+export async function loadRevenueTrends(db: D1Database): Promise<RevenueTrends> {
+  const trends: RevenueTrends = { day: emptyTrend("day"), week: emptyTrend("week"), month: emptyTrend("month") };
+  const periods = ["day", "week", "month"] as const;
+  const indexes = new Map(periods.map((period) => [period, new Map(trends[period].buckets.map((bucket, index) => [bucket.key, index]))]));
+
+  const paidEvents = (
+    await db
+      .prepare(
+        `SELECT e.order_id, e.actor, e.created_at
+           FROM order_events e
+           JOIN orders o ON o.id = e.order_id
+          WHERE e.kind = 'paid' AND o.paid_amount IS NOT NULL
+          ORDER BY e.created_at`,
+      )
+      .all<{ order_id: number; actor: string; created_at: number }>()
+  ).results;
+
+  const paidAt = new Map<number, number>();
+  for (const event of paidEvents) {
+    if (event.actor === "customer") continue;
+    paidAt.set(event.order_id, event.created_at);
+  }
+
+  const orders = (
+    await db
+      .prepare("SELECT id, paid_amount, broker_fee, updated_at FROM orders WHERE paid_amount IS NOT NULL AND status = 'paid'")
+      .all<{ id: number; paid_amount: number; broker_fee: number | null; updated_at: number }>()
+  ).results;
+
+  for (const order of orders) {
+    const at = paidAt.get(order.id) ?? order.updated_at;
+    for (const period of periods) {
+      const trend = trends[period];
+      const index = indexes.get(period)?.get(bucketKey(new Date(at), period));
+      if (index === undefined) continue;
+      trend.revenue[index] = (trend.revenue[index] ?? 0) + order.paid_amount;
+      trend.profit[index] = (trend.profit[index] ?? 0) + (order.broker_fee ?? 0);
+      trend.orders[index] = (trend.orders[index] ?? 0) + 1;
+      trend.revenueTotal += order.paid_amount;
+      trend.profitTotal += order.broker_fee ?? 0;
+      trend.orderTotal += 1;
+    }
+  }
+
+  return trends;
 }
 
 export function parseStaffPeriod(value: string | undefined): StaffPeriod {

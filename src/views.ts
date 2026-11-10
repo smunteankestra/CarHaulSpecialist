@@ -45,6 +45,9 @@ function formatDate(date: Date): string {
   return `${MONTH_NAMES[date.getUTCMonth()] ?? ""}/${String(date.getUTCDate()).padStart(2, "0")}/${date.getUTCFullYear()}`;
 }
 
+/** UTC text wrapped in <time> so the browser can re-render it in the viewer's timezone. */
+export const whenHtml = (value: number) => `<time datetime="${new Date(value).toISOString()}">${when(value)}</time>`;
+
 export const when = (value: number) => {
   const date = new Date(value);
   const time = date.toLocaleTimeString("en-US", {
@@ -83,7 +86,13 @@ const NAV = [
   { href: "/contact", label: "Contact" },
 ];
 
-export function layout(options: { title: string; description: string; body: string; canonical?: string }): string {
+export function layout(options: {
+  title: string;
+  description: string;
+  body: string;
+  canonical?: string;
+  admin?: boolean;
+}): string {
   const canonicalUrl = options.canonical ? new URL(options.canonical, site.url).toString() : null;
   return `<!doctype html>
 <html lang="en">
@@ -93,6 +102,11 @@ export function layout(options: { title: string; description: string; body: stri
 <title>${esc(options.title)}</title>
 <meta name="description" content="${esc(options.description)}">
 ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <link rel="stylesheet" href="/styles.css">
 <script type="application/ld+json">${JSON.stringify({
     "@context": "https://schema.org",
@@ -126,11 +140,13 @@ if (location.pathname.indexOf('/admin') !== 0) {
 <body>
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="brand" href="/">Bond <span>Auto Transport</span></a>
-    <nav class="nav">
+    <a class="brand" href="/"><img class="brand-logo" src="/logo.jpg" alt="" width="56" height="40">Bond <span>Auto Transport</span></a>
+    ${options.admin
+      ? ""
+      : `<nav class="nav">
       ${NAV.map((item) => `<a href="${item.href}">${esc(item.label)}</a>`).join("")}
     </nav>
-    <a class="btn btn-accent header-cta" href="/get-quote">Get a quote</a>
+    <a class="btn btn-accent header-cta" href="/get-quote">Get a quote</a>`}
   </div>
 </header>
 <main>${options.body}</main>
@@ -162,13 +178,15 @@ if (location.pathname.indexOf('/admin') !== 0) {
       <a href="/blog">Blog</a>
       <a href="/our-partners">Our partners</a>
     </div>
-    <div>
+    ${options.admin
+      ? ""
+      : `<div>
       <p class="footer-heading">Reach dispatch</p>
       <a href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">${esc(site.phone)}</a>
       <a href="mailto:${esc(site.email)}">${esc(site.email)}</a>
       <p class="muted small">${esc(site.hours)}</p>
       <p class="muted small"><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></p>
-    </div>
+    </div>`}
   </div>
 </footer>
 <script>
@@ -195,12 +213,29 @@ if (location.pathname.indexOf('/admin') !== 0) {
     var todayBtn = root.querySelector(".date-today");
     var clearBtn = root.querySelector(".date-clear");
     var allowPast = root.getAttribute("data-allow-past") === "true";
+    var required = root.getAttribute("data-required") === "true";
+    var asap = false;
     var selected = parse(input.value);
     if (!allowPast && selected && selected < today) { selected = null; input.value = ""; }
+    // Required pickers start on "as soon as possible", which is today.
+    if (required && !selected) {
+      selected = new Date(today);
+      input.value = iso(today);
+      asap = true;
+    }
     var view = selected ? new Date(selected.getFullYear(), selected.getMonth(), 1) : new Date(today.getFullYear(), today.getMonth(), 1);
 
     function updateLabel() {
-      valueEl.textContent = selected ? format(selected) : "Select a date";
+      valueEl.textContent = asap ? "As soon as possible" : selected ? format(selected) : "Select a date";
+      var asapInput = root.querySelector("[data-asap]");
+      if (asapInput) asapInput.value = asap ? "1" : "";
+    }
+
+    function clearError() {
+      var message = root.querySelector("[data-date-error]");
+      if (message) message.hidden = true;
+      trigger.classList.remove("is-invalid");
+      trigger.removeAttribute("aria-invalid");
     }
 
     function render() {
@@ -228,8 +263,10 @@ if (location.pathname.indexOf('/admin') !== 0) {
           if (iso(date) === iso(today)) btn.classList.add("is-today");
           btn.addEventListener("click", function () {
             selected = date;
+            asap = false;
             input.value = iso(date);
             updateLabel();
+            clearError();
             close();
             trigger.focus();
           });
@@ -280,14 +317,22 @@ if (location.pathname.indexOf('/admin') !== 0) {
     });
     todayBtn.addEventListener("click", function () {
       selected = new Date(today);
+      asap = false;
       input.value = iso(today);
       updateLabel();
+      clearError();
       close();
       trigger.focus();
     });
     clearBtn.addEventListener("click", function () {
-      selected = null;
-      input.value = "";
+      if (required) {
+        selected = new Date(today);
+        asap = true;
+        input.value = iso(today);
+      } else {
+        selected = null;
+        input.value = "";
+      }
       updateLabel();
       close();
       trigger.focus();
@@ -296,11 +341,63 @@ if (location.pathname.indexOf('/admin') !== 0) {
       if (!root.contains(event.target)) close();
     });
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") close();
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      close();
     });
     window.addEventListener("resize", positionPopover);
     updateLabel();
   });
+
+  // Re-render server times in the viewer's timezone and re-score the urgency colours.
+  var MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function pad2(value) {
+    return String(value).padStart(2, "0");
+  }
+  function localText(date) {
+    var time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    return MONTHS_LONG[date.getMonth()] + "/" + pad2(date.getDate()) + "/" + date.getFullYear() + ", " + time;
+  }
+  function localMidnight(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("time[datetime]"), function (el) {
+    var date = new Date(el.getAttribute("datetime"));
+    if (!isNaN(date.getTime())) el.textContent = localText(date);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-due]"), function (el) {
+    var raw = el.getAttribute("data-due") || "";
+    var date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(raw + "T00:00:00") : new Date(raw);
+    if (isNaN(date.getTime())) return;
+    var days = Math.round((localMidnight(date) - localMidnight(new Date())) / 86400000);
+    el.className = days <= 1 ? "due-red" : days <= 3 ? "due-orange" : days <= 5 ? "due-yellow" : "";
+  });
+
+  document.addEventListener(
+    "submit",
+    function (event) {
+      var form = event.target;
+      if (!form || !form.querySelectorAll) return;
+      if (form.hasAttribute("data-quote-steps")) return;
+      var pickers = Array.prototype.slice.call(form.querySelectorAll('[data-date-picker][data-required]'));
+      for (var i = 0; i < pickers.length; i++) {
+        var input = pickers[i].querySelector('input[type="hidden"]');
+        if (input && input.value) continue;
+        event.preventDefault();
+        event.stopPropagation();
+        var message = pickers[i].querySelector("[data-date-error]");
+        if (message) message.hidden = false;
+        var trigger = pickers[i].querySelector(".date-trigger");
+        if (trigger) {
+          trigger.classList.add("is-invalid");
+          trigger.setAttribute("aria-invalid", "true");
+          trigger.focus();
+        }
+        return;
+      }
+    },
+    true,
+  );
 })();
 </script>
 <div class="chat-widget" id="chat-widget" hidden>
@@ -549,6 +646,22 @@ if (location.pathname.indexOf('/admin') !== 0) {
     var warning = upload.querySelector(".photo-warning");
     var error = upload.querySelector(".photo-error");
     var urls = [];
+    // Files picked earlier in this session; the browser replaces input.files on every pick.
+    var collected = Array.prototype.slice.call(input.files || []);
+
+    function fileKey(file) {
+      return file.name + ":" + file.size + ":" + file.lastModified;
+    }
+
+    function syncInput(files) {
+      try {
+        var transfer = new DataTransfer();
+        files.forEach(function (file) { transfer.items.add(file); });
+        input.files = transfer.files;
+      } catch (e) {
+        // Older browser: the input keeps the last pick; the server validates anyway.
+      }
+    }
 
     function isSupported(file) {
       var type = file.type.toLowerCase();
@@ -575,16 +688,9 @@ if (location.pathname.indexOf('/admin') !== 0) {
     }
 
     function removeFile(index) {
-      var current = Array.prototype.slice.call(input.files || []);
-      if (index < 0 || index >= current.length) return;
-      current.splice(index, 1);
-      try {
-        var transfer = new DataTransfer();
-        current.forEach(function (file) { transfer.items.add(file); });
-        input.files = transfer.files;
-      } catch (e) {
-        return;
-      }
+      if (index < 0 || index >= collected.length) return;
+      collected.splice(index, 1);
+      syncInput(collected);
       if (warning) {
         warning.hidden = true;
         warning.textContent = "";
@@ -593,7 +699,7 @@ if (location.pathname.indexOf('/admin') !== 0) {
         error.hidden = true;
         error.textContent = "";
       }
-      render(current);
+      render(collected);
     }
 
     function render(files) {
@@ -635,11 +741,20 @@ if (location.pathname.indexOf('/admin') !== 0) {
     }
 
     input.addEventListener("change", function () {
-      var selected = Array.prototype.slice.call(input.files || []);
+      var picked = Array.prototype.slice.call(input.files || []);
+      var seen = {};
+      var merged = [];
+      collected.concat(picked).forEach(function (file) {
+        var key = fileKey(file);
+        if (seen[key]) return;
+        seen[key] = true;
+        merged.push(file);
+      });
+
       var valid = [];
       var errors = [];
       var notices = [];
-      selected.forEach(function (file) {
+      merged.forEach(function (file) {
         if (!isSupported(file)) {
           errors.push(file.name + " is not a JPEG, PNG, WebP or HEIC image.");
         } else if (file.size > 10 * 1024 * 1024) {
@@ -649,18 +764,12 @@ if (location.pathname.indexOf('/admin') !== 0) {
         }
       });
       if (valid.length > 5) {
-        notices.push("Only 5 photos can be selected. The first 5 are kept.");
+        notices.push("Only 5 photos can be added. The first 5 are kept.");
         valid = valid.slice(0, 5);
       }
-      if (valid.length !== selected.length) {
-        try {
-          var transfer = new DataTransfer();
-          valid.forEach(function (file) { transfer.items.add(file); });
-          input.files = transfer.files;
-        } catch (e) {
-          // Older browser: keep the selection and let the server validate.
-        }
-      }
+      collected = valid;
+      // Always write the merged list back, otherwise the form submits only the last pick.
+      syncInput(collected);
       if (warning) {
         warning.hidden = notices.length === 0;
         warning.textContent = notices.join(" ");
@@ -669,8 +778,83 @@ if (location.pathname.indexOf('/admin') !== 0) {
         error.hidden = errors.length === 0;
         error.textContent = errors.join(" ");
       }
-      render(valid);
+      render(collected);
     });
+  });
+})();
+</script>
+<script>
+(function () {
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    var open = document.querySelector(".modal:target");
+    if (!open) return;
+    var close = open.querySelector(".modal-close");
+    window.location.hash = (close && close.getAttribute("href")) || "#orders";
+  });
+})();
+</script>
+<script>
+(function () {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-year-dropdown]"), function (root) {
+    var hidden = root.querySelector("[data-vehicle-year]");
+    var trigger = root.querySelector(".year-trigger");
+    var label = root.querySelector("[data-year-label]");
+    var list = root.querySelector("[data-year-list]");
+    if (!hidden || !trigger || !label || !list) return;
+    var options = Array.prototype.slice.call(list.querySelectorAll(".year-option"));
+
+    function paint() {
+      var value = hidden.value;
+      label.textContent = value || "Select year";
+      options.forEach(function (option) {
+        var on = option.getAttribute("data-year") === value;
+        option.classList.toggle("is-selected", on);
+        option.setAttribute("aria-selected", on ? "true" : "false");
+      });
+    }
+
+    function close() {
+      list.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      root.classList.remove("is-open");
+    }
+
+    function open() {
+      list.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      root.classList.add("is-open");
+      var current = list.querySelector(".year-option.is-selected");
+      if (current && current.scrollIntoView) current.scrollIntoView({ block: "nearest" });
+    }
+
+    function set(value) {
+      if (hidden.value !== value) {
+        hidden.value = value;
+        paint();
+        hidden.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      close();
+      trigger.focus();
+    }
+
+    trigger.addEventListener("click", function (event) {
+      event.preventDefault();
+      if (list.hidden) open();
+      else close();
+    });
+    options.forEach(function (option) {
+      option.addEventListener("click", function () { set(option.getAttribute("data-year") || ""); });
+    });
+    document.addEventListener("click", function (event) {
+      if (!root.contains(event.target)) close();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape" || list.hidden) return;
+      event.preventDefault();
+      close();
+    });
+    paint();
   });
 })();
 </script>
@@ -800,12 +984,35 @@ if (location.pathname.indexOf('/admin') !== 0) {
       }
     }
 
+    function missingDate(root) {
+      var pickers = Array.prototype.slice.call(root.querySelectorAll('[data-date-picker][data-required]'));
+      for (var i = 0; i < pickers.length; i++) {
+        var input = pickers[i].querySelector('input[type="hidden"]');
+        if (!input || !input.value) return pickers[i];
+      }
+      return null;
+    }
+
+    function flagDate(picker) {
+      var message = picker.querySelector("[data-date-error]");
+      if (message) message.hidden = false;
+      var trigger = picker.querySelector(".date-trigger");
+      if (trigger) {
+        trigger.classList.add("is-invalid");
+        trigger.setAttribute("aria-invalid", "true");
+        trigger.focus({ preventScroll: false });
+      }
+      return false;
+    }
+
     function validate(index) {
       var field = invalidField(index);
       if (field) {
         field.reportValidity();
         return false;
       }
+      var picker = missingDate(steps[index]);
+      if (picker) return flagDate(picker);
       return true;
     }
 
@@ -838,6 +1045,13 @@ if (location.pathname.indexOf('/admin') !== 0) {
           event.preventDefault();
           show(i, true);
           field.reportValidity();
+          return;
+        }
+        var picker = missingDate(steps[i]);
+        if (picker) {
+          event.preventDefault();
+          show(i, true);
+          flagDate(picker);
           return;
         }
       }
@@ -1101,14 +1315,16 @@ export interface QuoteFormValues {
   notes?: string;
 }
 
-export function datePicker(name: string, value: string, allowPast = false): string {
+export function datePicker(name: string, value: string, allowPast = false, required = false): string {
   const label = value ? dateOnly(value) : "Select a date";
-  return `<div class="date-picker" data-date-picker data-allow-past="${allowPast ? "true" : "false"}">
+  return `<div class="date-picker" data-date-picker data-allow-past="${allowPast ? "true" : "false"}"${required ? ' data-required="true"' : ""}>
   <input type="hidden" name="${esc(name)}" value="${esc(value)}">
-  <button type="button" class="date-trigger" aria-haspopup="dialog" aria-expanded="false">
+  <input type="hidden" name="${esc(name)}_asap" value="" data-asap>
+  <button type="button" class="date-trigger" aria-haspopup="dialog" aria-expanded="false"${required ? ' aria-required="true"' : ""}>
     <span class="date-value">${esc(label)}</span>
     <svg class="date-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
   </button>
+  ${required ? `<p class="field-error" data-date-error role="alert" hidden>Choose a pickup date.</p>` : ""}
   <div class="date-popover" role="dialog" aria-label="Choose a date">
     <div class="date-head">
       <button type="button" class="date-nav date-prev" aria-label="Previous month">‹</button>
@@ -1126,6 +1342,52 @@ export function datePicker(name: string, value: string, allowPast = false): stri
 }
 
 const VEHICLE_YEARS = Array.from({ length: 128 }, (_, index) => String(2027 - index));
+
+/** Visible choice cards instead of a dropdown. */
+function choiceCards(
+  name: string,
+  label: string,
+  options: [string, string, string][],
+  current: string,
+  layout: "stack" | "row2" | "row3" = "stack",
+): string {
+  const modifier = layout === "row3" ? " choice-picker--three" : layout === "row2" ? " choice-picker--row" : "";
+  return `<div class="choice-picker${modifier}" role="radiogroup" aria-label="${esc(label)}">${options
+    .map(
+      ([optionValue, title, note]) => `<label class="choice-option">
+        <input type="radio" name="${name}" value="${optionValue}"${current === optionValue ? " checked" : ""}>
+        <span class="choice-card">
+          <strong>${esc(title)}</strong>
+          <span class="choice-note">${esc(note)}</span>
+        </span>
+      </label>`,
+    )
+    .join("")}</div>`;
+}
+
+/** Three visible choices instead of a dropdown — the condition changes the price. */
+export function conditionPicker(current: string | undefined): string {
+  const value = current === "non-running" ? "inoperable_steer_roll" : (current ?? "running");
+  return choiceCards("condition", "Vehicle condition", [
+    ["running", "Run and drive", "Starts and moves under its own power"],
+    ["inoperable_steer_roll", "Inoperable — steers and rolls", "Rolls and steers, but does not run"],
+    ["inoperable_no_steer", "Inoperable — does not steer or roll", "Does not steer or roll, or no keys"],
+  ], value, "row3");
+}
+
+/** Open or enclosed, side by side — it changes the price. */
+export function transportPicker(current: string | undefined): string {
+  return choiceCards(
+    "transport_type",
+    "Transport",
+    [
+      ["open", "Open trailer", "Most economical — daily drivers and dealer inventory"],
+      ["enclosed", "Enclosed trailer", "Hard-sided protection for classics and exotics"],
+    ],
+    current === "enclosed" ? "enclosed" : "open",
+    "row2",
+  );
+}
 
 export function quoteForm(values: QuoteFormValues = {}, error?: string): string {
   const v = (key: keyof QuoteFormValues) => esc(values[key] ?? "");
@@ -1160,10 +1422,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
 
     <div class="field">
       <span>Transport</span>
-      <select name="transport_type" aria-label="Transport">
-        <option value="open"${values.transport_type !== "enclosed" ? " selected" : ""}>Open trailer</option>
-        <option value="enclosed"${values.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option>
-      </select>
+      ${transportPicker(values.transport_type)}
     </div>
 
     <button class="btn btn-accent btn-block" type="button" data-next-step>Start my quote</button>
@@ -1178,14 +1437,23 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
           <option value="motorcycle">Motorcycle</option>
         </select>
       </label>
-      <label class="field">
+      <div class="field">
         <span>Vehicle year</span>
-        <select name="vehicle_year" class="vehicle-select" data-vehicle-year>
-          <option value="">Select year</option>
-          ${VEHICLE_YEARS.map((year) => `<option value="${year}"${values.vehicle_year === year ? " selected" : ""}>${year}</option>`).join("")}
-          ${values.vehicle_year && !VEHICLE_YEARS.includes(values.vehicle_year) ? `<option value="${v("vehicle_year")}" selected>${v("vehicle_year")}</option>` : ""}
-        </select>
-      </label>
+        <div class="year-dropdown" data-year-dropdown>
+          <input type="hidden" name="vehicle_year" data-vehicle-year value="${v("vehicle_year")}">
+          <button type="button" class="year-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Vehicle year">
+            <span data-year-label>${values.vehicle_year ? v("vehicle_year") : "Select year"}</span>
+            <span class="vehicle-combobox-chevron" aria-hidden="true"></span>
+          </button>
+          <ul class="year-list" role="listbox" aria-label="Vehicle year" data-year-list hidden>
+            ${VEHICLE_YEARS.map(
+              (year) =>
+                `<li role="option" class="year-option${values.vehicle_year === year ? " is-selected" : ""}" data-year="${year}" tabindex="-1" aria-selected="${values.vehicle_year === year ? "true" : "false"}">${year}</li>`,
+            ).join("")}
+            ${values.vehicle_year && !VEHICLE_YEARS.includes(values.vehicle_year) ? `<li role="option" class="year-option is-selected" data-year="${v("vehicle_year")}" tabindex="-1" aria-selected="true">${v("vehicle_year")}</li>` : ""}
+          </ul>
+        </div>
+      </div>
     </div>
 
     <div class="field-row">
@@ -1215,11 +1483,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
 
     <div class="field">
       <span>Vehicle condition</span>
-      <select name="condition" aria-label="Vehicle condition">
-        <option value="running"${condition === "running" ? " selected" : ""}>Run and drive</option>
-        <option value="inoperable_steer_roll"${condition === "inoperable_steer_roll" || condition === "non-running" ? " selected" : ""}>Inoperable (steer and roll)</option>
-        <option value="inoperable_no_steer"${condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option>
-      </select>
+      ${conditionPicker(condition)}
     </div>
 
     <div class="step-actions">
@@ -1230,8 +1494,8 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
 
   <section class="quote-step" data-step="3" hidden>
     <div class="field">
-      <span>When is the vehicle ready for pickup?</span>
-      ${datePicker("available_date", values.available_date ?? "")}
+      <span>When is the vehicle ready for pickup? *</span>
+      ${datePicker("available_date", values.available_date ?? "", false, true)}
     </div>
 
     <div class="field-row">
@@ -1372,24 +1636,52 @@ export function quotePage(options: {
   const result = options.result;
 
   if (result) {
-    const hidden = [
-      options.leadId ? `<input type="hidden" name="lead_id" value="${options.leadId}">` : "",
-      options.orderToken ? `<input type="hidden" name="order_token" value="${esc(options.orderToken)}">` : "",
-      ...([
-        "name",
-        "email",
-        "phone",
-        "origin_zip",
-        "dest_zip",
-        "transport_type",
-        "vehicle_year",
-        "vehicle_make",
-        "vehicle_model",
-        "condition",
-        "available_date",
-        "notes",
-      ] as const).map((key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`),
-    ].join("");
+    const QUOTE_KEYS = [
+      "name",
+      "email",
+      "phone",
+      "origin_zip",
+      "dest_zip",
+      "transport_type",
+      "vehicle_year",
+      "vehicle_make",
+      "vehicle_model",
+      "condition",
+      "available_date",
+      "notes",
+    ] as const;
+    const hiddenFor = (omit: readonly string[] = []) =>
+      [
+        options.leadId ? `<input type="hidden" name="lead_id" value="${options.leadId}">` : "",
+        options.orderToken ? `<input type="hidden" name="order_token" value="${esc(options.orderToken)}">` : "",
+        ...QUOTE_KEYS.filter((key) => !omit.includes(key)).map(
+          (key) => `<input type="hidden" name="${key}" value="${esc(options.values[key] ?? "")}">`,
+        ),
+      ].join("");
+    const hidden = hiddenFor();
+    let rowId = 0;
+    const editRow = (label: string, value: string, omit: readonly string[], editor: string) => {
+      rowId += 1;
+      const id = `quote-edit-${rowId}`;
+      return `<div class="summary-row-edit">
+          <dt>${esc(label)}</dt>
+          <dd>
+            <input type="checkbox" id="${id}" class="summary-edit-toggle">
+            <div class="summary-view">
+              <span>${value}</span>
+              <label class="field-edit-btn" for="${id}" title="Edit ${esc(label)}" aria-label="Edit ${esc(label)}">✎</label>
+            </div>
+            <form class="summary-editor" method="post" action="/quote/refresh">
+              ${hiddenFor(omit)}
+              ${editor}
+              <div class="summary-editor-actions">
+                <label class="btn btn-ghost btn-small" for="${id}">Cancel</label>
+                <button class="btn btn-accent btn-small" type="submit">Update price</button>
+              </div>
+            </form>
+          </dd>
+        </div>`;
+    };
     const vehicle =
       [options.values.vehicle_year, options.values.vehicle_make, options.values.vehicle_model]
         .filter(Boolean)
@@ -1407,7 +1699,7 @@ export function quotePage(options: {
       <h1 class="page-title">Your price is ready.</h1>
 
       <div class="summary-notice">
-        <strong>No payment is required to book.</strong>
+        <strong class="is-free">No payment is required to book.</strong>
         <p>A dispatcher reviews every quote and confirms the carrier and pickup window before anything is charged.</p>
       </div>
 
@@ -1420,14 +1712,14 @@ export function quotePage(options: {
       <div class="summary-price-card">
         <div class="summary-price-head">
           <p class="eyebrow">Your quoted price</p>
-          <span class="badge badge-confirmed">No card required</span>
+          <span class="badge badge-free">No card required</span>
         </div>
         <p class="summary-price">${money(result.total)}</p>
         <p class="muted small">${esc(result.origin)} → ${esc(result.destination)} · ${result.distance.toLocaleString()} miles</p>
         <ul class="breakdown">
           <li><span>Base rate</span><span>$${esc(result.breakdown)}</span></li>
           <li><span>Deposit to reserve</span><span>${money(result.deposit)}</span></li>
-          <li><span>Due now</span><span>$0</span></li>
+          <li><span>Due now</span><span class="is-free">$0</span></li>
         </ul>
         <form method="post" action="/quote">
           ${hidden}
@@ -1464,10 +1756,30 @@ export function quotePage(options: {
         <h3>Booking summary</h3>
         <dl class="summary-rows">
           <div><dt>Distance</dt><dd>${result.distance.toLocaleString()} miles</dd></div>
-          <div><dt>Pickup</dt><dd>${esc(options.values.origin_zip ?? "")} · ${esc(result.origin)}</dd></div>
-          <div><dt>Delivery</dt><dd>${esc(options.values.dest_zip ?? "")} · ${esc(result.destination)}</dd></div>
-          <div><dt>Transport</dt><dd>${esc(result.transport)}</dd></div>
-          <div><dt>Pickup date</dt><dd>${options.values.available_date ? esc(dateOnly(options.values.available_date)) : "Flexible"}</dd></div>
+          ${editRow(
+            "Pickup",
+            `${esc(options.values.origin_zip ?? "")} · ${esc(result.origin)}`,
+            ["origin_zip"],
+            `<label class="field"><span>Pickup ZIP</span><input name="origin_zip" inputmode="numeric" maxlength="5" required value="${esc(options.values.origin_zip ?? "")}"></label>`,
+          )}
+          ${editRow(
+            "Delivery",
+            `${esc(options.values.dest_zip ?? "")} · ${esc(result.destination)}`,
+            ["dest_zip"],
+            `<label class="field"><span>Delivery ZIP</span><input name="dest_zip" inputmode="numeric" maxlength="5" required value="${esc(options.values.dest_zip ?? "")}"></label>`,
+          )}
+          ${editRow(
+            "Transport",
+            esc(result.transport),
+            ["transport_type"],
+            `<label class="field"><span>Transport</span><select name="transport_type"><option value="open"${options.values.transport_type === "enclosed" ? "" : " selected"}>Open trailer</option><option value="enclosed"${options.values.transport_type === "enclosed" ? " selected" : ""}>Enclosed trailer</option></select></label>`,
+          )}
+          ${editRow(
+            "Pickup date",
+            options.values.available_date ? esc(dateOnly(options.values.available_date)) : "Flexible",
+            ["available_date"],
+            `<div class="field"><span>Pickup date</span>${datePicker("available_date", options.values.available_date ?? "", false, true)}</div>`,
+          )}
           <div><dt>Transit estimate</dt><dd>${transitEstimate(result.distance)}</dd></div>
         </dl>
       </div>
@@ -1475,15 +1787,34 @@ export function quotePage(options: {
       <div class="summary-card">
         <h3>Vehicle</h3>
         <dl class="summary-rows">
-          <div><dt>Vehicle</dt><dd>${esc(vehicle)}</dd></div>
-          <div><dt>Condition</dt><dd>${conditionTag(options.values.condition ?? "running")}</dd></div>
+          ${editRow(
+            "Vehicle",
+            esc(vehicle),
+            ["vehicle_year", "vehicle_make", "vehicle_model"],
+            `<div class="edit-grid">${[
+              ["vehicle_year", "Year", options.values.vehicle_year, ' maxlength="4"'],
+              ["vehicle_make", "Make", options.values.vehicle_make, ""],
+              ["vehicle_model", "Model", options.values.vehicle_model, ""],
+            ]
+              .map(
+                ([name, label, current, extra]) =>
+                  `<label class="field"><span>${label}</span><input name="${name}" value="${esc(current ?? "")}"${extra}></label>`,
+              )
+              .join("")}</div>`,
+          )}
+          ${editRow(
+            "Condition",
+            conditionTag(options.values.condition ?? "running"),
+            ["condition"],
+            `<label class="field"><span>Condition</span><select name="condition"><option value="running"${options.values.condition === "running" ? " selected" : ""}>Run and drive</option><option value="inoperable_steer_roll"${options.values.condition === "inoperable_steer_roll" ? " selected" : ""}>Inoperable (steer and roll)</option><option value="inoperable_no_steer"${options.values.condition === "inoperable_no_steer" ? " selected" : ""}>Inoperable (doesn't steer/roll/no keys)</option></select></label>`,
+          )}
         </dl>
       </div>
 
       <div class="summary-card">
         <h3>Price details</h3>
         <div class="summary-due">
-          <div><span class="muted small">Due now</span><strong>$0</strong></div>
+          <div><span class="muted small">Due now</span><strong class="is-free">$0</strong></div>
           <p class="muted small">You won't pay until dispatch confirms the carrier and pickup window.</p>
         </div>
         <dl class="summary-rows">
@@ -1747,6 +2078,7 @@ export interface LeadPhotoRow {
 
 export function adminLoginPage(error?: string): string {
   return layout({
+    admin: true,
     title: "Dispatch login — Bond Auto Transport",
     description: "Staff sign in.",
     body: `
@@ -1784,7 +2116,7 @@ function leadModal(lead: LeadRow, photos: LeadPhotoRow[]): string {
       <div>
         <p class="eyebrow">Quote request</p>
         <h2 id="quote-${lead.id}-title">#${lead.id} · ${esc(lead.name)} ${leadStatusBadge(lead.status)}</h2>
-        <p class="muted small">Received ${when(lead.created_at)}</p>
+        <p class="muted small">Received ${whenHtml(lead.created_at)}</p>
       </div>
       <a class="modal-close" href="#quotes" aria-label="Close">×</a>
     </div>
@@ -1851,12 +2183,13 @@ export function adminPage(leads: LeadRow[], email: string, isAdmin = false, phot
           : ""
         }</td>
       <td>${leadStatusBadge(lead.status)}</td>
-      <td class="muted small">${when(lead.created_at)}</td>
+      <td class="muted small">${whenHtml(lead.created_at)}</td>
     </tr>`;
     })
     .join("");
 
   return layout({
+    admin: true,
     title: "Quotes — Bond Auto Transport",
     description: "Dispatch console.",
     body: `

@@ -22,7 +22,7 @@ import { stateCode, stateName } from "./states.ts";
 import { BLOG_POSTS, findBlogPost } from "./blog.ts";
 import { LEGACY_PAGES } from "./content.ts";
 import { blogIndexPage, blogPostPage, legacyPage } from "./views-content.ts";
-import { loadStaffPerformance, parseStaffMetric, parseStaffPeriod } from "./staff.ts";
+import { loadRevenueTrends, loadStaffPerformance, parseStaffMetric, parseStaffPeriod } from "./staff.ts";
 import { staffPerformancePage } from "./views-staff.ts";
 import {
   accountPage,
@@ -30,6 +30,7 @@ import {
   adminOrderPage,
   adminOrdersPage,
   adminUsersPage,
+  orderModal,
   bookPage,
   invoicePage,
   trackPage,
@@ -125,6 +126,12 @@ function parseChatIds(value: string | null | undefined): string[] {
     .filter((part) => /^-?\d{5,20}$/.test(part));
 }
 
+async function loadAdsShare(db: D1Database): Promise<{ ads: number }> {
+  const stored = await getSetting(db, "ads_percent").catch(() => null);
+  const number = Number(stored ?? "");
+  return { ads: Number.isFinite(number) && number >= 0 && number <= 100 ? number : 0 };
+}
+
 /** The console setting wins over the environment variable, so recipients can change without a deploy. */
 async function telegramTargets(env: Bindings, db: D1Database): Promise<string[]> {
   const stored = await getSetting(db, "telegram_chat_id").catch(() => null);
@@ -155,7 +162,7 @@ function notify(
   c: { env: Bindings; executionCtx?: { waitUntil: (promise: Promise<unknown>) => void } },
   text: string,
 ): void {
-  const promise = sendTelegram(c.env, c.env.DB, text).catch(() => {});
+  const promise = sendTelegram(c.env, c.env.DB, text).catch(() => { });
   try {
     c.executionCtx?.waitUntil(promise);
   } catch {
@@ -186,6 +193,17 @@ app.use("/track/*", async (c, next) => {
   await next();
   c.header("X-Robots-Tag", "noindex, nofollow");
 });
+
+const STATUS_EMOJI: Record<string, string> = {
+  quoted: "🧾",
+  confirmed: "✅",
+  contract_draft: "📝",
+  assigned: "🚚",
+  picked_up: "📦",
+  delivered: "📬",
+  paid: "💵",
+  cancelled: "❌",
+};
 
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 const ZIP_PATTERN = /^\d{5}$/;
@@ -222,8 +240,12 @@ app.get("/get-quote", (c) => c.html(quotePage({ values: {} })));
 
 /** Accept only a valid date today or later. */
 function futureDate(value: string | undefined): string {
-  const today = new Date().toISOString().slice(0, 10);
-  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= today ? value : "";
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const now = new Date();
+  const utcToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const [year = 0, month = 0, day = 0] = value.split("-").map(Number);
+  // One day of slack: a viewer west of UTC can pick "today" while UTC is already tomorrow.
+  return Date.UTC(year, month - 1, day) >= utcToday - 86_400_000 ? value : "";
 }
 
 function moneyOrNull(value: unknown): number | null {
@@ -257,6 +279,7 @@ app.post("/get-quote", async (c) => {
 
   if (!values.name || !values.email || !values.phone) return invalid("Name, email and phone are required.");
   if (!EMAIL_PATTERN.test(values.email)) return invalid("That email does not look right.");
+  if (!values.available_date) return invalid("Choose a pickup date — today or later.");
   if (!ZIP_PATTERN.test(values.origin_zip ?? "")) return invalid("Pickup ZIP must be five digits.");
   if (!ZIP_PATTERN.test(values.dest_zip ?? "")) return invalid("Delivery ZIP must be five digits.");
 
@@ -350,7 +373,7 @@ app.post("/get-quote", async (c) => {
   if (!breakdown || !origin || !destination || distance === null) {
     notify(
       c,
-      `New quote request (needs pricing)\n${values.name} · ${values.phone}\n${values.origin_zip} → ${values.dest_zip}\n${new URL(c.req.url).origin}${leadId ? `/admin#quote-${leadId}` : "/admin"}`,
+      `🧾 New quote request (needs pricing)\n${values.name} · ${values.phone}\n${values.origin_zip} → ${values.dest_zip}\n${new URL(c.req.url).origin}${leadId ? `/admin#quote-${leadId}` : "/admin"}`,
     );
     return c.html(
       quotePage({
@@ -386,6 +409,7 @@ app.post("/get-quote", async (c) => {
       destContact: "",
       destPhone: "",
       readyDate: values.available_date ?? "",
+      readyAsap: field("available_date_asap") === "1",
       distanceMiles: distance,
       price: breakdown.total,
       notes: values.notes ?? "",
@@ -403,7 +427,7 @@ app.post("/get-quote", async (c) => {
 
   notify(
     c,
-    `New quote\n${values.name} · ${values.phone}\n${origin.city}, ${stateName(origin.state)} → ${destination.city}, ${stateName(destination.state)}\n${distance.toLocaleString()} mi · ${transport} · $${breakdown.total.toLocaleString()}\n${new URL(c.req.url).origin}/admin/orders#order-${quoteOrder.id}`,
+    `🧾 New quote\n${values.name} · ${values.phone}\n${origin.city}, ${stateName(origin.state)} → ${destination.city}, ${stateName(destination.state)}\n${distance.toLocaleString()} mi · ${transport} · $${breakdown.total.toLocaleString()}\n${new URL(c.req.url).origin}/admin/orders#order-${quoteOrder.id}`,
   );
 
   return c.html(
@@ -453,6 +477,9 @@ function bookValuesFrom(body: FormData | Record<string, unknown>): BookValues {
     ready_date:
       pick("ready_date") ||
       String(body instanceof FormData ? (body.get("available_date") ?? "") : (body.available_date ?? "")).trim(),
+    ready_asap:
+      pick("ready_asap") ||
+      String(body instanceof FormData ? (body.get("available_date_asap") ?? "") : (body.available_date_asap ?? "")).trim(),
     notes: pick("notes"),
     lead_id: pick("lead_id"),
     order_token: pick("order_token"),
@@ -493,6 +520,64 @@ app.post("/book", async (c) => {
   return c.html(bookPage(values, price));
 });
 
+/** Re-price the quote page after a customer edits a detail in the summary. No lead, no notification. */
+app.post("/quote/refresh", async (c) => {
+  const form = await c.req.formData();
+  const field = (name: string) => String(form.get(name) ?? "").trim();
+  const values: QuoteFormValues = {
+    name: field("name"),
+    email: field("email"),
+    phone: field("phone"),
+    origin_zip: field("origin_zip"),
+    dest_zip: field("dest_zip"),
+    transport_type: field("transport_type") || "open",
+    vehicle_year: field("vehicle_year"),
+    vehicle_make: field("vehicle_make"),
+    vehicle_model: field("vehicle_model"),
+    condition: field("condition") || "running",
+    available_date: field("available_date"),
+    notes: field("notes"),
+  };
+  values.available_date = futureDate(values.available_date);
+
+  const [origin, destination] = await Promise.all([
+    lookupZip(values.origin_zip ?? ""),
+    lookupZip(values.dest_zip ?? ""),
+  ]);
+  const transport: TransportType = values.transport_type === "enclosed" ? "enclosed" : "open";
+  const condition = parseCondition(values.condition ?? "running");
+  const distance = origin && destination ? roadMiles(origin, destination) : null;
+  const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false);
+
+  const leadId = field("lead_id") ? Number(field("lead_id")) : undefined;
+  const orderToken = field("order_token") || undefined;
+
+  if (!origin || !destination || distance === null || !breakdown) {
+    return c.html(
+      quotePage({ values, leadId, orderToken, error: "Check both ZIP codes — we could not price that route." }),
+      400,
+    );
+  }
+
+  return c.html(
+    quotePage({
+      values,
+      leadId,
+      orderToken,
+      result: {
+        origin: `${origin.city}, ${stateName(origin.state)}`,
+        destination: `${destination.city}, ${stateName(destination.state)}`,
+        distance,
+        transport: transport === "enclosed" ? "Enclosed trailer" : "Open trailer",
+        total: breakdown.total,
+        deposit: breakdown.deposit,
+        breakdown: breakdown.base.toLocaleString(),
+        estimated: false,
+      },
+    }),
+  );
+});
+
 app.post("/book/submit", async (c) => {
   const form = await c.req.formData();
   const values = bookValuesFrom(form);
@@ -501,6 +586,7 @@ app.post("/book/submit", async (c) => {
 
   if (!values.name || !values.email || !values.phone) return invalid("Name, email and phone are required.");
   if (!EMAIL_PATTERN.test(values.email)) return invalid("That email does not look right.");
+  if (!values.ready_date) return invalid("Choose a pickup date — today or later.");
   if (!ZIP_PATTERN.test(values.origin_zip ?? "") || !ZIP_PATTERN.test(values.dest_zip ?? "")) {
     return invalid("Both ZIP codes must be five digits.");
   }
@@ -545,6 +631,7 @@ app.post("/book/submit", async (c) => {
     destContact: values.dest_contact ?? "",
     destPhone: values.dest_phone ?? "",
     readyDate: values.ready_date ?? "",
+    readyAsap: values.ready_asap === "1",
     distanceMiles: distance,
     price,
     notes: values.notes ?? "",
@@ -628,7 +715,7 @@ app.post("/book/submit", async (c) => {
 
   notify(
     c,
-    `${quotedOrder ? "Order confirmed" : "New order"}\n${order.number} · ${order.customer_name}\n${order.origin_zip} → ${order.dest_zip}\n$${order.price.toLocaleString()}\n${new URL(c.req.url).origin}/admin/orders#order-${order.id}`,
+    `${quotedOrder ? "✅ Order confirmed" : "📦 New order"}\n${order.number} · ${order.customer_name}\n${order.origin_zip} → ${order.dest_zip}\n$${order.price.toLocaleString()}\n${new URL(c.req.url).origin}/admin/orders#order-${order.id}`,
   );
 
   return c.redirect(`/track/${order.token}?new=1`, 303);
@@ -819,7 +906,7 @@ app.post("/api/chat", async (c) => {
   const token = c.env.TELEGRAM_BOT_TOKEN;
   const chatId = c.env.TELEGRAM_CHAT_ID;
   if (token && chatId) {
-    const text = `New website chat\nName: ${name}\nContact: ${contact || "—"}\nPage: ${page || "—"}\n\n${message}`;
+    const text = `💬 New website chat\nName: ${name}\nContact: ${contact || "—"}\nPage: ${page || "—"}\n\n${message}`;
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1018,12 +1105,13 @@ const ORDER_SORTS: Record<string, string> = {
   status: `CASE status
     WHEN 'quoted' THEN 1
     WHEN 'confirmed' THEN 2
-    WHEN 'assigned' THEN 3
-    WHEN 'picked_up' THEN 4
-    WHEN 'delivered' THEN 5
-    WHEN 'paid' THEN 6
-    WHEN 'cancelled' THEN 7
-    ELSE 8
+    WHEN 'contract_draft' THEN 3
+    WHEN 'assigned' THEN 4
+    WHEN 'picked_up' THEN 5
+    WHEN 'delivered' THEN 6
+    WHEN 'paid' THEN 7
+    WHEN 'cancelled' THEN 8
+    ELSE 9
   END`,
   created: "created_at",
 };
@@ -1048,22 +1136,22 @@ app.get("/admin/orders", async (c) => {
 
   const photos = results.length
     ? (
-        await c.env.DB.prepare(
-          `SELECT * FROM order_photos WHERE order_id IN (${results.map(() => "?").join(",")}) ORDER BY id`,
-        )
-          .bind(...results.map((order) => order.id))
-          .all<OrderPhotoRow>()
-      ).results
+      await c.env.DB.prepare(
+        `SELECT * FROM order_photos WHERE order_id IN (${results.map(() => "?").join(",")}) ORDER BY id`,
+      )
+        .bind(...results.map((order) => order.id))
+        .all<OrderPhotoRow>()
+    ).results
     : [];
 
   const events = results.length
     ? (
-        await c.env.DB.prepare(
-          `SELECT * FROM order_events WHERE order_id IN (${results.map(() => "?").join(",")}) ORDER BY id`,
-        )
-          .bind(...results.map((order) => order.id))
-          .all<OrderEventRow>()
-      ).results
+      await c.env.DB.prepare(
+        `SELECT * FROM order_events WHERE order_id IN (${results.map(() => "?").join(",")}) ORDER BY id`,
+      )
+        .bind(...results.map((order) => order.id))
+        .all<OrderEventRow>()
+    ).results
     : [];
 
   const { results: countRows } = await c.env.DB.prepare("SELECT status, COUNT(*) AS n FROM orders GROUP BY status").all<{
@@ -1073,7 +1161,21 @@ app.get("/admin/orders", async (c) => {
   const counts: Record<string, number> = {};
   for (const row of countRows) counts[row.status] = row.n;
 
-  return c.html(adminOrdersPage(results, status, user.role === "admin", photos, sort, dir, events, counts));
+  const errorOrder = Number(c.req.query("error_order"));
+  return c.html(
+    adminOrdersPage(
+      results,
+      status,
+      user.role === "admin",
+      photos,
+      sort,
+      dir,
+      events,
+      counts,
+      Number.isFinite(errorOrder) && errorOrder > 0 ? errorOrder : null,
+      c.req.query("error"),
+    ),
+  );
 });
 
 app.get("/admin/orders/:id", async (c) => {
@@ -1090,8 +1192,39 @@ app.get("/admin/orders/:id", async (c) => {
     c.env.DB.prepare("SELECT * FROM order_photos WHERE order_id = ? ORDER BY id").bind(id).all<OrderPhotoRow>(),
   ]);
 
-  return c.html(adminOrderPage(order, events, invoices, new URL(c.req.url).origin, photos));
+  return c.html(adminOrderPage(order, events, invoices, new URL(c.req.url).origin, photos, c.req.query("error")));
 });
+
+/** Data the current step must have before the order can move on. */
+function missingStepData(
+  status: string,
+  data: {
+    finalQuote: number | null;
+    pickupEta: number | null;
+    pickedUpAt: number | null;
+    deliveryEta: number | null;
+    deliveredAt: number | null;
+    brokerFee: number | null;
+    carrierFee: number | null;
+  },
+): string | null {
+  if (status === "quoted" && data.finalQuote === null) return "Set the final quote before moving to Booked.";
+  if (status === "confirmed") {
+    const missing: string[] = [];
+    if (!data.pickupEta) missing.push("Pickup ETA");
+    if (!data.deliveryEta) missing.push("Delivery ETA");
+    if (data.finalQuote === null) missing.push("Final quote");
+    if (data.brokerFee === null) missing.push("Broker fee");
+    if (data.carrierFee === null) missing.push("Carrier fee");
+    if (missing.length) return `Add ${missing.join(", ")} before moving to Contract draft.`;
+  }
+  if (status === "contract_draft" && !data.pickupEta) return "Add the pickup ETA before moving to Carrier assigned.";
+  if (status === "assigned" && !data.pickupEta) return "Add the pickup ETA before moving to Picked up.";
+  if (status === "picked_up" && !data.pickedUpAt) return "Add the pickup date and time before moving to Delivered.";
+  if (status === "picked_up" && !data.deliveryEta) return "Add the delivery ETA before moving to Delivered.";
+  if (status === "delivered" && !data.deliveredAt) return "Add the delivery date and time before moving to Paid.";
+  return null;
+}
 
 app.post("/admin/orders/:id/status", async (c) => {
   const user = await sessionUser(c);
@@ -1099,7 +1232,9 @@ app.post("/admin/orders/:id/status", async (c) => {
 
   const id = Number(c.req.param("id"));
   const body = await c.req.parseBody();
-  const status = String(body.status ?? "");
+  const moveRaw = String(body.move_status ?? "");
+  const moving = isOrderStatus(moveRaw) ? moveRaw : null;
+  const status = moving ?? String(body.status ?? "");
   if (!isOrderStatus(status)) return c.redirect(`/admin/orders/${id}`, 303);
 
   const pickedUpAt = parseDateTime(body, "picked_up");
@@ -1110,9 +1245,7 @@ app.post("/admin/orders/:id/status", async (c) => {
   const paidNumber = paidRaw ? Number(paidRaw) : NaN;
   const paidAmount = Number.isFinite(paidNumber) && paidNumber >= 0 ? Math.round(paidNumber) : null;
   const paymentMethodRaw = String(body.payment_method ?? "").trim();
-  const paymentMethod = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"].includes(paymentMethodRaw)
-    ? paymentMethodRaw
-    : null;
+  const paymentMethod = PAYMENT_METHODS.includes(paymentMethodRaw) ? paymentMethodRaw : null;
   const hasFinal = Object.prototype.hasOwnProperty.call(body, "final_quote");
   const hasBroker = Object.prototype.hasOwnProperty.call(body, "broker_fee");
   const hasCarrier = Object.prototype.hasOwnProperty.call(body, "carrier_fee");
@@ -1129,6 +1262,21 @@ app.post("/admin/orders/:id/status", async (c) => {
   const deliveredNote = deliveredAt ? `Delivered ${when(deliveredAt)}` : "";
   const paidNote = paidAmount !== null ? `Paid $${paidAmount.toLocaleString()}${paymentMethod ? ` via ${paymentMethod}` : ""}` : "";
   const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+
+  if (moving && order) {
+    const missing = missingStepData(order.status, {
+      finalQuote: finalQuote ?? order.final_quote,
+      pickupEta: pickupEta ?? order.pickup_eta,
+      pickedUpAt: pickedUpAt ?? order.picked_up_at,
+      deliveryEta: deliveryEta ?? order.delivery_eta,
+      deliveredAt: deliveredAt ?? order.delivered_at,
+      brokerFee: brokerFee ?? order.broker_fee,
+      carrierFee: carrierFee ?? order.carrier_fee,
+    });
+    if (missing) {
+      return c.redirect(`/admin/orders?error=${encodeURIComponent(missing)}&error_order=${id}#order-${id}`, 303);
+    }
+  }
 
   await setStatus(
     c.env.DB,
@@ -1158,13 +1306,279 @@ app.post("/admin/orders/:id/status", async (c) => {
     const fromLabel = isOrderStatus(order.status) ? STATUS_LABELS[order.status] : order.status;
     notify(
       c,
-      `Order ${order.number} status\n${fromLabel} → ${STATUS_LABELS[status]}\nby ${user.email}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
+      `${STATUS_EMOJI[status] ?? "🔄"} Order ${order.number} status\n${fromLabel} → ${STATUS_LABELS[status]}\nby ${user.email}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
     );
   }
   // Land on the tab the order now belongs to, scrolled to the order itself.
   const destination = `/admin/orders?status=${status}#order-${id}`;
   if (c.req.header("x-async") === "1") return c.json({ ok: true, redirect: destination });
   return c.redirect(destination, 303);
+});
+
+const PAYMENT_METHODS = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"];
+
+const ORDER_FIELD_LABELS: Record<string, string> = {
+  customer_name: "Customer",
+  customer_email: "Email",
+  customer_phone: "Phone",
+  vehicle_year: "Vehicle year",
+  vehicle_make: "Make",
+  vehicle_model: "Model",
+  transport_type: "Transport",
+  condition: "Condition",
+  vin: "VIN",
+  origin_street: "Pickup street",
+  origin_city: "Pickup city",
+  origin_state: "Pickup state",
+  origin_zip: "Pickup ZIP",
+  origin_contact: "Pickup contact",
+  origin_phone: "Pickup phone",
+  dest_street: "Delivery street",
+  dest_city: "Delivery city",
+  dest_state: "Delivery state",
+  dest_zip: "Delivery ZIP",
+  dest_contact: "Delivery contact",
+  dest_phone: "Delivery phone",
+  ready_date: "Pickup date",
+  distance_miles: "Distance",
+  price: "Price",
+  final_quote: "Final quote",
+  broker_fee: "Broker fee",
+  carrier_fee: "Carrier fee",
+  notes: "Customer notes",
+  carrier_name: "Carrier company",
+  carrier_mc: "MC number",
+  carrier_company_phone: "Company phone",
+  carrier_email: "Company email",
+  driver_name: "Driver name",
+  carrier_phone: "Driver phone",
+  paid_amount: "Paid amount",
+  payment_method: "Payment method",
+  picked_up_at: "Picked up at",
+  pickup_eta: "Pickup ETA",
+  delivery_eta: "Delivery ETA",
+  delivered_at: "Delivered at",
+};
+
+function formatOrderField(key: string, value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (key === "condition") return conditionLabel(String(value));
+  if (key === "transport_type") return value === "enclosed" ? "Enclosed trailer" : "Open trailer";
+  if (key === "distance_miles") return `${Number(value).toLocaleString()} mi`;
+  if (key === "price" || key === "paid_amount" || key === "final_quote" || key === "broker_fee" || key === "carrier_fee") {
+    return `$${Number(value).toLocaleString()}`;
+  }
+  if (key === "picked_up_at" || key === "pickup_eta" || key === "delivery_eta" || key === "delivered_at") {
+    return when(Number(value));
+  }
+  return String(value);
+}
+
+type FieldGroup = {
+  label: string;
+  columns: string[];
+  parse: (body: Record<string, string | File>) => Record<string, unknown> | null;
+};
+
+function fieldText(body: Record<string, string | File>, name: string): string {
+  return String(body[name] ?? "").trim();
+}
+
+function numberField(body: Record<string, string | File>, name: string): Record<string, unknown> | null {
+  const raw = fieldText(body, name);
+  if (!raw) return null;
+  const number = Number(raw);
+  return Number.isFinite(number) && number >= 0 ? { [name]: Math.round(number) } : null;
+}
+
+function datetimeField(body: Record<string, string | File>, name: string): Record<string, unknown> | null {
+  if (fieldText(body, `${name}_clear`) === "1") return { [name]: null };
+  // Saving always stores what the selects show; "Clear" removes the value.
+  const parsed = parseDateTime(body, name);
+  return parsed === null ? null : { [name]: parsed };
+}
+
+function contactFields(body: Record<string, string | File>, prefix: "origin" | "dest"): Record<string, unknown> {
+  return {
+    [`${prefix}_contact`]: fieldText(body, `${prefix}_contact`) || null,
+    [`${prefix}_phone`]: fieldText(body, `${prefix}_phone`) || null,
+  };
+}
+
+function addressFields(body: Record<string, string | File>, prefix: "origin" | "dest"): Record<string, unknown> | null {
+  const zip = fieldText(body, `${prefix}_zip`);
+  if (!ZIP_PATTERN.test(zip)) return null;
+  return {
+    [`${prefix}_street`]: fieldText(body, `${prefix}_street`) || null,
+    [`${prefix}_city`]: fieldText(body, `${prefix}_city`) || null,
+    [`${prefix}_state`]: stateCode(fieldText(body, `${prefix}_state`)) || null,
+    [`${prefix}_zip`]: zip,
+  };
+}
+
+/** One editable block per row of the order modal. Columns are a fixed whitelist. */
+const ORDER_FIELD_GROUPS: Record<string, FieldGroup> = {
+  customer: {
+    label: "Customer",
+    columns: ["customer_name", "customer_email", "customer_phone"],
+    parse: (body) => {
+      const name = fieldText(body, "customer_name");
+      const email = fieldText(body, "customer_email");
+      const phone = fieldText(body, "customer_phone");
+      if (!name || !phone || !EMAIL_PATTERN.test(email)) return null;
+      return { customer_name: name, customer_email: email, customer_phone: phone };
+    },
+  },
+  vehicle: {
+    label: "Vehicle",
+    columns: ["vehicle_year", "vehicle_make", "vehicle_model", "transport_type", "condition"],
+    parse: (body) => ({
+      vehicle_year: fieldText(body, "vehicle_year") || null,
+      vehicle_make: fieldText(body, "vehicle_make") || null,
+      vehicle_model: fieldText(body, "vehicle_model") || null,
+      transport_type: fieldText(body, "transport_type") === "enclosed" ? "enclosed" : "open",
+      condition: parseCondition(fieldText(body, "condition") || "running"),
+    }),
+  },
+  vin: { label: "VIN", columns: ["vin"], parse: (body) => ({ vin: fieldText(body, "vin") || null }) },
+  origin_address: {
+    label: "Pickup address",
+    columns: ["origin_street", "origin_city", "origin_state", "origin_zip"],
+    parse: (body) => addressFields(body, "origin"),
+  },
+  origin_contact: {
+    label: "Pickup contact",
+    columns: ["origin_contact", "origin_phone"],
+    parse: (body) => contactFields(body, "origin"),
+  },
+  dest_address: {
+    label: "Delivery address",
+    columns: ["dest_street", "dest_city", "dest_state", "dest_zip"],
+    parse: (body) => addressFields(body, "dest"),
+  },
+  dest_contact: {
+    label: "Delivery contact",
+    columns: ["dest_contact", "dest_phone"],
+    parse: (body) => contactFields(body, "dest"),
+  },
+  picked_up_at: { label: "Picked up at", columns: ["picked_up_at"], parse: (body) => datetimeField(body, "picked_up_at") },
+  pickup_eta: { label: "Pickup ETA", columns: ["pickup_eta"], parse: (body) => datetimeField(body, "pickup_eta") },
+  delivery_eta: { label: "Delivery ETA", columns: ["delivery_eta"], parse: (body) => datetimeField(body, "delivery_eta") },
+  delivered_at: { label: "Delivered at", columns: ["delivered_at"], parse: (body) => datetimeField(body, "delivered_at") },
+  paid_amount: {
+    label: "Paid amount",
+    columns: ["paid_amount"],
+    parse: (body) => ({ paid_amount: moneyOrNull(fieldText(body, "paid_amount")) }),
+  },
+  payment_method: {
+    label: "Payment method",
+    columns: ["payment_method"],
+    parse: (body) => {
+      const method = fieldText(body, "payment_method");
+      return { payment_method: PAYMENT_METHODS.includes(method) ? method : null };
+    },
+  },
+  ready_date: {
+    label: "Pickup date",
+    columns: ["ready_date"],
+    parse: (body) => {
+      const date = fieldText(body, "ready_date");
+      if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+      return { ready_date: date || null };
+    },
+  },
+  distance_miles: { label: "Distance", columns: ["distance_miles"], parse: (body) => numberField(body, "distance_miles") },
+  price: { label: "Price", columns: ["price"], parse: (body) => numberField(body, "price") },
+  final_quote: {
+    label: "Final quote",
+    columns: ["final_quote"],
+    parse: (body) => ({ final_quote: moneyOrNull(fieldText(body, "final_quote")) }),
+  },
+  broker_fee: {
+    label: "Broker fee",
+    columns: ["broker_fee"],
+    parse: (body) => ({ broker_fee: moneyOrNull(fieldText(body, "broker_fee")) }),
+  },
+  carrier_fee: {
+    label: "Carrier fee",
+    columns: ["carrier_fee"],
+    parse: (body) => ({ carrier_fee: moneyOrNull(fieldText(body, "carrier_fee")) }),
+  },
+  carrier: {
+    label: "Carrier",
+    columns: ["carrier_name", "carrier_mc", "carrier_company_phone", "carrier_email", "driver_name", "carrier_phone"],
+    parse: (body) => ({
+      carrier_name: fieldText(body, "carrier_name") || null,
+      carrier_mc: fieldText(body, "carrier_mc") || null,
+      carrier_company_phone: fieldText(body, "carrier_company_phone") || null,
+      carrier_email: fieldText(body, "carrier_email") || null,
+      driver_name: fieldText(body, "driver_name") || null,
+      carrier_phone: fieldText(body, "carrier_phone") || null,
+    }),
+  },
+  notes: { label: "Customer notes", columns: ["notes"], parse: (body) => ({ notes: fieldText(body, "notes") || null }) },
+};
+
+app.post("/admin/orders/:id/field", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const old = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!old) return c.html(notFoundPage(), 404);
+
+  const body = await c.req.parseBody();
+  const requested = String(body.next ?? "");
+  const back = requested.startsWith("/admin") ? requested : `/admin/orders#order-${id}`;
+  const key = String(body.field ?? "");
+  const group = Object.hasOwn(ORDER_FIELD_GROUPS, key) ? ORDER_FIELD_GROUPS[key] : undefined;
+  if (!group) return c.redirect(back, 303);
+
+  const values = group.parse(body);
+  if (!values) return c.redirect(back, 303);
+
+  const oldRecord = old as unknown as Record<string, unknown>;
+  const changes = group.columns
+    .filter((column) => {
+      const before = column === "condition" ? parseCondition(String(oldRecord[column] ?? "running")) : oldRecord[column];
+      return String(before ?? "") !== String(values[column] ?? "");
+    })
+    .map((column) => {
+      const before = column === "condition" ? parseCondition(String(oldRecord[column] ?? "running")) : oldRecord[column];
+      return `${ORDER_FIELD_LABELS[column] ?? column}: ${formatOrderField(column, before)} → ${formatOrderField(column, values[column])}`;
+    });
+  if (!changes.length) return c.redirect(back, 303);
+
+  const now = Date.now();
+  await c.env.DB.prepare(
+    `UPDATE orders SET ${group.columns.map((column) => `${column} = ?`).join(", ")}, updated_at = ? WHERE id = ?`,
+  )
+    .bind(...group.columns.map((column) => values[column]), now, id)
+    .run();
+
+  await c.env.DB.prepare(
+    "INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)",
+  )
+    .bind(id, `${group.label} updated — ${changes.join("; ")}`, user.email, now)
+    .run();
+
+  notify(
+    c,
+    `✏️ Order ${old.number} edited\nby ${user.email}\n${changes.join("; ")}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
+  );
+
+  // The modal saves in place: send back just this card instead of the whole orders page.
+  if (c.req.header("x-async") === "1") {
+    const [order, { results: photos }, { results: events }] = await Promise.all([
+      c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>(),
+      c.env.DB.prepare("SELECT * FROM order_photos WHERE order_id = ? ORDER BY id").bind(id).all<OrderPhotoRow>(),
+      c.env.DB.prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id").bind(id).all<OrderEventRow>(),
+    ]);
+    if (!order) return c.html(notFoundPage(), 404);
+    return c.html(orderModal(order, photos, events));
+  }
+
+  return c.redirect(back, 303);
 });
 
 app.post("/admin/orders/:id/edit", async (c) => {
@@ -1194,9 +1608,7 @@ app.post("/admin/orders/:id/edit", async (c) => {
   const paidNumber = paidRaw ? Number(paidRaw) : NaN;
   const paidAmount = Number.isFinite(paidNumber) && paidNumber >= 0 ? Math.round(paidNumber) : null;
   const methodRaw = text("payment_method");
-  const paymentMethod = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"].includes(methodRaw)
-    ? methodRaw
-    : null;
+  const paymentMethod = PAYMENT_METHODS.includes(methodRaw) ? methodRaw : null;
 
   const newValues = {
     customer_name: name,
@@ -1245,69 +1657,6 @@ app.post("/admin/orders/:id/edit", async (c) => {
       text("edit_delivered_set") === "1" ? (parseDateTime(body, "edit_delivered") ?? old.delivered_at) : null,
   };
 
-  const labels: Record<keyof typeof newValues, string> = {
-    customer_name: "Customer",
-    customer_email: "Email",
-    customer_phone: "Phone",
-    vehicle_year: "Vehicle year",
-    vehicle_make: "Make",
-    vehicle_model: "Model",
-    transport_type: "Transport",
-    condition: "Condition",
-    vin: "VIN",
-    origin_street: "Pickup street",
-    origin_city: "Pickup city",
-    origin_state: "Pickup state",
-    origin_zip: "Pickup ZIP",
-    origin_contact: "Pickup contact",
-    origin_phone: "Pickup phone",
-    dest_street: "Delivery street",
-    dest_city: "Delivery city",
-    dest_state: "Delivery state",
-    dest_zip: "Delivery ZIP",
-    dest_contact: "Delivery contact",
-    dest_phone: "Delivery phone",
-    ready_date: "Pickup date",
-    distance_miles: "Distance",
-    price: "Price",
-    final_quote: "Final quote",
-    broker_fee: "Broker fee",
-    carrier_fee: "Carrier fee",
-    notes: "Customer notes",
-    carrier_name: "Carrier company",
-    carrier_mc: "MC number",
-    carrier_company_phone: "Company phone",
-    carrier_email: "Company email",
-    driver_name: "Driver name",
-    carrier_phone: "Driver phone",
-    paid_amount: "Paid amount",
-    payment_method: "Payment method",
-    picked_up_at: "Picked up at",
-    pickup_eta: "Pickup ETA",
-    delivery_eta: "Delivery ETA",
-    delivered_at: "Delivered at",
-  };
-
-  const format = (key: keyof typeof newValues, value: unknown): string => {
-    if (value === null || value === undefined || value === "") return "—";
-    if (key === "condition") return conditionLabel(String(value));
-    if (key === "transport_type") return value === "enclosed" ? "Enclosed trailer" : "Open trailer";
-    if (key === "distance_miles") return `${Number(value).toLocaleString()} mi`;
-    if (
-      key === "price" ||
-      key === "paid_amount" ||
-      key === "final_quote" ||
-      key === "broker_fee" ||
-      key === "carrier_fee"
-    ) {
-      return `$${Number(value).toLocaleString()}`;
-    }
-    if (key === "picked_up_at" || key === "pickup_eta" || key === "delivery_eta" || key === "delivered_at") {
-      return when(Number(value));
-    }
-    return String(value);
-  };
-
   const changes: string[] = [];
   const oldRecord = old as unknown as Record<string, unknown>;
   for (const key of Object.keys(newValues) as (keyof typeof newValues)[]) {
@@ -1315,7 +1664,7 @@ app.post("/admin/orders/:id/edit", async (c) => {
     if (key === "condition") before = parseCondition(String(before ?? "running"));
     const after = newValues[key];
     if (String(before ?? "") !== String(after ?? "")) {
-      changes.push(`${labels[key]}: ${format(key, before)} → ${format(key, after)}`);
+      changes.push(`${ORDER_FIELD_LABELS[key] ?? key}: ${formatOrderField(key, before)} → ${formatOrderField(key, after)}`);
     }
   }
 
@@ -1388,7 +1737,7 @@ app.post("/admin/orders/:id/edit", async (c) => {
 
   notify(
     c,
-    `Order ${old.number} edited\nby ${user.email}\n${changes.join("; ")}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
+    `✏️ Order ${old.number} edited\nby ${user.email}\n${changes.join("; ")}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
   );
 
   return c.redirect(redirectTo, 303);
@@ -1421,7 +1770,7 @@ app.post("/admin/orders/:id/carrier", async (c) => {
   if (order) {
     notify(
       c,
-      `Carrier assigned\n${order.number} · ${name}${mc ? ` (${mc})` : ""}\nby ${user.email}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
+      `🚚 Carrier assigned\n${order.number} · ${name}${mc ? ` (${mc})` : ""}\nby ${user.email}\n${new URL(c.req.url).origin}/admin/orders#order-${id}`,
     );
   }
   return c.redirect(adminRedirect(body, `/admin/orders/${id}`), 303);
@@ -1496,8 +1845,25 @@ app.get("/admin/staff", async (c) => {
 
   const period = parseStaffPeriod(c.req.query("period"));
   const metric = parseStaffMetric(c.req.query("metric"));
-  const data = await loadStaffPerformance(c.env.DB, period, metric);
-  return c.html(staffPerformancePage(data, user));
+  const [data, trends, marketing] = await Promise.all([
+    loadStaffPerformance(c.env.DB, period, metric),
+    loadRevenueTrends(c.env.DB),
+    loadAdsShare(c.env.DB),
+  ]);
+  return c.html(staffPerformancePage(data, user, trends, marketing));
+});
+
+app.post("/admin/staff/marketing", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+  if (user.role !== "admin") return c.html(notFoundPage(), 404);
+
+  const body = await c.req.parseBody();
+  const value = Number(String(body.ads_percent ?? "").trim());
+  const percent = Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value * 10) / 10 : 0;
+
+  await setSetting(c.env.DB, "ads_percent", String(percent));
+  return c.redirect("/admin/staff", 303);
 });
 
 app.get("/admin/users", async (c) => {
@@ -1611,7 +1977,7 @@ app.post("/admin/telegram/test", async (c) => {
   if (!user) return c.redirect("/admin/login", 303);
   if (user.role !== "admin") return c.html(notFoundPage(), 404);
 
-  const sent = await sendTelegram(c.env, c.env.DB, "Test message from the Bond Auto Transport console.");
+  const sent = await sendTelegram(c.env, c.env.DB, "🧪 Test message from the Bond Auto Transport console.");
   const targets = await telegramTargets(c.env, c.env.DB);
   return c.html(
     telegramPage(
