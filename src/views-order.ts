@@ -1,4 +1,4 @@
-import { esc, MONTH_NAMES, conditionPicker, conditionTag, dateOnly, datePicker, infoTip, layout, money, site, transportPicker, whenHtml } from "./views.ts";
+import { esc, MONTH_NAMES, conditionTag, dateOnly, datePicker, layout, money, shortWhenHtml, site, whenHtml } from "./views.ts";
 import { US_STATES, stateCode, stateName } from "./states.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
@@ -10,6 +10,7 @@ import {
   type OrderEventRow,
   type OrderRow,
   type OrderStatus,
+  type OrderContractRow,
   type OrderUnitRow,
 } from "./orders.ts";
 
@@ -56,22 +57,30 @@ function stateOptions(selected: string | undefined): string {
   ).join("")}`;
 }
 
-export type ExtraUnit = { year: string; make: string; model: string; condition: string };
+export type ExtraUnit = { year: string; make: string; model: string; vin: string; condition: string };
 
 export function bookPage(values: BookValues, price: number | null, error?: string, extras: ExtraUnit[] = []): string {
   const v = (key: keyof BookValues) => esc(values[key] ?? "");
-  const condition = values.condition || "running";
   const hidden = Object.entries(values)
     .filter(([key]) => key === "lead_id" || key === "order_token")
     .map(([key, value]) => `<input type="hidden" name="${key}" value="${esc(value)}">`)
     .join("");
-  // Extra vehicles carry through to the booking submit untouched.
-  const unitHidden = extras
-    .map((unit, index) => {
-      const n = index + 2;
-      return `<input type="hidden" name="vehicle_year_${n}" value="${esc(unit.year)}"><input type="hidden" name="vehicle_make_${n}" value="${esc(unit.make)}"><input type="hidden" name="vehicle_model_${n}" value="${esc(unit.model)}"><input type="hidden" name="condition_${n}" value="${esc(unit.condition)}">`;
-    })
-    .join("");
+  // Details that arrived from the quote are folded into one line so the
+  // customer is not asked to re-read what they already answered.
+  const has = (value: string | undefined | null) => Boolean(value && String(value).trim());
+  const fold = (summary: string, fields: string, collapsed: boolean, label: string) =>
+    collapsed
+      ? `<div class="book-sum" data-book-sum>
+        <div class="book-sum-view">
+          <span class="book-sum-text">${summary}</span>
+          <button class="btn btn-ghost btn-small" type="button" data-book-sum-edit>Edit ${label}</button>
+        </div>
+        <div data-book-sum-fields hidden>${fields}</div>
+      </div>`
+      : fields;
+
+  const pickupFolded = has(values.origin_zip) && has(values.origin_city);
+  const deliveryFolded = has(values.dest_zip) && has(values.dest_city);
 
   return layout({
     title: "Book your transport — Bond Auto Transport",
@@ -109,56 +118,75 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
     <div class="book-form-card">
       <h2 class="section-title">Booking details</h2>
       <p class="muted">Both addresses and a contact at each end. Fields marked * are required.</p>
-    <form class="quote-form" method="post" action="/book/submit" enctype="multipart/form-data">
-      ${hidden}${unitHidden}
+    <form class="quote-form" method="post" action="/book/submit" enctype="multipart/form-data" novalidate data-quote-steps>
+      ${hidden}
       ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
 
-      <h3 class="form-section">Customer</h3>
-      <div class="field-row">
-        <label class="field"><span>Full name *</span><input name="name" required value="${v("name")}" autocomplete="name"></label>
-        <label class="field"><span>Email *</span><input name="email" type="email" required value="${v("email")}" autocomplete="email"></label>
-        <label class="field"><span>Phone *</span><input name="phone" required value="${v("phone")}" autocomplete="tel"></label>
+      <div class="quote-steps" aria-label="Booking progress">
+        <button type="button" class="quote-step-indicator active" data-step-indicator="1" data-step-target="1" aria-current="step">
+          <span class="quote-step-num">1</span><span class="quote-step-label">Pickup</span>
+        </button>
+        <span class="quote-step-dots" aria-hidden="true"></span>
+        <button type="button" class="quote-step-indicator" data-step-indicator="2" data-step-target="2">
+          <span class="quote-step-num">2</span><span class="quote-step-label">Delivery</span>
+        </button>
       </div>
 
-      <h3 class="form-section">Vehicle</h3>
-      <div class="field-row">
-        <label class="field"><span>Year</span><input name="vehicle_year" maxlength="4" value="${v("vehicle_year")}"></label>
-        <label class="field"><span>Make</span><input name="vehicle_make" value="${v("vehicle_make")}"></label>
-        <label class="field"><span>Model</span><input name="vehicle_model" value="${v("vehicle_model")}"></label>
-      </div>
-      <div class="field-row">
-        <label class="field"><span>VIN${infoTip("17 characters on the dashboard or driver's door. Optional, but it speeds up dispatch.")}</span><input name="vin" maxlength="17" value="${v("vin")}" placeholder="17 characters"></label>
-      </div>
-      <div class="field">
-        <span>Transport${infoTip("Open is the cheapest option; enclosed protects paintwork on classics and exotics.")}</span>
-        ${transportPicker(values.transport_type)}
-      </div>
-      <div class="field">
-        <span>Vehicle condition${infoTip("A vehicle that cannot be driven needs a winch or forklift, which adds a fee.")}</span>
-        ${conditionPicker(condition)}
+      <!-- Customer and vehicle came from the quote: carried through, not asked again. -->
+      <div hidden>
+        <input type="hidden" name="name" value="${esc(values.name ?? "")}">
+        <input type="hidden" name="email" value="${esc(values.email ?? "")}">
+        <input type="hidden" name="phone" value="${esc(values.phone ?? "")}">
+        <input type="hidden" name="vehicle_year" value="${esc(values.vehicle_year ?? "")}">
+        <input type="hidden" name="vehicle_make" value="${esc(values.vehicle_make ?? "")}">
+        <input type="hidden" name="vehicle_model" value="${esc(values.vehicle_model ?? "")}">
+        <input type="hidden" name="vin" value="${esc(values.vin ?? "")}">
+        <input type="hidden" name="transport_type" value="${esc(values.transport_type ?? "open")}">
+        <input type="hidden" name="condition" value="${esc(values.condition ?? "running")}">
+        ${extras
+          .map((unit, index) => {
+            const n = index + 2;
+            return `<input type="hidden" name="vehicle_year_${n}" value="${esc(unit.year)}"><input type="hidden" name="vehicle_make_${n}" value="${esc(unit.make)}"><input type="hidden" name="vehicle_model_${n}" value="${esc(unit.model)}"><input type="hidden" name="vin_${n}" value="${esc(unit.vin ?? "")}"><input type="hidden" name="condition_${n}" value="${esc(unit.condition)}">`;
+          })
+          .join("")}
       </div>
 
-      <a class="btn btn-accent btn-inline" href="/booking-form" target="_blank" rel="noopener">Add another vehicle</a>
-
+      <section class="quote-step is-active" data-step="1">
       <h3 class="form-section">Pickup</h3>
-      <div class="field-row">
+      ${fold(
+        `${esc(values.origin_city ?? "")}${values.origin_state ? `, ${esc(values.origin_state)}` : ""} ${esc(values.origin_zip ?? "")}`,
+        `<div class="field-row">
         <label class="field"><span>Street address</span><input name="origin_street" value="${v("origin_street")}" autocomplete="street-address"></label>
         <label class="field"><span>City</span><input name="origin_city" value="${v("origin_city")}"></label>
         <label class="field"><span>State</span><select name="origin_state">${stateOptions(values.origin_state)}</select></label>
         <label class="field"><span>ZIP *</span><input name="origin_zip" inputmode="numeric" maxlength="5" required value="${v("origin_zip")}"></label>
-      </div>
+      </div>`,
+        pickupFolded,
+        "pickup address",
+      )}
       <div class="field-row">
         <label class="field"><span>Contact name *</span><input name="origin_contact" required value="${v("origin_contact")}"></label>
         <label class="field"><span>Contact phone *</span><input name="origin_phone" required value="${v("origin_phone")}"></label>
       </div>
 
+      <div class="step-actions">
+        <button class="btn btn-accent btn-block" type="button" data-next-step>Continue to delivery</button>
+      </div>
+      </section>
+
+      <section class="quote-step" data-step="2" hidden>
       <h3 class="form-section">Delivery</h3>
-      <div class="field-row">
+      ${fold(
+        `${esc(values.dest_city ?? "")}${values.dest_state ? `, ${esc(values.dest_state)}` : ""} ${esc(values.dest_zip ?? "")}`,
+        `<div class="field-row">
         <label class="field"><span>Street address</span><input name="dest_street" value="${v("dest_street")}"></label>
         <label class="field"><span>City</span><input name="dest_city" value="${v("dest_city")}"></label>
         <label class="field"><span>State</span><select name="dest_state">${stateOptions(values.dest_state)}</select></label>
         <label class="field"><span>ZIP *</span><input name="dest_zip" inputmode="numeric" maxlength="5" required value="${v("dest_zip")}"></label>
-      </div>
+      </div>`,
+        deliveryFolded,
+        "delivery address",
+      )}
       <div class="field-row">
         <label class="field"><span>Contact name *</span><input name="dest_contact" required value="${v("dest_contact")}"></label>
         <label class="field"><span>Contact phone *</span><input name="dest_phone" required value="${v("dest_phone")}"></label>
@@ -184,9 +212,30 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
         <p class="photo-error form-error" role="alert" hidden></p>
       </div>
 
-      <button class="btn btn-accent btn-block" type="submit">Submit booking request</button>
+      <div class="step-actions">
+        <button class="btn btn-ghost" type="button" data-prev-step>Back</button>
+        <button class="btn btn-accent" type="submit">Submit booking request</button>
+      </div>
       <p class="form-note">No card is charged now. Dispatch confirms the carrier and price before pickup.</p>
+      </section>
     </form>
+
+    <script>
+    (function () {
+      Array.prototype.forEach.call(document.querySelectorAll("[data-book-sum-edit]"), function (button) {
+        button.addEventListener("click", function () {
+          var wrap = button.closest("[data-book-sum]");
+          if (!wrap) return;
+          var view = wrap.querySelector(".book-sum-view");
+          var fields = wrap.querySelector("[data-book-sum-fields]");
+          if (view) view.hidden = true;
+          if (fields) fields.hidden = false;
+          var first = fields && fields.querySelector("input, select");
+          if (first) first.focus();
+        });
+      });
+    })();
+    </script>
     </div>
 
     <aside class="book-side">
@@ -289,57 +338,40 @@ function timeSelects(config: {
       </div>`;
 }
 
-function timeFields(config: {
-  dateLabel: string;
-  monthName: string;
-  dayName: string;
-  yearName: string;
-  hourName: string;
-  minuteName: string;
-  ampmName: string;
-  value: number | null;
-  note: string;
-}): string {
-  return `<p class="form-section form-section-date">${esc(config.dateLabel)}</p>
-      ${timeSelects(config)}
-      <p class="form-note">${config.note}</p>`;
-}
 
-function pickupEtaFields(order: OrderRow): string {
-  return timeFields({
-    dateLabel: "Pickup ETA",
-    monthName: "pickup_eta_month",
-    dayName: "pickup_eta_day",
-    yearName: "pickup_eta_year",
-    hourName: "pickup_eta_hour",
-    minuteName: "pickup_eta_minute",
-    ampmName: "pickup_eta_ampm",
-    value: order.pickup_eta,
-    note: order.pickup_eta ? `Pickup ETA: ${whenHtml(order.pickup_eta)}` : "Choose the estimated pickup time in AM/PM.",
-  });
-}
 
-function paymentFields(order: OrderRow): string {
-  return `<p class="form-section form-section-date">Payment</p>
-      <div class="field-row">
-        <label class="field"><span>Amount (USD)</span><input name="paid_amount" type="number" min="0" step="1" value="${order.paid_amount ?? order.price}"></label>
-        <label class="field"><span>Payment method</span><select name="payment_method" class="payment-select">
-          <option value="">Select method</option>
-          ${PAYMENT_METHODS.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}
-        </select></label>
-      </div>
-      <p class="form-note">${order.paid_amount !== null ? `Saved: ${money(order.paid_amount)}${order.payment_method ? ` via ${esc(order.payment_method)}` : ""}` : "Record how the balance was paid."}</p>`;
-}
 
 function statusFields(order: OrderRow): string {
   if (order.status === "quoted") return "";
   if (order.status === "cancelled") return "";
-  if (order.status === "contract_draft") return pickupEtaFields(order);
+  if (order.status === "contract_draft") return "";
   if (order.status === "confirmed") return "";
   if (order.status === "assigned") return "";
   if (order.status === "picked_up") return "";
   if (order.status === "delivered") return "";
-  return paymentFields(order);
+  return "";
+}
+
+/** "Orlando, Florida 32801" — city, state and ZIP, dropping whichever parts are missing. */
+export function placeLine(
+  city: string | null | undefined,
+  state: string | null | undefined,
+  zip: string | null | undefined,
+): string {
+  const place = [city, stateName(state)].filter(Boolean).join(", ");
+  return [place, zip].filter(Boolean).join(" ");
+}
+
+/**
+ * The "we will call you shortly" banner belongs to the booking moment only: once the order
+ * moves past Booked (contract draft, carrier assigned, ...) the promise no longer applies,
+ * even if the customer reloads the ?new=1 link from their confirmation.
+ */
+const CALL_BANNER_STATUSES = new Set<OrderStatus>(["quoted", "confirmed"]);
+
+/** True only for a freshly booked order that has not moved past Booked yet. */
+export function showsCallBanner(justBooked: boolean, status: string): boolean {
+  return justBooked && CALL_BANNER_STATUSES.has(status as OrderStatus);
 }
 
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[], justBooked = false): string {
@@ -356,6 +388,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
   const cancelled = lastStage === "cancelled";
   const timeline = `<li class="reached${cancelled ? " is-cancelled" : ""}"><strong>${esc(STATUS_LABELS[lastStage])}</strong>${cancelled ? "" : '<span class="progress-bar" aria-hidden="true"><span></span></span>'
     }</li>`;
+  const showCallBanner = showsCallBanner(justBooked, order.status);
 
   const bookingHidden = Object.entries({
     name: order.customer_name,
@@ -390,15 +423,15 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
     description: `Status of shipment ${order.number}.`,
     body: `
 <section class="wrap section">
-  ${justBooked
+  ${showCallBanner
       ? `<div class="call-banner">
     <strong>We will call you shortly.</strong>
     <span>Expect a call from dispatch — we confirm the carrier and the pickup window before anything is charged.</span>
   </div>`
       : ""}
   <p class="eyebrow">Shipment</p>
-  <h1 class="page-title">${esc(order.number)} ${statusBadge(order.status)}</h1>
-  <p class="muted">${esc(order.origin_city ?? order.origin_zip)}, ${esc(stateName(order.origin_state))} → ${esc(order.dest_city ?? order.dest_zip)}, ${esc(stateName(order.dest_state))}</p>
+  <h1 class="page-title">${esc(order.number)} ${orderStatusBadge(order)}</h1>
+  <p class="muted">${esc(placeLine(order.origin_city, order.origin_state, order.origin_zip))} → ${esc(placeLine(order.dest_city, order.dest_state, order.dest_zip))}</p>
 
   <div class="cards two-up">
     <div class="card">
@@ -485,22 +518,16 @@ function isDeliveryDue(value: number | null): boolean {
 
 const DATE_GROUPS = new Set(["picked_up_at", "pickup_eta", "delivery_eta", "delivered_at"]);
 
-const PAYMENT_METHODS = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"];
+const PAYMENT_METHODS = ["Zelle", "Venmo", "CashApp", "PayPal", "ACH", "Wire"];
 
-function orderFieldsTable(order: OrderRow, anchor: string): string {
+function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = false): string {
   const vehicle = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—";
   const carrierLine = [order.carrier_mc, order.carrier_company_phone, order.carrier_email].filter(Boolean).join(" · ");
   const driverLine = [order.driver_name, order.carrier_phone].filter(Boolean).join(" · ");
   const value = (html: string) => html || '<span class="muted">—</span>';
   // Fields the current step needs before it can advance; shown in red until filled.
   const requiredGroups = new Set<string>(
-    order.status === "confirmed"
-      ? ["pickup_eta", "delivery_eta", "final_quote", "broker_fee", "carrier_fee"]
-      : order.status === "picked_up"
-        ? ["picked_up_at", "delivery_eta"]
-        : order.status === "delivered"
-          ? ["delivered_at"]
-          : [],
+    (REQUIRED_FIELDS[order.status] ?? []).map(([column]) => (column === "carrier_name" ? "carrier" : column)),
   );
   // Carrier assigned: money rows get a yellow highlight so the price block stands out.
   const priceStep = order.status === "assigned";
@@ -508,7 +535,9 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
   const requiredValue = (group: string, filled: boolean, html: string) =>
     requiredGroups.has(group) && !filled ? '<span class="due-red">Required</span>' : value(html);
   const plain = (label: string, html: string) => `<tr><th>${esc(label)}</th><td>${value(html)}</td></tr>`;
-  const editable = (label: string, group: string, html: string, editor: string, filled = true) => `<tr><th>${esc(label)}</th><td>
+  const editable = (label: string, group: string, html: string, editor: string, filled = true) => `<tr${
+    requiredGroups.has(group) && !filled ? ' class="row-required"' : ""
+  }><th>${esc(label)}</th><td>
       <input type="checkbox" id="edit-${order.id}-${group}" class="row-edit-toggle">
       <div class="field-view">
         <div class="field-value">${requiredValue(group, filled, html)}</div>
@@ -545,7 +574,7 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
   return `<table class="table detail-table"><tbody>
       ${plain("Order", esc(order.number))}
       ${plain("Quote record", order.lead_id ? `<a href="/admin#quote-${order.lead_id}">#${order.lead_id}</a>` : "")}
-      ${plain("Status", statusBadge(order.status, true))}
+      ${plain("Status", orderStatusBadge(order, true))}
       ${plain("Created", whenHtml(order.created_at))}
       ${plain("Last updated", whenHtml(order.updated_at))}
       ${editable(
@@ -554,7 +583,7 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
     `${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_email)} · ${esc(order.customer_phone)}</span>`,
     `<div class="edit-stack">${text("customer_name", "Name", order.customer_name, " required")}${text("customer_email", "Email", order.customer_email, ' type="email" required')}${text("customer_phone", "Phone", order.customer_phone, " required")}</div>`,
   )}
-      ${editable(
+      ${hideVehicleRows ? "" : editable(
     "Vehicle",
     "vehicle",
     `${esc(vehicle)}<br><span class="muted small">${esc(order.transport_type)} trailer · ${conditionTag(order.condition)}</span>`,
@@ -566,7 +595,7 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
           </div>
         </div>`,
   )}
-      ${editable("VIN", "vin", esc(order.vin ?? ""), text("vin", "VIN", order.vin, ' maxlength="17"'))}
+      ${hideVehicleRows ? "" : editable("VIN", "vin", esc(order.vin ?? ""), text("vin", "VIN", order.vin, ' maxlength="17"'))}
       ${editable(
     "Pickup address",
     "origin_address",
@@ -578,6 +607,7 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
     "origin_contact",
     `${esc(order.origin_contact ?? "")}<br><span class="muted small">${esc(order.origin_phone ?? "")}</span>`,
     `<div class="edit-grid">${text("origin_contact", "Contact name", order.origin_contact)}${text("origin_phone", "Phone", order.origin_phone)}</div>`,
+    Boolean(order.origin_contact),
   )}
       ${editable(
     "Delivery address",
@@ -590,6 +620,7 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
     "dest_contact",
     `${esc(order.dest_contact ?? "")}<br><span class="muted small">${esc(order.dest_phone ?? "")}</span>`,
     `<div class="edit-grid">${text("dest_contact", "Contact name", order.dest_contact)}${text("dest_phone", "Phone", order.dest_phone)}</div>`,
+    Boolean(order.dest_contact),
   )}
       ${editable("Pick up ETA", "pickup_eta", dueSpan(order.pickup_eta, order.pickup_eta ? whenHtml(order.pickup_eta) : ""), dateTime("pickup_eta", "Date & time", order.pickup_eta), Boolean(order.pickup_eta))}
       ${editable("Picked up at", "picked_up_at", order.picked_up_at ? whenHtml(order.picked_up_at) : "", dateTime("picked_up_at", "Date & time", order.picked_up_at), Boolean(order.picked_up_at))}
@@ -611,11 +642,22 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
         `<input type="date" name="ready_date" value="${esc(order.ready_date ?? "")}">`,
       )}
       ${editable("Distance", "distance_miles", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "", `<input type="number" min="0" name="distance_miles" value="${order.distance_miles ?? ""}" placeholder="Miles">`)}
-      ${editable("Price", "price", priceMark(`<strong>${money(order.price)}</strong>`), `<input type="number" min="0" name="price" value="${order.price}" placeholder="USD">`)}
+      ${editable(
+        "Price",
+        "price",
+        priceMark(
+          `Now: <strong>${money(order.price)}</strong>${
+            order.original_price !== null && order.original_price > order.price
+              ? ` <span class="due-red">=&gt; Discounted ${money(order.original_price - order.price)}</span>`
+              : ""
+          }`,
+        ),
+        `<input type="number" min="0" name="price" value="${order.price}" placeholder="USD">`,
+      )}
       ${editable("Final quote", "final_quote", priceMark(order.final_quote !== null ? `<strong>${money(order.final_quote)}</strong>` : ""), `<input type="number" min="0" step="1" name="final_quote" value="${order.final_quote ?? ""}" placeholder="Same as quote">`, order.final_quote !== null)}
       ${editable("Broker fee", "broker_fee", priceMark(order.broker_fee !== null ? money(order.broker_fee) : ""), `<input type="number" min="0" step="1" name="broker_fee" value="${order.broker_fee ?? ""}" placeholder="0">`, order.broker_fee !== null)}
       ${editable("Carrier fee", "carrier_fee", priceMark(order.carrier_fee !== null ? money(order.carrier_fee) : ""), `<input type="number" min="0" step="1" name="carrier_fee" value="${order.carrier_fee ?? ""}" placeholder="0">`, order.carrier_fee !== null)}
-      ${plain("Total price", priceMark(order.broker_fee !== null || order.carrier_fee !== null ? `<strong>${money((order.broker_fee ?? 0) + (order.carrier_fee ?? 0))}</strong>` : ""))}
+      ${plain("Total price", priceMark(order.broker_fee !== null || order.carrier_fee !== null ? `<strong>${money((order.broker_fee ?? 0) + (order.carrier_fee ?? 0))}</strong><br><span class="muted small">broker + carrier</span>` : `<span class="muted small">set the broker and carrier fees</span>`))}
       ${editable("Paid amount", "paid_amount", order.paid_amount !== null ? `<strong>${money(order.paid_amount)}</strong>` : "", `<input type="number" min="0" name="paid_amount" value="${order.paid_amount ?? ""}" placeholder="0">`)}
       ${editable(
     "Carrier",
@@ -626,15 +668,70 @@ function orderFieldsTable(order: OrderRow, anchor: string): string {
           <div class="edit-grid">${text("carrier_company_phone", "Company phone", order.carrier_company_phone)}${text("carrier_email", "Company email", order.carrier_email, ' type="email"')}</div>
           <div class="edit-grid">${text("driver_name", "Driver name", order.driver_name)}${text("carrier_phone", "Driver phone", order.carrier_phone)}</div>
         </div>`,
+    carrierComplete(order),
   )}
       ${editable("Customer notes", "notes", esc(order.notes ?? ""), `<textarea name="notes" rows="3">${esc(order.notes ?? "")}</textarea>`)}
   </tbody></table>`;
 }
 
+/** Fields the current step needs before it can advance, with their labels. */
+const REQUIRED_FIELDS: Record<string, [string, string][]> = {
+  quoted: [["final_quote", "Final quote"]],
+  confirmed: [
+    ["pickup_eta", "Pickup ETA"],
+    ["delivery_eta", "Delivery ETA"],
+    ["final_quote", "Final quote"],
+    ["broker_fee", "Broker fee"],
+    ["carrier_fee", "Carrier fee"],
+    ["origin_contact", "Pickup contact"],
+    ["dest_contact", "Delivery contact"],
+  ],
+  assigned: [
+    ["origin_contact", "Pickup contact"],
+    ["dest_contact", "Delivery contact"],
+    ["carrier_name", "Carrier company"],
+    ["carrier_mc", "MC number"],
+    ["carrier_company_phone", "Carrier phone"],
+    ["carrier_email", "Carrier email"],
+    ["driver_name", "Driver name"],
+    ["carrier_phone", "Driver phone"],
+  ],
+  picked_up: [
+    ["picked_up_at", "Picked up at"],
+    ["delivery_eta", "Delivery ETA"],
+  ],
+  delivered: [["delivered_at", "Delivered at"]],
+};
+
+const isBlank = (value: unknown) => value === null || value === undefined || value === "";
+
+/** Every carrier field counts: a carrier without MC or a driver is not assigned. */
+function carrierComplete(order: OrderRow): boolean {
+  return [
+    order.carrier_name,
+    order.carrier_mc,
+    order.carrier_company_phone,
+    order.carrier_email,
+    order.driver_name,
+    order.carrier_phone,
+  ].every((value) => !isBlank(value));
+}
+
+/** Labels of the required fields still empty at this step. */
+function missingRequired(order: OrderRow): string[] {
+  return (REQUIRED_FIELDS[order.status] ?? [])
+    .filter(([column]) => isBlank((order as unknown as Record<string, unknown>)[column]))
+    .map(([, label]) => label);
+}
+
 function nextStatusButton(order: OrderRow): string {
   const next = ORDER_STATUSES[ORDER_STATUSES.indexOf(order.status as OrderStatus) + 1];
   if (!next || next === "cancelled") return "";
-  return `<button class="btn btn-accent btn-block" type="submit" name="move_status" value="${next}">Save and move to ${esc(STATUS_LABELS[next])}</button>`;
+  const missing = missingRequired(order);
+  if (missing.length) {
+    return `<button class="btn btn-danger btn-block btn-tall" type="submit" name="move_status" value="${next}" data-blocked="1">Mandatory fields: ${esc(missing.join(", "))}</button>`;
+  }
+  return `<button class="btn btn-accent btn-block btn-tall" type="submit" name="move_status" value="${next}">Save and move to ${esc(STATUS_LABELS[next])}</button>`;
 }
 
 function historyRows(events: OrderEventRow[], limit?: number): string {
@@ -662,11 +759,29 @@ function paymentStateBadge(state: string, paidAmount: number | null): string {
   return '<span class="badge badge-unpaid">Not paid</span>';
 }
 
+/** Status badge, except on Payments where the payment state is what matters. */
+function orderStatusBadge(order: OrderRow, withEmoji = false): string {
+  return order.status === "paid"
+    ? paymentStateBadge(order.payment_state, order.paid_amount)
+    : statusBadge(order.status, withEmoji);
+}
+
+
+/** Total actually collected, once at least one invoice is paid. */
+function invoiceTotalLine(events: OrderEventRow[]): string {
+  const paid = events.filter((event) => event.kind === "invoice_client_paid" || event.kind === "invoice_carrier_paid");
+  if (!paid.length) return "";
+  const total = paid.reduce((sum, event) => sum + (event.amount ?? 0), 0);
+  const both = paid.length === 2;
+  return `<p class="invoice-total">${both ? "Collected in full" : "Collected so far"}: <strong>${money(total)}</strong></p>`;
+}
+
 /** Send button plus sent/paid state for one invoice kind. */
 function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" | "carrier"): string {
   const to = kind === "carrier" ? order.carrier_email : order.customer_email;
   const sent = events.some((event) => event.kind === `invoice_${kind}`);
-  const paid = events.some((event) => event.kind === `invoice_${kind}_paid`);
+  const paidEvent = events.find((event) => event.kind === `invoice_${kind}_paid`);
+  const paid = Boolean(paidEvent);
   const label = kind === "carrier" ? "Carrier invoice" : "Client invoice";
   const button = to
     ? `<button class="btn btn-accent btn-small" type="submit">Send to ${kind}</button>`
@@ -675,14 +790,19 @@ function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" 
     kind === "client"
       ? (order.client_invoice_amount ?? order.final_quote ?? order.price)
       : (order.carrier_invoice_amount ?? order.carrier_fee ?? 0);
+  const savedMethod = (kind === "client" ? order.client_invoice_method : order.carrier_invoice_method) ?? order.payment_method ?? "";
   return `<div class="invoice-card">
       <form method="post" action="/admin/orders/${order.id}/invoice/${kind}/send" class="invoice-action" data-kind="${kind}" data-to="${esc(to ?? "")}">
         <div class="invoice-action-head">
           <strong>${label}</strong>
-          ${paid ? '<span class="badge badge-paid">Paid</span>' : sent ? '<span class="badge badge-sent">Sent</span>' : '<span class="badge badge-unpaid">Not sent</span>'}
+          ${paid ? `<span class="badge badge-paid">Paid ${money(paidEvent?.amount ?? amount ?? 0)}</span>` : sent ? '<span class="badge badge-sent">Sent</span>' : '<span class="badge badge-unpaid">Not sent</span>'}
         </div>
         <span class="muted small">${to ? esc(to) : "Add an email on this order first"}</span>
         <label class="field invoice-amount"><span>Amount (USD)</span><input name="amount" type="number" min="0" step="1" value="${amount ?? ""}" required></label>
+        <label class="field invoice-amount"><span>Payment method *</span><select name="method" required>
+          <option value="">Select method</option>
+          ${PAYMENT_METHODS.map((method) => `<option value="${method}"${savedMethod === method ? " selected" : ""}>${method}</option>`).join("")}
+        </select></label>
         ${button}
       </form>
       ${paid
@@ -712,7 +832,7 @@ function contractModal(order: OrderRow): string {
       </div>
       <a class="modal-close" href="#order-${order.id}" aria-label="Close">×</a>
     </div>
-    <iframe class="contract-frame" src="/admin/orders/${order.id}/contract" loading="lazy" title="Draft contract"></iframe>
+    <iframe class="contract-frame" data-src="/admin/orders/${order.id}/contract" loading="lazy" title="Draft contract"></iframe>
     <div class="modal-actions mt">
       <a class="btn btn-accent" href="/admin/orders/${order.id}/contract?download=1">Download Word (.docx)</a>
       <a class="btn btn-ghost" href="/admin/orders/${order.id}/contract?download=1&amp;format=html">Download HTML</a>
@@ -722,28 +842,143 @@ function contractModal(order: OrderRow): string {
 </div>`;
 }
 
-export function orderModal(
+/** Signed contracts: list everywhere, upload only while the order is in draft. */
+function signedContracts(order: OrderRow, contracts: OrderContractRow[]): string {
+  const rows = contracts
+    .map(
+      (contract) =>
+        `<li class="contract-row">
+      <span class="contract-name">${esc(contract.filename)}</span>
+      <span class="muted small">${contract.size ? `${Math.round(contract.size / 1024)} KB · ` : ""}${whenHtml(contract.created_at)}</span>
+      <a class="btn btn-ghost btn-small" href="/admin/order-contracts/${contract.id}" target="_blank" rel="noopener">Open</a>
+      <form method="post" action="/admin/orders/${order.id}/contracts/${contract.id}/delete" class="contract-delete">
+        <button class="unit-tool unit-tool-danger" type="submit" title="Delete ${esc(contract.filename)}" aria-label="Delete ${esc(contract.filename)}">×</button>
+      </form>
+    </li>`,
+    )
+    .join("");
+
+  const draft = order.status === "contract_draft";
+  let uploader = "";
+  if (draft) {
+    uploader =
+      contracts.length >= 3
+        ? `<p class="muted small">Three signed contracts uploaded — delete one to replace it.</p>`
+        : `<form class="contract-upload" method="post" action="/admin/orders/${order.id}/contracts" enctype="multipart/form-data">
+      <label class="contract-drop" data-contract-drop>
+        <input class="contract-input" type="file" name="contract" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" required>
+        <span class="contract-plus" aria-hidden="true">+</span>
+        <span class="contract-drop-text">Drop the signed contract here or click to choose</span>
+        <span class="contract-drop-sub">PDF, Word or a scan · up to 10 MB${contracts.length ? ` · ${contracts.length} of 3` : ""}</span>
+      </label>
+      <button class="btn btn-accent btn-small" type="submit">Upload Signed Contract</button>
+    </form>`;
+  }
+
+  if (!contracts.length && !draft) return "";
+
+  return `<div class="contract-box">
+    ${contracts.length ? `<ul class="contract-list">${rows}</ul>` : ""}
+    ${uploader}
+  </div>`;
+}
+
+/** One editable card per vehicle: every field, plus edit/delete/add controls. */
+function unitBlocks(order: OrderRow, units: OrderUnitRow[], heading: "h2" | "h3"): string {
+  if (units.length < 1) return "";
+  const conditionSelect = (name: string, current: string | null) =>
+    `<select name="${name}">${[
+      ["running", "Run and drive"],
+      ["inoperable_steer_roll", "Inoperable (steer and roll)"],
+      ["inoperable_no_steer", "Inoperable (doesn't steer/roll/no keys)"],
+    ]
+      .map(([value, label]) => `<option value="${value}"${(current ?? "running") === value ? " selected" : ""}>${label}</option>`)
+      .join("")}</select>`;
+
+  const cards = units
+    .map((unit) => {
+      const id = `unit-edit-${order.id}-${unit.id}`;
+      const field = (label: string, value: string) => `<div><dt>${label}</dt><dd>${value || "—"}</dd></div>`;
+      return `<div class="unit-card">
+      <div class="unit-card-top">
+        <p class="unit-card-head">Vehicle ${unit.position}</p>
+        <div class="unit-card-tools">
+          <label class="unit-tool" for="${id}" title="Edit vehicle ${unit.position}" aria-label="Edit vehicle ${unit.position}">✎</label>
+          <form method="post" action="/admin/orders/${order.id}/units/${unit.id}/delete" class="unit-delete">
+            <button class="unit-tool unit-tool-danger" type="submit" title="Delete vehicle ${unit.position}" aria-label="Delete vehicle ${unit.position}">×</button>
+          </form>
+        </div>
+      </div>
+      <input type="checkbox" id="${id}" class="row-edit-toggle">
+      <dl class="unit-card-rows field-view">
+        ${field("Year", esc(unit.vehicle_year ?? ""))}
+        ${field("Make", esc(unit.vehicle_make ?? ""))}
+        ${field("Model", esc(unit.vehicle_model ?? ""))}
+        ${field("VIN", esc(unit.vin ?? ""))}
+        ${field("Condition", conditionTag(unit.condition ?? "running"))}
+        ${field("Price", unit.price !== null ? money(unit.price) : "")}
+      </dl>
+      <form class="field-editor" method="post" action="/admin/orders/${order.id}/units/${unit.id}">
+        <div class="edit-grid">
+          <label class="field"><span>Year</span><input name="vehicle_year" maxlength="4" value="${esc(unit.vehicle_year ?? "")}"></label>
+          <label class="field"><span>Make</span><input name="vehicle_make" value="${esc(unit.vehicle_make ?? "")}"></label>
+          <label class="field"><span>Model</span><input name="vehicle_model" value="${esc(unit.vehicle_model ?? "")}"></label>
+        </div>
+        <label class="field"><span>VIN</span><input name="vin" maxlength="17" value="${esc(unit.vin ?? "")}"></label>
+        <div class="edit-grid">
+          <label class="field"><span>Condition</span>${conditionSelect("condition", unit.condition)}</label>
+          <label class="field"><span>Price (USD)</span><input name="price" type="number" min="0" step="1" value="${unit.price ?? ""}" placeholder="Auto"></label>
+        </div>
+        <div class="field-editor-actions">
+          <label class="btn btn-ghost btn-small" for="${id}">Cancel</label>
+          <button class="btn btn-accent btn-small" type="submit">Save</button>
+        </div>
+      </form>
+    </div>`;
+    })
+    .join("");
+
+  const next = units.length + 1;
+  const addCard = `<div class="unit-card unit-card-add">
+      <p class="unit-card-head">Add vehicle</p>
+      <form method="post" action="/admin/orders/${order.id}/units/add">
+        <div class="edit-grid">
+          <label class="field"><span>Year</span><input name="vehicle_year" maxlength="4" placeholder="2021"></label>
+          <label class="field"><span>Make</span><input name="vehicle_make" placeholder="Honda"></label>
+          <label class="field"><span>Model</span><input name="vehicle_model" placeholder="Accord"></label>
+        </div>
+        <label class="field"><span>VIN</span><input name="vin" maxlength="17" placeholder="Optional"></label>
+        <label class="field"><span>Condition</span>${conditionSelect("condition", "running")}</label>
+        <button class="btn btn-accent btn-small" type="submit">Add vehicle ${next}</button>
+      </form>
+    </div>`;
+
+  return `<${heading} class="section-title mt">Vehicles (${units.length})</${heading}>
+  <div class="unit-cards">${cards}${units.length < 10 ? addCard : ""}</div>`;
+}
+
+/** The dialog body, loaded on demand so the list page stays small. */
+export function orderModalCard(
   order: OrderRow,
   photos: OrderPhotoRow[],
   events: OrderEventRow[] = [],
   error?: string,
   units: OrderUnitRow[] = [],
+  contracts: OrderContractRow[] = [],
 ): string {
   const anchor = `/admin/orders#order-${order.id}`;
 
-  return `<div class="modal" id="order-${order.id}">
-  <a class="modal-backdrop" href="#orders" aria-label="Close"></a>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="order-${order.id}-title">
+  return `<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="order-${order.id}-title" data-loaded="1">
     <div class="modal-head">
       <div>
         <p class="eyebrow">Order</p>
-        <h2 id="order-${order.id}-title">${esc(order.number)} ${statusBadge(order.status, true)}</h2>
+        <h2 id="order-${order.id}-title">${esc(order.number)} ${orderStatusBadge(order, true)}</h2>
         <p class="muted small">Booked ${whenHtml(order.created_at)} · updated ${whenHtml(order.updated_at)}</p>
       </div>
       <a class="modal-close" href="#orders" aria-label="Close">×</a>
     </div>
 
-    ${orderFieldsTable(order, anchor)}
+    ${orderFieldsTable(order, anchor, units.length > 0)}
 
     ${photos.length
       ? `<h3 class="section-title mt">Vehicle photos</h3>
@@ -760,9 +995,11 @@ export function orderModal(
       ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
       ${statusFields(order)}
       ${nextStatusButton(order)}
-      <div class="status-actions">${ORDER_STATUSES.map(
-        (value) => `<button class="chip chip-status-${value}${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`,
-      ).join("")}</div>
+      <div class="status-actions">${ORDER_STATUSES.map((value, index) => {
+        const chip = `<button class="chip chip-status-${value}${order.status === value ? " active" : ""}" type="submit" name="status" value="${value}">${esc(STATUS_LABELS[value])}</button>`;
+        // arrows show the pipeline; cancelled is a branch, not a step
+        return index === 0 || value === "cancelled" ? chip : `<span class="status-arrow" aria-hidden="true">→</span>${chip}`;
+      }).join("")}</div>
     </form>
 
     ${hasContract(order, events)
@@ -770,7 +1007,8 @@ export function orderModal(
     <div class="modal-actions">
       <a class="btn btn-accent" href="#contract-${order.id}">${order.status === "contract_draft" ? "View draft contract" : "View contract"}</a>
       <a class="btn btn-ghost" href="/admin/orders/${order.id}/contract?download=1">Download Word</a>
-    </div>`
+    </div>
+    ${signedContracts(order, contracts)}`
       : ""}
 
     ${order.status === "paid"
@@ -778,38 +1016,178 @@ export function orderModal(
     <div class="invoice-actions">
       ${invoiceAction(order, events, "client")}
       ${invoiceAction(order, events, "carrier")}
-    </div>`
+    </div>
+    ${invoiceTotalLine(events)}`
       : ""}
 
-    ${units.length > 1
-      ? `<h3 class="section-title mt">Vehicles</h3>
-    <table class="table"><thead><tr><th>#</th><th>Vehicle</th><th>Condition</th><th>Price</th></tr></thead><tbody>${units
-        .map(
-          (unit) =>
-            `<tr><td>${unit.position}</td><td>${esc([unit.vehicle_year, unit.vehicle_make, unit.vehicle_model].filter(Boolean).join(" ") || "—")}${unit.vin ? `<br><span class="muted small">${esc(unit.vin)}</span>` : ""}</td><td>${conditionTag(unit.condition ?? "running")}</td><td>${unit.price !== null ? money(unit.price) : "—"}</td></tr>`,
-        )
-        .join("")}</tbody></table>`
-      : ""}
+    ${unitBlocks(order, units, "h3")}
 
     <div class="modal-actions mt">
       <a class="btn btn-ghost" href="/admin/orders/${order.id}">Open full record</a>
       <a class="btn btn-ghost" href="/track/${esc(order.token)}">Customer view</a>
     </div>
 
-    ${events.length
-      ? `<h3 class="section-title mt">History</h3>
-    <table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${historyRows(events, 8)}</tbody></table>`
-      : ""}
-  </div>
+    ${events.length ? historySection(order) : ""}
+  </div>`;
+}
+
+/** Folded history: the table is fetched only when the plus is pressed. */
+export function historySection(order: OrderRow): string {
+  return `<h3 class="section-title mt">History</h3>
+    <button class="history-toggle" type="button" data-history-toggle="${order.id}" aria-expanded="false">
+      <span class="history-sign" aria-hidden="true">+</span>
+      <span class="history-label">Show history</span>
+    </button>
+    <div class="history-body" data-history-body="${order.id}" hidden></div>`;
+}
+
+/** The history table itself, served on demand. */
+export function historyTable(events: OrderEventRow[]): string {
+  return `<table class="table"><thead><tr><th>When</th><th>Event</th><th>Note</th><th>By</th></tr></thead><tbody>${historyRows(events)}</tbody></table>`;
+}
+
+/** Shell only: the card is fetched the first time the modal opens. */
+export function orderModal(order: OrderRow, error?: string): string {
+  const url = `/admin/orders/${order.id}/modal${error ? `?error=${encodeURIComponent(error)}` : ""}`;
+  return `<div class="modal" id="order-${order.id}" data-modal-url="${url}">
+  <a class="modal-backdrop" href="#orders" aria-label="Close"></a>
+  <div class="modal-card"><p class="muted">Loading order…</p></div>
 </div>`;
 }
 
-/** Save a single field without reloading: refresh only that order's modal in place. */
+/** Loads the order card on demand and refreshes it in place after edits. */
 function fieldSaveAsync(): string {
   return `<script>
 (function () {
   var section = document.getElementById("orders");
   if (!section || !window.fetch || !window.DOMParser) return;
+
+  function refresh(modal) {
+    var url = modal.getAttribute("data-modal-url");
+    if (!url) return Promise.resolve();
+    return fetch(url, { credentials: "same-origin" })
+      .then(function (response) { return response.text(); })
+      .then(function (html) {
+        var holder = document.createElement("div");
+        holder.innerHTML = html.trim();
+        var fresh = holder.firstElementChild;
+        var current = modal.querySelector(".modal-card");
+        if (fresh && current) current.outerHTML = fresh.outerHTML;
+        initHistory(modal);
+      });
+  }
+
+  function ensureLoaded(modal) {
+    if (!modal || modal.getAttribute("data-loaded") === "1") return;
+    var card = modal.querySelector(".modal-card");
+    if (card && card.getAttribute("data-loaded") === "1") return;
+    refresh(modal);
+  }
+
+  function syncOpen() {
+    var target = document.querySelector(".modal:target");
+    if (target) { ensureLoaded(target); initHistory(target); return; }
+    // :target can lag behind the hash on first paint, so resolve it by id as well.
+    var id = (location.hash || "").slice(1);
+    if (!id) return;
+    var byId = document.getElementById(id);
+    if (byId && byId.classList.contains("modal")) ensureLoaded(byId);
+  }
+
+  function initHistory(modal) {
+    var toggle = modal.querySelector("[data-history-toggle]");
+    var body = modal.querySelector("[data-history-body]");
+    if (!toggle || !body || toggle.getAttribute("data-bound") === "1") return;
+    toggle.setAttribute("data-bound", "1");
+    toggle.addEventListener("click", function () {
+      var id = toggle.getAttribute("data-history-toggle");
+      var open = body.hidden === false;
+      if (open) {
+        body.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.querySelector(".history-sign").textContent = "+";
+        toggle.querySelector(".history-label").textContent = "Show history";
+        return;
+      }
+      body.hidden = false;
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.querySelector(".history-sign").textContent = "−";
+      toggle.querySelector(".history-label").textContent = "Hide history";
+      if (body.getAttribute("data-loaded") === "1") return;
+      body.innerHTML = '<p class="muted small">Loading history…</p>';
+      fetch("/admin/orders/" + id + "/history", { credentials: "same-origin" })
+        .then(function (response) { return response.text(); })
+        .then(function (html) {
+          body.innerHTML = html;
+          body.setAttribute("data-loaded", "1");
+        })
+        .catch(function () { body.innerHTML = '<p class="form-error">Could not load the history.</p>'; });
+    });
+  }
+
+  window.addEventListener("hashchange", syncOpen);
+  if (document.readyState !== "loading") syncOpen();
+  else document.addEventListener("DOMContentLoaded", syncOpen);
+  window.__refreshOrderModal = refresh;
+  // Contract upload: drag a file onto the drop zone, or pick one.
+  function contractDrop(node) {
+    return node && node.closest ? node.closest("[data-contract-drop]") : null;
+  }
+
+  document.addEventListener("dragover", function (event) {
+    var drop = contractDrop(event.target);
+    if (!drop) return;
+    event.preventDefault();
+    drop.classList.add("is-dragging");
+  });
+
+  document.addEventListener("dragleave", function (event) {
+    var drop = contractDrop(event.target);
+    if (drop) drop.classList.remove("is-dragging");
+  });
+
+  document.addEventListener("drop", function (event) {
+    var drop = contractDrop(event.target);
+    if (!drop) return;
+    event.preventDefault();
+    drop.classList.remove("is-dragging");
+    var input = drop.querySelector('input[type="file"]');
+    var files = event.dataTransfer && event.dataTransfer.files;
+    if (!input || !files || !files.length) return;
+    var transfer = new DataTransfer();
+    transfer.items.add(files[0]);
+    input.files = transfer.files;
+    var label = drop.querySelector(".contract-drop-text");
+    if (label) label.textContent = files[0].name;
+  });
+
+  document.addEventListener("change", function (event) {
+    var drop = contractDrop(event.target);
+    if (!drop) return;
+    var input = drop.querySelector('input[type="file"]');
+    var label = drop.querySelector(".contract-drop-text");
+    if (input && label && input.files && input.files.length) label.textContent = input.files[0].name;
+  });
+
+  section.addEventListener("click", function (event) {
+    var button = event.target.closest ? event.target.closest("button[data-blocked]") : null;
+    if (!button) return;
+    event.preventDefault();
+    var modal = button.closest(".modal");
+    if (!modal) return;
+    var rows = modal.querySelectorAll("tr.row-required");
+    if (!rows.length) return;
+    Array.prototype.forEach.call(rows, function (row) {
+      row.classList.remove("is-shaking");
+      void row.offsetWidth;
+      row.classList.add("is-shaking");
+    });
+    rows[0].scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(function () {
+      Array.prototype.forEach.call(rows, function (row) { row.classList.remove("is-shaking"); });
+    }, 1000);
+  });
+
   section.addEventListener("submit", function (event) {
     var form = event.target;
     if (!form || !form.classList || !form.classList.contains("field-editor")) return;
@@ -824,11 +1202,19 @@ function fieldSaveAsync(): string {
     })
       .then(function (response) { return response.text(); })
       .then(function (html) {
-        // The server answers with just this order's modal; swap it inside the same element
+        // The server answers with just this order's card; swap it inside the same element
         // so the URL hash still targets it.
-        var fresh = new DOMParser().parseFromString(html, "text/html").getElementById(modal.id);
-        if (!fresh) { form.submit(); return; }
-        modal.innerHTML = fresh.innerHTML;
+        var holder = document.createElement("div");
+        holder.innerHTML = html.trim();
+        var fresh = holder.firstElementChild;
+        var current = modal.querySelector(".modal-card");
+        // Only a real card may replace the card; a redirect would parse into junk (a <meta>).
+        if (!fresh || !fresh.classList || !fresh.classList.contains("modal-card") || !current) {
+          refresh(modal).catch(function () { form.submit(); });
+          return;
+        }
+        current.outerHTML = fresh.outerHTML;
+        initHistory(modal);
       })
       .catch(function () { form.submit(); });
   });
@@ -836,18 +1222,19 @@ function fieldSaveAsync(): string {
 </script>`;
 }
 
-/** Confirm recipient and amount before an invoice goes out. */
+/** Confirmation dialog for both sending an invoice and marking one paid. */
 function invoiceConfirmUi(): string {
   return `
 <div class="confirm-backdrop" id="invoiceConfirm" hidden>
   <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="invoiceConfirmTitle">
     <h3 id="invoiceConfirmTitle">Send invoice?</h3>
+    <p class="muted" id="invoiceConfirmText"></p>
     <dl class="confirm-rows">
-      <div><dt>To</dt><dd id="invoiceConfirmTo"></dd></div>
-      <div><dt>Amount</dt><dd id="invoiceConfirmAmount"></dd></div>
+      <div><dt id="invoiceConfirmLabelOne">To</dt><dd id="invoiceConfirmValueOne"></dd></div>
+      <div><dt id="invoiceConfirmLabelTwo">Amount</dt><dd id="invoiceConfirmValueTwo"></dd></div>
     </dl>
     <div class="confirm-actions">
-      <button type="button" class="btn btn-ghost" id="invoiceConfirmEdit">Edit</button>
+      <button type="button" class="btn btn-ghost" id="invoiceConfirmEdit">Cancel</button>
       <button type="button" class="btn btn-accent" id="invoiceConfirmYes">Yes, send</button>
     </div>
   </div>
@@ -856,19 +1243,28 @@ function invoiceConfirmUi(): string {
 <script>
 (function () {
   var box = document.getElementById("invoiceConfirm");
-  var toEl = document.getElementById("invoiceConfirmTo");
-  var amountEl = document.getElementById("invoiceConfirmAmount");
   var titleEl = document.getElementById("invoiceConfirmTitle");
+  var textEl = document.getElementById("invoiceConfirmText");
+  var labelOne = document.getElementById("invoiceConfirmLabelOne");
+  var labelTwo = document.getElementById("invoiceConfirmLabelTwo");
+  var valueOne = document.getElementById("invoiceConfirmValueOne");
+  var valueTwo = document.getElementById("invoiceConfirmValueTwo");
   var yes = document.getElementById("invoiceConfirmYes");
-  var edit = document.getElementById("invoiceConfirmEdit");
-  if (!box || !yes || !edit) return;
+  var cancel = document.getElementById("invoiceConfirmEdit");
+  if (!box || !yes || !cancel) return;
   var pending = null;
+  var busyLabel = "Working…";
 
   function close() {
     box.hidden = true;
     pending = null;
     yes.disabled = false;
-    yes.textContent = "Yes, send";
+    yes.textContent = "Yes";
+  }
+
+  function open() {
+    box.hidden = false;
+    yes.focus();
   }
 
   document.addEventListener("click", function (event) {
@@ -882,15 +1278,81 @@ function invoiceConfirmUi(): string {
       amount.reportValidity();
       return;
     }
+    var method = form.querySelector('select[name="method"]');
+    if (method && !method.value) {
+      method.reportValidity();
+      method.focus();
+      return;
+    }
     pending = form;
-    titleEl.textContent = (form.getAttribute("data-kind") === "carrier" ? "Send carrier invoice?" : "Send client invoice?");
-    toEl.textContent = form.getAttribute("data-to") || "—";
-    amountEl.textContent = "$" + Number(amount.value).toLocaleString();
-    box.hidden = false;
-    yes.focus();
+    busyLabel = "Sending…";
+    titleEl.textContent = form.getAttribute("data-kind") === "carrier" ? "Send carrier invoice?" : "Send client invoice?";
+    textEl.textContent = "The invoice goes out by email right away.";
+    labelOne.textContent = "To";
+    labelTwo.textContent = "Amount";
+    valueOne.textContent = form.getAttribute("data-to") || "—";
+    valueTwo.textContent = "$" + Number(amount.value).toLocaleString() + (method && method.value ? " · " + method.value : "");
+    yes.textContent = "Yes, send";
+    open();
   });
 
-  edit.addEventListener("click", close);
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!form || !form.classList) return;
+
+    if (form.classList.contains("contract-delete")) {
+      event.preventDefault();
+      var card = form.closest(".contract-row");
+      var name = card ? (card.querySelector(".contract-name") || {}).textContent : "";
+      pending = form;
+      busyLabel = "Deleting…";
+      titleEl.textContent = "Delete this signed contract?";
+      textEl.textContent = "The file is removed from the order for good.";
+      labelOne.textContent = "File";
+      labelTwo.textContent = "Order";
+      valueOne.textContent = name || "—";
+      valueTwo.textContent = (form.closest(".modal") ? form.closest(".modal").querySelector("h2") : {}).textContent || "—";
+      yes.textContent = "Yes, delete";
+      open();
+      return;
+    }
+
+    if (form.classList.contains("unit-delete")) {
+      event.preventDefault();
+      var card = form.closest(".unit-card");
+      var label = card ? (card.querySelector(".unit-card-head") || {}).textContent : "";
+      var head = form.closest(".modal") ? form.closest(".modal").querySelector("h2") : null;
+      pending = form;
+      busyLabel = "Deleting…";
+      titleEl.textContent = "Delete this vehicle?";
+      textEl.textContent = "The vehicle is removed from the order and the price is recalculated.";
+      labelOne.textContent = "Order";
+      labelTwo.textContent = "Vehicle";
+      valueOne.textContent = head ? head.textContent.trim().split(" ")[0] : "—";
+      valueTwo.textContent = label || "Vehicle";
+      yes.textContent = "Yes, delete";
+      open();
+      return;
+    }
+
+    if (!form.classList.contains("invoice-paid")) return;
+    event.preventDefault();
+    var modal = form.closest(".modal");
+    var heading = modal ? modal.querySelector("h2") : null;
+    var kind = (form.getAttribute("action") || "").indexOf("/carrier/") > -1 ? "carrier" : "client";
+    pending = form;
+    busyLabel = "Saving…";
+    titleEl.textContent = "Mark " + kind + " invoice paid?";
+    textEl.textContent = "This records the payment on the order. It cannot be undone from here.";
+    labelOne.textContent = "Order";
+    labelTwo.textContent = "Invoice";
+    valueOne.textContent = heading ? heading.textContent.trim().split(" ")[0] : "—";
+    valueTwo.textContent = kind === "carrier" ? "Carrier invoice" : "Client invoice";
+    yes.textContent = "Yes, mark paid";
+    open();
+  });
+
+  cancel.addEventListener("click", close);
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Escape" || box.hidden) return;
     event.preventDefault();
@@ -902,15 +1364,13 @@ function invoiceConfirmUi(): string {
     var form = pending;
     var modal = form.closest(".modal");
     yes.disabled = true;
-    yes.textContent = "Sending…";
+    yes.textContent = busyLabel;
     fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin" })
       .then(function (response) { return response.text(); })
-      .then(function (html) {
+      .then(function () {
         close();
-        if (!modal) { window.location.reload(); return; }
-        var fresh = new DOMParser().parseFromString(html, "text/html").getElementById(modal.id);
-        if (fresh) modal.innerHTML = fresh.innerHTML;
-        else window.location.reload();
+        if (!modal || !window.__refreshOrderModal) { window.location.reload(); return; }
+        window.__refreshOrderModal(modal).catch(function () { window.location.reload(); });
       })
       .catch(function () {
         close();
@@ -921,21 +1381,34 @@ function invoiceConfirmUi(): string {
 </script>`;
 }
 
-/** Reload the contract iframe each time it opens, so edits made in the order show up. */
+/** Load the contract iframe only when its modal opens, and reload it each time. */
 function contractFrameRefresh(): string {
   return `<script>
 (function () {
-  document.addEventListener("click", function (event) {
-    var link = event.target.closest ? event.target.closest('a[href^="#contract-"]') : null;
-    if (!link) return;
-    var modal = document.getElementById((link.getAttribute("href") || "").slice(1));
+  function load(modal) {
     if (!modal) return;
     var frame = modal.querySelector("iframe");
     if (!frame) return;
     var base = (frame.getAttribute("data-src") || frame.getAttribute("src") || "").split("?")[0];
+    if (!base) return;
     frame.setAttribute("data-src", base);
     frame.setAttribute("src", base + "?t=" + Date.now());
+  }
+
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest ? event.target.closest('a[href^="#contract-"]') : null;
+    if (!link) return;
+    load(document.getElementById((link.getAttribute("href") || "").slice(1)));
   });
+
+  function fromHash() {
+    var id = (location.hash || "").slice(1);
+    if (!id || id.indexOf("contract-") !== 0) return;
+    load(document.getElementById(id));
+  }
+  window.addEventListener("hashchange", fromHash);
+  if (document.readyState !== "loading") fromHash();
+  else document.addEventListener("DOMContentLoaded", fromHash);
 })();
 </script>`;
 }
@@ -1067,7 +1540,9 @@ export function adminOrdersPage(
   counts: Record<string, number> = {},
   errorOrder: number | null = null,
   error?: string,
-  unitsByOrder: Map<number, OrderUnitRow[]> = new Map(),
+  query = "",
+  show = 50,
+  hasMore = false,
 ): string {
   const photosByOrder = new Map<number, OrderPhotoRow[]>();
   for (const photo of photos) {
@@ -1088,6 +1563,7 @@ export function adminOrdersPage(
     const arrow = active ? (dir === "asc" ? " ▲" : " ▼") : "";
     const params = new URLSearchParams();
     if (status !== "all") params.set("status", status);
+    if (query) params.set("q", query);
     params.set("sort", key);
     params.set("dir", nextDir);
     return `<a class="sort-link${active ? " active" : ""}" href="/admin/orders?${params.toString()}">${esc(label)}${arrow}</a>`;
@@ -1095,16 +1571,43 @@ export function adminOrdersPage(
   const filterHref = (value: string) => {
     const params = new URLSearchParams();
     if (value !== "all") params.set("status", value);
+    if (query) params.set("q", query);
     if (sort !== "created") params.set("sort", sort);
     if (dir !== "desc") params.set("dir", dir);
-    const query = params.toString();
-    return `/admin/orders${query ? `?${query}` : ""}`;
+    const qs = params.toString();
+    return `/admin/orders${qs ? `?${qs}` : ""}`;
+  };
+
+  const total = status === "all" ? Object.values(counts).reduce((sum, n) => sum + n, 0) : (counts[status] ?? 0);
+
+  const moreHref = () => {
+    const params = new URLSearchParams();
+    if (status !== "all") params.set("status", status);
+    if (query) params.set("q", query);
+    if (sort !== "created") params.set("sort", sort);
+    if (dir !== "desc") params.set("dir", dir);
+    params.set("show", String(show + 50));
+    return `/admin/orders?${params.toString()}`;
+  };
+
+  // Clear drops only the search term; the status tab and sort stay put.
+  const clearHref = () => {
+    const params = new URLSearchParams();
+    if (status !== "all") params.set("status", status);
+    if (sort !== "created") params.set("sort", sort);
+    if (dir !== "desc") params.set("dir", dir);
+    const qs = params.toString();
+    return `/admin/orders${qs ? `?${qs}` : ""}`;
   };
 
   const invoiceCell = (order: OrderRow, kind: "client" | "carrier") => {
     if (order.status !== "paid") return '<span class="muted small">—</span>';
     const events = eventsByOrder.get(order.id) ?? [];
-    if (events.some((event) => event.kind === `invoice_${kind}_paid`)) return '<span class="badge badge-paid">Paid</span>';
+    const paidEvent = events.find((event) => event.kind === `invoice_${kind}_paid`);
+    if (paidEvent) {
+      const amount = paidEvent.amount ?? (kind === "carrier" ? order.carrier_invoice_amount : order.client_invoice_amount);
+      return `<span class="badge badge-paid">Paid${amount ? ` ${money(amount)}` : ""}</span>`;
+    }
     if (events.some((event) => event.kind === `invoice_${kind}`)) return '<span class="badge badge-sent">Sent</span>';
     return '<span class="badge badge-unpaid">Not sent</span>';
   };
@@ -1114,14 +1617,12 @@ export function adminOrdersPage(
       (order) => `<tr${order.status !== "paid" && isDeliveryDue(order.delivery_eta) ? ' class="row-due"' : ""}>
       <td><a class="row-link" href="#order-${order.id}">${esc(order.number)}</a></td>
       <td>${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_phone)}</span></td>
-      <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}</span></td>
-      <td>${order.distance_miles ? `${order.distance_miles.toLocaleString()} mi` : "—"}</td>
+      <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} mi` : ""}</span></td>
       <td>${money(order.price)}</td>
-      <td>${order.status === "paid" ? paymentStateBadge(order.payment_state, order.paid_amount) : statusBadge(order.status, true)}</td>
-      <td class="muted small">${order.delivery_eta ? dueSpan(order.delivery_eta, whenHtml(order.delivery_eta)) : "—"}</td>
-      <td>${invoiceCell(order, "client")}</td>
-      <td>${invoiceCell(order, "carrier")}</td>
-      <td class="muted small">${whenHtml(order.created_at)}</td>
+      <td>${orderStatusBadge(order, true)}</td>
+      <td class="muted small">${order.delivery_eta ? dueSpan(order.delivery_eta, shortWhenHtml(order.delivery_eta)) : "—"}</td>
+      <td><div class="invoice-pair"><span class="invoice-pair-label">Client</span>${invoiceCell(order, "client")}<span class="invoice-pair-label">Carrier</span>${invoiceCell(order, "carrier")}</div></td>
+      <td class="muted small">${shortWhenHtml(order.created_at)}</td>
     </tr>`,
     )
     .join("");
@@ -1138,6 +1639,14 @@ export function adminOrdersPage(
       <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a><a href="/admin/staff">Performance</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
     </nav>
   </div>
+  <form class="orders-search" method="get" action="/admin/orders" role="search">
+    ${status !== "all" ? `<input type="hidden" name="status" value="${esc(status)}">` : ""}
+    ${sort !== "created" ? `<input type="hidden" name="sort" value="${esc(sort)}">` : ""}
+    ${dir !== "desc" ? `<input type="hidden" name="dir" value="${esc(dir)}">` : ""}
+    <input class="orders-search-input" type="search" name="q" value="${esc(query)}" placeholder="Search order, customer, phone, ZIP, VIN, carrier…" aria-label="Search orders">
+    <button class="btn btn-accent btn-small" type="submit">Search</button>
+    ${query ? `<a class="btn btn-ghost btn-small" href="${clearHref()}">Clear</a>` : ""}
+  </form>
   <div class="filter-row filter-row-orders">
     <a href="${filterHref("all")}" class="chip chip-status-all${status === "all" ? " active" : ""}">
       <span>All</span><span class="chip-count">${Object.values(counts).reduce((sum, n) => sum + n, 0)}</span>
@@ -1153,17 +1662,19 @@ export function adminOrdersPage(
         : `<div class="table-scroll"><table class="table rows-clickable"><thead><tr>
       <th>${sortLink("order", "Order")}</th>
       <th>${sortLink("customer", "Customer")}</th>
-      <th>${sortLink("route", "Route")}</th>
-      <th>${sortLink("distance", "Distance")}</th>
+      <th>${sortLink("route", "Route")}<span class="th-sub">${sortLink("distance", "Distance")}</span></th>
       <th>${sortLink("price", "Price")}</th>
       <th>${sortLink("status", "Status")}</th>
-      <th>Delivery ETA</th>
-      <th>Client invoice</th>
-      <th>Carrier invoice</th>
+      <th>${sortLink("delivery_eta", "Delivery ETA")}</th>
+      <th>${sortLink("client_invoice", "Client")} <span class="th-sep">/</span> ${sortLink("carrier_invoice", "Carrier")}</th>
       <th>${sortLink("created", "Created")}</th>
-    </tr></thead><tbody>${rows}</tbody></table></div>`
+    </tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="list-more">
+      <p class="muted small">Showing ${orders.length}${hasMore ? ` of ${total} matching` : ""}</p>
+      ${hasMore ? `<a class="btn btn-ghost btn-block" href="${moreHref()}">Load ${Math.min(50, Math.max(total - orders.length, 0)) || 50} more</a>` : ""}
+    </div>`
       }
-  ${orders.map((order) => orderModal(order, photosByOrder.get(order.id) ?? [], eventsByOrder.get(order.id) ?? [], errorOrder === null || errorOrder === order.id ? error : undefined, unitsByOrder.get(order.id) ?? [])).join("")}
+  ${orders.map((order) => orderModal(order, errorOrder === null || errorOrder === order.id ? error : undefined)).join("")}
   ${orders.filter((order) => hasContract(order, eventsByOrder.get(order.id) ?? [])).map(contractModal).join("")}
   ${statusConfirmUi()}
   ${invoiceConfirmUi()}
@@ -1209,7 +1720,7 @@ export function adminOrderPage(
   <div class="admin-head">
     <div>
       <p class="eyebrow"><a href="/admin/orders">← All orders</a></p>
-      <h1 class="page-title">${esc(order.number)} ${statusBadge(order.status)}</h1>
+      <h1 class="page-title">${esc(order.number)} ${orderStatusBadge(order)}</h1>
       <p class="muted small">Booked ${whenHtml(order.created_at)} · updated ${whenHtml(order.updated_at)}</p>
     </div>
     <div class="admin-user"><a class="btn btn-ghost" href="/track/${esc(order.token)}">Customer view</a></div>
@@ -1229,17 +1740,9 @@ export function adminOrderPage(
       : ""}
 
   <h2 class="section-title mt">Full record</h2>
-  ${orderFieldsTable(order, `/admin/orders/${order.id}`)}
+  ${orderFieldsTable(order, `/admin/orders/${order.id}`, units.length > 0)}
 
-  ${units.length > 1
-      ? `<h2 class="section-title mt">Vehicles</h2>
-  <table class="table"><thead><tr><th>#</th><th>Vehicle</th><th>Condition</th><th>Price</th></tr></thead><tbody>${units
-      .map(
-        (unit) =>
-          `<tr><td>${unit.position}</td><td>${esc([unit.vehicle_year, unit.vehicle_make, unit.vehicle_model].filter(Boolean).join(" ") || "—")}</td><td>${conditionTag(unit.condition ?? "running")}</td><td>${unit.price !== null ? money(unit.price) : "—"}</td></tr>`,
-      )
-      .join("")}</tbody></table>`
-      : ""}
+  ${unitBlocks(order, units, "h2")}
 
   ${photos.length
         ? `<h2 class="section-title mt">Vehicle photos</h2>

@@ -1,3 +1,4 @@
+import { adminInboxUi } from "./inbox.ts";
 import { LEAD_STATUSES, LEAD_STATUS_LABELS, type LeadStatus } from "./leads.ts";
 import { conditionLabel } from "./quote.ts";
 import { stateName } from "./states.ts";
@@ -9,10 +10,12 @@ export const site = {
   tagline: "A stronger bond for every shipment.",
   phone: "(858) 699-4828",
   email: "operations@bondautotransport.com",
-  address: "San Diego, CA 92122",
+  address: "8332 Regents Rd Unit 1B, San Diego, CA 92122",
   hours: "Seven days a week",
   mc: "MC #1647505",
   dot: "DOT #4250470",
+  /** Microsoft Clarity project id — paste it from Clarity → Settings → Setup. Empty disables tracking. */
+  clarityId: "zcghn2nuxn",
 };
 
 export function esc(value: unknown): string {
@@ -47,6 +50,16 @@ function formatDate(date: Date): string {
 
 /** UTC text wrapped in <time> so the browser can re-render it in the viewer's timezone. */
 export const whenHtml = (value: number) => `<time datetime="${new Date(value).toISOString()}">${when(value)}</time>`;
+
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Same, but with a three-letter month — used in the tight admin tables. */
+export const shortWhenHtml = (value: number) => {
+  const date = new Date(value);
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" });
+  const short = `${MONTHS_SHORT[date.getUTCMonth()] ?? ""}/${String(date.getUTCDate()).padStart(2, "0")}/${date.getUTCFullYear()}, ${time}`;
+  return `<time datetime="${date.toISOString()}" data-short>${short}</time>`;
+};
 
 export const when = (value: number) => {
   const date = new Date(value);
@@ -138,6 +151,7 @@ if (location.pathname.indexOf('/admin') !== 0) {
 </script>
 </head>
 <body>
+${options.admin ? adminInboxUi() : ""}
 <header class="site-header">
   <div class="wrap header-inner">
     <a class="brand" href="/"><img class="brand-logo" src="/logo.png" alt="" width="56" height="40">Bond <span>Auto Transport</span></a>
@@ -150,7 +164,7 @@ if (location.pathname.indexOf('/admin') !== 0) {
   </div>
 </header>
 <main>${options.body}</main>
-<footer class="site-footer">
+${options.admin ? "" : `<footer class="site-footer">
   <div class="wrap footer-grid">
     <div>
       <p class="footer-brand">Bond Auto Transport</p>
@@ -188,7 +202,7 @@ if (location.pathname.indexOf('/admin') !== 0) {
       <p class="muted small"><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></p>
     </div>`}
   </div>
-</footer>
+</footer>`}
 <script>
 (function () {
   var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -354,16 +368,18 @@ if (location.pathname.indexOf('/admin') !== 0) {
   function pad2(value) {
     return String(value).padStart(2, "0");
   }
-  function localText(date) {
+  var MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function localText(date, short) {
     var time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    return MONTHS_LONG[date.getMonth()] + "/" + pad2(date.getDate()) + "/" + date.getFullYear() + ", " + time;
+    var month = short ? MONTHS_SHORT[date.getMonth()] : MONTHS_LONG[date.getMonth()];
+    return month + "/" + pad2(date.getDate()) + "/" + date.getFullYear() + ", " + time;
   }
   function localMidnight(date) {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
   }
   Array.prototype.forEach.call(document.querySelectorAll("time[datetime]"), function (el) {
     var date = new Date(el.getAttribute("datetime"));
-    if (!isNaN(date.getTime())) el.textContent = localText(date);
+    if (!isNaN(date.getTime())) el.textContent = localText(date, el.hasAttribute("data-short"));
   });
   Array.prototype.forEach.call(document.querySelectorAll("[data-due]"), function (el) {
     var raw = el.getAttribute("data-due") || "";
@@ -487,8 +503,8 @@ if (location.pathname.indexOf('/admin') !== 0) {
         if (number) number.textContent = String(index + 2);
       });
       var total = list.querySelectorAll(".extra-vehicle").length + 1;
-      add.disabled = total >= MAX_VEHICLES;
-      if (limit) limit.hidden = total < MAX_VEHICLES;
+      add.setAttribute("aria-disabled", total >= MAX_VEHICLES ? "true" : "false");
+      if (limit && total < MAX_VEHICLES) limit.hidden = true;
     }
 
     form.addEventListener("click", function (event) {
@@ -499,7 +515,12 @@ if (location.pathname.indexOf('/admin') !== 0) {
     });
 
     add.addEventListener("click", function () {
-      if (list.querySelectorAll(".extra-vehicle").length + 1 >= MAX_VEHICLES) return;
+      if (list.querySelectorAll(".extra-vehicle").length + 1 >= MAX_VEHICLES) {
+        // at the cap: point the customer at dispatch instead of silently doing nothing
+        if (limit) limit.hidden = false;
+        return;
+      }
+      if (limit) limit.hidden = true;
       // the vehicle being edited must be finished before a new one is started
       var open = openSlots();
       var current = open[open.length - 1];
@@ -1248,6 +1269,73 @@ if (location.pathname.indexOf('/admin') !== 0) {
       return null;
     }
 
+    function invalidFields(index) {
+      return fields(index).filter(function (field) {
+        return !field.checkValidity();
+      });
+    }
+
+    /** "ZIP" is ambiguous when a step has several sections, so prefix it. */
+    function sectionOf(field, step) {
+      var sections = step.querySelectorAll(".form-section");
+      if (sections.length < 2) return "";
+      var name = "";
+      Array.prototype.forEach.call(sections, function (heading) {
+        if (heading.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING) {
+          name = heading.textContent.trim();
+        }
+      });
+      return name;
+    }
+
+    function fieldLabel(field, step) {
+      var wrap = field.closest(".field");
+      var label = "";
+      if (wrap) {
+        var span = wrap.querySelector("span");
+        if (span) label = span.textContent.replace("*", "").trim();
+      }
+      if (!label) label = field.getAttribute("name") || "field";
+      var section = step ? sectionOf(field, step) : "";
+      return section ? section + " " + label : label;
+    }
+
+    function shake(el) {
+      if (!el) return;
+      el.classList.remove("is-shaking");
+      void el.offsetWidth;
+      el.classList.add("is-shaking");
+      setTimeout(function () {
+        el.classList.remove("is-shaking");
+      }, 1000);
+    }
+
+    function showAlert(step, names) {
+      if (!step) return;
+      var alert = step.querySelector("[data-step-alert]");
+      if (!alert) {
+        alert = document.createElement("p");
+        alert.className = "step-alert";
+        alert.setAttribute("data-step-alert", "");
+        alert.setAttribute("role", "alert");
+        var actions = step.querySelector(".step-actions");
+        if (actions) actions.parentNode.insertBefore(alert, actions);
+        else step.appendChild(alert);
+      }
+      alert.textContent = names.length === 1 ? "Fill in: " + names[0] : "Fill in: " + names.join(", ");
+      alert.hidden = false;
+    }
+
+    function clearAlert(step) {
+      var alert = step && step.querySelector("[data-step-alert]");
+      if (alert) alert.hidden = true;
+    }
+
+    form.addEventListener("input", function (event) {
+      var step = event.target.closest ? event.target.closest("[data-step]") : null;
+      if (step) clearAlert(step);
+    });
+
     function show(index, focus) {
       current = Math.max(0, Math.min(steps.length - 1, index));
       steps.forEach(function (step, i) {
@@ -1287,15 +1375,50 @@ if (location.pathname.indexOf('/admin') !== 0) {
       return false;
     }
 
+    /** Year, make and model are custom widgets, so the browser cannot enforce them. */
+    function vehicleGaps(step) {
+      var gaps = [];
+      Array.prototype.forEach.call(step.querySelectorAll("[data-vehicle-slot]"), function (slot) {
+        var fields = slot.querySelector("[data-vehicle-fields]");
+        if (!fields || fields.hidden) return;
+        var year = slot.querySelector("[data-vehicle-year]");
+        var make = slot.querySelector("[data-vehicle-make-value]");
+        var model = slot.querySelector("[data-vehicle-model-value]");
+        if (year && !year.value) gaps.push({ slot: slot, target: year.closest(".field"), label: "Vehicle year" });
+        if (make && !make.value.trim()) gaps.push({ slot: slot, target: make.closest(".field"), label: "Make" });
+        if (model && !model.value.trim()) gaps.push({ slot: slot, target: model.closest(".field"), label: "Model" });
+      });
+      return gaps;
+    }
+
     function validate(index) {
-      var field = invalidField(index);
-      if (field) {
-        field.reportValidity();
-        return false;
+      var step = steps[index];
+      var bad = invalidFields(index);
+      var gaps = vehicleGaps(step);
+      var picker = missingDate(step);
+      if (!bad.length && !picker && !gaps.length) {
+        clearAlert(step);
+        return true;
       }
-      var picker = missingDate(steps[index]);
-      if (picker) return flagDate(picker);
-      return true;
+      var names = bad.map(function (field) { return fieldLabel(field, step); });
+      gaps.forEach(function (gap) {
+        if (names.indexOf(gap.label) === -1) names.push(gap.label);
+        shake(gap.target);
+      });
+      bad.forEach(function (field) {
+        shake(field.closest(".field") || field);
+      });
+      if (bad.length) {
+        bad[0].reportValidity();
+        bad[0].focus({ preventScroll: false });
+      }
+      if (picker) {
+        flagDate(picker);
+        names.push("Pickup date");
+        shake(picker.closest(".field") || picker);
+      }
+      showAlert(step, names);
+      return false;
     }
 
     form.addEventListener("click", function (event) {
@@ -1322,20 +1445,10 @@ if (location.pathname.indexOf('/admin') !== 0) {
 
     form.addEventListener("submit", function (event) {
       for (var i = 0; i < steps.length; i++) {
-        var field = invalidField(i);
-        if (field) {
-          event.preventDefault();
-          show(i, true);
-          field.reportValidity();
-          return;
-        }
-        var picker = missingDate(steps[i]);
-        if (picker) {
-          event.preventDefault();
-          show(i, true);
-          flagDate(picker);
-          return;
-        }
+        if (validate(i)) continue;
+        event.preventDefault();
+        show(i, true);
+        return;
       }
     });
 
@@ -1581,6 +1694,9 @@ if (location.pathname.indexOf('/admin') !== 0) {
   Array.prototype.forEach.call(document.querySelectorAll("[data-vehicle-catalog]"), initVehicleCatalog);
 })();
 </script>
+${!options.admin && site.clarityId
+      ? `<script src="/vendor/clarity.js" data-project="${esc(site.clarityId)}" defer></script>`
+      : ""}
 </body>
 </html>`;
 }
@@ -1595,6 +1711,7 @@ export interface QuoteFormValues {
   vehicle_year?: string;
   vehicle_make?: string;
   vehicle_model?: string;
+  vin?: string;
   condition?: string;
   available_date?: string;
   notes?: string;
@@ -1727,14 +1844,14 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     <div data-vehicle-fields>
     <div class="field-row">
       <label class="field">
-        <span>Vehicle type</span>
+        <span>Vehicle type *</span>
         <select class="vehicle-select" name="vehicle_type" data-vehicle-type>
           <option value="car">Car / Truck / SUV</option>
           <option value="motorcycle">Motorcycle</option>
         </select>
       </label>
       <div class="field">
-        <span>Vehicle year</span>
+        <span>Vehicle year *</span>
         <div class="year-dropdown" data-year-dropdown>
           <input type="hidden" name="vehicle_year" data-vehicle-year value="${v("vehicle_year")}">
           <button type="button" class="year-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Vehicle year">
@@ -1754,7 +1871,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
 
     <div class="field-row">
       <div class="field">
-        <span>Make</span>
+        <span>Make *</span>
         <div class="vehicle-combobox" data-vehicle-make>
           <input class="vehicle-combobox-input" type="text" autocomplete="off" aria-label="Make" placeholder="Type to filter makes" data-vehicle-make-input value="${v("vehicle_make")}" disabled>
           <button class="vehicle-combobox-toggle" type="button" aria-label="Show makes" data-vehicle-make-toggle disabled>
@@ -1765,7 +1882,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
         <input type="hidden" name="vehicle_make" data-vehicle-make-value value="${v("vehicle_make")}">
       </div>
       <div class="field">
-        <span>Model</span>
+        <span>Model *</span>
         <div class="vehicle-combobox" data-vehicle-model>
           <input class="vehicle-combobox-input" type="text" autocomplete="off" aria-label="Model" placeholder="Type to filter models" data-vehicle-model-input value="${v("vehicle_model")}" disabled>
           <button class="vehicle-combobox-toggle" type="button" aria-label="Show models" data-vehicle-model-toggle disabled>
@@ -1775,6 +1892,10 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
         </div>
         <input type="hidden" name="vehicle_model" data-vehicle-model-value value="${v("vehicle_model")}">
       </div>
+    </div>
+
+    <div class="field-row">
+      <label class="field"><span>VIN${infoTip("17 characters on the dashboard or driver's door. Optional — it speeds up dispatch.")}</span><input name="vin" maxlength="17" value="${v("vin")}" placeholder="17 characters (optional)"></label>
     </div>
 
     <div class="field">
@@ -1787,7 +1908,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
     <div class="extra-vehicles" data-extra-vehicles></div>
     <button class="btn btn-ghost btn-small btn-inline" type="button" data-add-vehicle>+ Add another vehicle</button>
     <p class="form-error" data-vehicle-error role="alert" hidden></p>
-    <p class="form-note" data-vehicle-limit hidden>Up to 10 vehicles per quote.</p>
+    <p class="form-note" data-vehicle-limit role="status" hidden>You already have 10 vehicles on this quote. Call us at <a href="tel:${site.phone.replace(/[^0-9+]/g, "")}">${esc(site.phone)}</a> and we will book the rest for you.</p>
 
     <template data-vehicle-template>
       <fieldset class="extra-vehicle" data-vehicle-catalog data-vehicle-slot>
@@ -1798,13 +1919,13 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
         </div>
         <div data-vehicle-fields>
         <div class="field-row">
-          <label class="field"><span>Vehicle type</span>
+          <label class="field"><span>Vehicle type *</span>
             <select class="vehicle-select pretty-select-native" name="vehicle_type___INDEX__" data-vehicle-type>
               <option value="car">Car / Truck / SUV</option>
               <option value="motorcycle">Motorcycle</option>
             </select>
           </label>
-          <div class="field"><span>Vehicle year</span>
+          <div class="field"><span>Vehicle year *</span>
             <div class="year-dropdown" data-year-dropdown>
               <input type="hidden" name="vehicle_year___INDEX__" data-vehicle-year value="">
               <button type="button" class="year-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Vehicle year">
@@ -1816,7 +1937,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
           </div>
         </div>
         <div class="field-row">
-          <div class="field"><span>Make</span>
+          <div class="field"><span>Make *</span>
             <div class="vehicle-combobox" data-vehicle-make>
               <input class="vehicle-combobox-input" type="text" autocomplete="off" aria-label="Make" placeholder="Type to filter makes" data-vehicle-make-input>
               <button class="vehicle-combobox-toggle" type="button" aria-label="Show makes" data-vehicle-make-toggle><span class="vehicle-combobox-chevron" aria-hidden="true"></span></button>
@@ -1824,7 +1945,7 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
             </div>
             <input type="hidden" name="vehicle_make___INDEX__" data-vehicle-make-value>
           </div>
-          <div class="field"><span>Model</span>
+          <div class="field"><span>Model *</span>
             <div class="vehicle-combobox" data-vehicle-model>
               <input class="vehicle-combobox-input" type="text" autocomplete="off" aria-label="Model" placeholder="Type to filter models" data-vehicle-model-input disabled>
               <button class="vehicle-combobox-toggle" type="button" aria-label="Show models" data-vehicle-model-toggle disabled><span class="vehicle-combobox-chevron" aria-hidden="true"></span></button>
@@ -1832,6 +1953,9 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
             </div>
             <input type="hidden" name="vehicle_model___INDEX__" data-vehicle-model-value>
           </div>
+        </div>
+        <div class="field-row">
+          <label class="field"><span>VIN</span><input name="vin___INDEX__" maxlength="17" placeholder="17 characters (optional)"></label>
         </div>
         <div class="field"><span>Condition</span>
           ${conditionPicker(undefined, "condition___INDEX__")}
@@ -2031,6 +2155,7 @@ export function quotePage(options: {
         })
         .join("");
     const VEHICLE_KEYS = ["vehicle_year", "vehicle_make", "vehicle_model", "condition"];
+    const hidden = hiddenFor();
     const hiddenBase = hiddenFor(VEHICLE_KEYS);
     let rowId = 0;
     const editRow = (label: string, value: string, omit: readonly string[], editor: string) => {
@@ -2094,7 +2219,10 @@ export function quotePage(options: {
           <li><span>Deposit to reserve</span><span>${money(result.deposit)}</span></li>
           <li><span>Due now</span><span class="is-free">$0</span></li>
         </ul>
-        <a class="btn btn-accent btn-block" href="/">Start a new quote</a>
+        <form method="post" action="/quote">
+          ${(result.units?.length ?? 0) > 1 ? hiddenBase + unitHidden() : hidden}
+          <button class="btn btn-accent btn-block" type="submit">Continue Booking</button>
+        </form>
         <p class="muted small">No card is charged now. Dispatch confirms the carrier and pickup window first.</p>
       </div>
 
@@ -2379,6 +2507,19 @@ export function contactPage(): string {
     body: `
 <section class="wrap section">
   <h1 class="page-title">Talk to dispatch</h1>
+  <div class="contact-person">
+    <img class="contact-person-photo" src="/team/maxim.jpg" alt="Maxim Golovatiuc, President of Bond Auto Transport" width="240" height="300" loading="lazy">
+    <div class="contact-person-copy">
+      <p class="eyebrow">The person behind the bond</p>
+      <h2>Maxim Golovatiuc</h2>
+      <p class="muted">President · ${esc(site.legalName)}</p>
+      <p>Maxim signs every transportation agreement and stands behind the ${esc(site.mc)} bond. If a load matters enough that you want a human on the phone, ask for him.</p>
+      <p class="contact-person-links">
+        <a class="btn btn-accent btn-small" href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">Call ${esc(site.phone)}</a>
+        <a class="btn btn-ghost btn-small" href="mailto:${esc(site.email)}">${esc(site.email)}</a>
+      </p>
+    </div>
+  </div>
   <div class="cards">
     <div class="card"><h3>Phone</h3><p><a href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">${esc(site.phone)}</a></p><p class="muted small">${esc(site.hours)}</p></div>
     <div class="card"><h3>Email</h3><p><a href="mailto:${esc(site.email)}">${esc(site.email)}</a></p><p class="muted small">We reply within one business hour.</p></div>

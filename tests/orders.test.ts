@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ORDER_STATUSES, invoiceNumber, isOrderStatus, orderNumber, randomToken } from "../src/orders.ts";
+import { ORDER_STATUSES, invoiceNumber, isOrderStatus, orderPeriod, randomToken } from "../src/orders.ts";
 
-test("order numbers are zero padded and carry the year", () => {
-  assert.equal(orderNumber(1, new Date(Date.UTC(2026, 10, 8))), "2026-November-001");
-  assert.equal(orderNumber(42, new Date(Date.UTC(2026, 0, 5))), "2026-January-042");
-  assert.equal(orderNumber(1234, new Date(Date.UTC(2026, 11, 1))), "2026-December-1234");
+test("order periods use the Pacific business month", () => {
+  assert.equal(orderPeriod(new Date("2026-11-08T12:00:00Z")).key, "26-Nov");
+  assert.equal(orderPeriod(new Date("2026-01-05T12:00:00Z")).key, "26-Jan");
+  // still November in San Diego when UTC has already turned the page
+  assert.equal(orderPeriod(new Date("2026-12-01T02:00:00Z")).key, "26-Nov");
+  assert.equal(orderPeriod(new Date("2027-01-01T09:00:00Z")).key, "27-Jan");
 });
 
 test("invoice numbers follow the same shape", () => {

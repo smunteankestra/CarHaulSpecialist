@@ -29,24 +29,48 @@ export function isOrderStatus(value: string): value is OrderStatus {
 /** Statuses a customer should see in the timeline, in order. */
 export const CUSTOMER_STAGES: OrderStatus[] = ["quoted", "confirmed", "assigned", "picked_up", "delivered"];
 
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
 
-export function orderNumber(id: number, date: Date | number): string {
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Year + month as dispatch sees them: the business day is Pacific, not UTC. */
+export function orderPeriod(date: Date | number): { key: string; label: string; start: number; end: number } {
   const value = typeof date === "number" ? new Date(date) : date;
-  return `${value.getUTCFullYear()}-${MONTH_NAMES[value.getUTCMonth()]}-${String(id).padStart(3, "0")}`;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(value);
+  const year = Number(parts.find((part) => part.type === "year")?.value ?? value.getUTCFullYear());
+  const month = Number(parts.find((part) => part.type === "month")?.value ?? value.getUTCMonth() + 1);
+  // month bounds in Pacific time, expressed as UTC instants
+  const start = Date.UTC(year, month - 1, 1) + 8 * 3600000;
+  const end = Date.UTC(year, month, 1) + 8 * 3600000;
+  return {
+    key: `${String(year).slice(-2)}-${MONTHS_SHORT[month - 1]}`,
+    label: `${String(year).slice(-2)}-${MONTHS_SHORT[month - 1]}`,
+    start,
+    end,
+  };
+}
+
+/** `26-Nov-153`: short year, short month, and a counter that restarts every month. */
+export async function nextOrderNumber(db: D1Database, date: Date | number): Promise<string> {
+  const period = orderPeriod(date);
+  const { results } = await db
+    .prepare("SELECT COUNT(*) AS n FROM orders WHERE created_at >= ? AND created_at < ?")
+    .bind(period.start, period.end)
+    .all<{ n: number }>();
+  const seed = results[0]?.n ?? 0;
+  const row = await db
+    .prepare(
+      `INSERT INTO order_counters (period, value) VALUES (?, ? + 1)
+       ON CONFLICT(period) DO UPDATE SET value = value + 1
+       RETURNING value`,
+    )
+    .bind(period.key, seed)
+    .first<{ value: number }>();
+  const sequence = row?.value ?? seed + 1;
+  return `${period.key}-${String(sequence).padStart(3, "0")}`;
 }
 
 export function invoiceNumber(id: number, year: number): string {
@@ -90,6 +114,7 @@ export interface NewOrder {
 }
 
 export interface OrderRow {
+  original_price: number | null;
   id: number;
   number: string;
   token: string;
@@ -120,6 +145,8 @@ export interface OrderRow {
   payment_state: string;
   client_invoice_amount: number | null;
   carrier_invoice_amount: number | null;
+  client_invoice_method: string | null;
+  carrier_invoice_method: string | null;
   distance_miles: number | null;
   price: number;
   final_quote: number | null;
@@ -157,7 +184,19 @@ export interface OrderUnitRow {
   created_at: number;
 }
 
+export interface OrderContractRow {
+  id: number;
+  order_id: number;
+  filename: string;
+  content_type: string | null;
+  size: number | null;
+  storage_key: string;
+  uploaded_by: string | null;
+  created_at: number;
+}
+
 export interface OrderEventRow {
+  amount?: number | null;
   id: number;
   order_id: number;
   kind: string;
@@ -229,7 +268,7 @@ export async function createOrder(db: D1Database, input: NewOrder, status: Order
     .run();
 
   const id = Number(inserted.meta.last_row_id);
-  const number = orderNumber(id, now);
+  const number = await nextOrderNumber(db, now);
   await db.prepare("UPDATE orders SET number = ? WHERE id = ?").bind(number, id).run();
   await db
     .prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'created', ?, 'customer', ?)")
@@ -331,8 +370,9 @@ export async function setStatus(
   paymentMethod: string | null = null,
 ): Promise<void> {
   const now = Date.now();
-  const pickup = status === "picked_up" ? (pickedUpAt ?? now) : pickedUpAt;
-  const delivered = status === "delivered" ? (deliveredAt ?? now) : deliveredAt;
+  // Never invent a timestamp: staff fill these in, and the step guards enforce it.
+  const pickup = pickedUpAt;
+  const delivered = deliveredAt;
   await db
     .prepare(
       `UPDATE orders

@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS order_counters (
+  period TEXT PRIMARY KEY,
+  value INTEGER NOT NULL
+);

@@ -1,4 +1,4 @@
-import { buildDocx, type DocBlock } from "./docx.ts";
+import { buildDocx, paragraph } from "./docx.ts";
 
 /** Transportation Agreement text, taken from the signed template (F60086). */
 export const CONTRACT_TERMS: string[] = [
@@ -160,6 +160,11 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
       <p>(858) 699-4828 · operations@bondautotransport.com</p>
     </div>
     <div class="party">
+      <h2>Customer</h2>
+      <strong>${text(order.customer_name)}</strong>
+      <p>${text(order.customer_phone)} · ${text(order.customer_email)}</p>
+    </div>
+    <div class="party">
       <h2>Carrier company</h2>
       <strong>${text(order.carrier_name)}</strong>
       <p>${text(order.carrier_company_phone)} · ${text(order.carrier_email)}</p>
@@ -168,11 +173,6 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
       <h2>Driver</h2>
       <strong>${text(order.driver_name)}</strong>
       <p>${text(order.carrier_phone)}</p>
-    </div>
-    <div class="party">
-      <h2>Customer</h2>
-      <strong>${text(order.customer_name)}</strong>
-      <p>${text(order.customer_phone)} · ${text(order.customer_email)}</p>
     </div>
   </div>
 
@@ -224,96 +224,110 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
 export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8Array {
   const clientAmount = order.client_invoice_amount ?? order.final_quote ?? order.price;
   const rows = units.length ? units : [orderAsUnit(order)];
-  const columns = rows.map((unit) => String(unit.position));
-  const sameForAll = (value: string) => columns.map(() => value);
+  const first = rows[0];
 
-  const party = (label: string, name: string, phone: string, email: string, extra?: string): DocBlock[] => [
-    { kind: "label", text: label },
-    { kind: "paragraph", text: name || "—", size: 27, align: "left" },
-    { kind: "paragraph", text: phone || "—", size: 27, align: "left" },
-    { kind: "paragraph", text: email || "—", size: 24, align: "left" },
-    ...(extra ? [{ kind: "paragraph" as const, text: extra, size: 24, align: "left" as const }] : []),
+  // Measurements taken from the HTML: body 12px, headings 11px grey, terms 10.5px.
+  const BODY = 24;
+  const HEAD = 22;
+  const GREY = "5B7186";
+  const BORDER = "C9D4DE";
+
+  const party = (label: string, name: string, contact: string): string[] => [
+    paragraph(label.toUpperCase(), { bold: true, size: HEAD, color: GREY, spacing: 12 }),
+    paragraph(name || "—", { bold: true, size: 25 }),
+    paragraph(contact || "—", { size: BODY }),
   ];
 
-  const schedule: DocBlock[] = [
-    { kind: "label", text: "Schedule" },
-    {
-      kind: "table",
-      rows: [
-        ["Unit #", ...columns],
-        ["Pick up ETA", ...sameForAll(dateOnly(order.pickup_eta))],
-        ["Delivery ETA", ...sameForAll(dateOnly(order.delivery_eta))],
-      ],
-      columnSizes: [21, ...columns.map(() => 21)],
-    },
-    { kind: "runs", runs: [{ text: "TRAILER TYPE: ", bold: true, size: 27 }, { text: text(order.transport_type), bold: true, size: 21 }], spaceBefore: 120 },
-  ];
+  const section = (text: string) => ({
+    kind: "raw" as const,
+    xml: paragraph(text.toUpperCase(), { bold: true, size: HEAD, color: GREY, spacing: 16, spaceBefore: 260, spaceAfter: 80, keepNext: true }),
+  });
 
-  const payment: DocBlock[] = [
-    { kind: "label", text: "Payment" },
-    {
-      kind: "table",
-      rows: [
-        ["Unit #", ...columns],
-        ["Amount", ...rows.map((unit, index) => money(index === 0 ? clientAmount : unit.price))],
-        ["Payment method", ...sameForAll(text(order.payment_method))],
-        ["Payee", ...sameForAll("MGV Advisors LLC")],
-        ["Carrier payment", ...sameForAll(`${money(order.carrier_fee)} to the driver`)],
-      ],
-      columnSizes: [21, ...columns.map(() => 21)],
-    },
-  ];
-
-  const place = (label: string, street: string | null, city: string | null, state: string | null, zip: string, contact: string | null, phone: string | null, email: string): DocBlock[] => [
-    { kind: "label", text: label },
-    {
-      kind: "table",
-      boldFirstColumn: true,
-      rows: [
-        ["Address", addressLine(street, city, state, zip)],
-        ["Location name", "—"],
-        ["Contact name", text(contact)],
-        ["Contact number", text(phone)],
-        ["Email", email || "—"],
-      ],
-      columnSizes: [21, 21],
-    },
+  const infoRows: string[][] = [
+    ["Unit #", String(rows.length > 1 ? `1 – ${rows.length}` : first?.position ?? 1)],
+    ["Pick up ETA", dateOnly(order.pickup_eta)],
+    ["Delivery ETA", dateOnly(order.delivery_eta)],
+    ["Amount", money(clientAmount)],
+    ["Payment method", text(order.payment_method)],
+    ["Payee", "MGV Advisors LLC"],
+    ["Carrier payment", `${money(order.carrier_fee)} to the driver`],
+    ["Trailer type", text(order.transport_type)],
   ];
 
   return buildDocx([
-    { kind: "title", text: `Transportation Agreement ${order.number}` },
-    { kind: "paragraph", text: "" },
+    { kind: "raw", xml: paragraph("Transportation Agreement", { bold: true, size: 40, spaceAfter: 40 }) },
     {
-      kind: "columns",
-      cells: [
-        party("Transport Company", "MGV Advisors LLC DBA Bond Auto Transport", "(858) 699-4828", "operations@bondautotransport.com"),
-        party(
-          "Carrier Company",
-          text(order.carrier_name),
-          text(order.carrier_company_phone),
-          text(order.carrier_email),
-          `Driver: ${text(order.driver_name)} ${text(order.carrier_phone)}`,
-        ),
-        party("Customer", text(order.customer_name), text(order.customer_phone), text(order.customer_email)),
+      kind: "raw",
+      xml: paragraph(`Order ${order.number} · MGV Advisors LLC DBA Bond Auto Transport · USDOT # 4250470`, {
+        size: HEAD,
+        color: GREY,
+        spaceAfter: 240,
+      }),
+    },
+
+    {
+      kind: "richTable",
+      borderColor: BORDER,
+      widths: [50, 50],
+      rows: [
+        [
+          party("Transport company", "MGV Advisors LLC DBA Bond Auto Transport", "(858) 699-4828 · operations@bondautotransport.com"),
+          party("Customer", text(order.customer_name), `${text(order.customer_phone)} · ${text(order.customer_email)}`),
+        ],
+        [
+          party("Carrier company", text(order.carrier_name), `${text(order.carrier_company_phone)} · ${text(order.carrier_email)}`),
+          party("Driver", text(order.driver_name), text(order.carrier_phone)),
+        ],
       ],
     },
-    { kind: "paragraph", text: "ORDER INFORMATION", bold: true, align: "center", size: 27 },
-    { kind: "columns", cells: [schedule, payment] },
-    { kind: "paragraph", text: "" },
+    { kind: "raw", xml: paragraph("", { size: 12 }) },
+
+    section("Order information schedule / payment"),
     {
-      kind: "columns",
-      cells: [
-        place("Origin", order.origin_street, order.origin_city, order.origin_state, order.origin_zip, order.origin_contact, order.origin_phone, order.customer_email),
-        place("Destination", order.dest_street, order.dest_city, order.dest_state, order.dest_zip, order.dest_contact, order.dest_phone, order.customer_email),
+      kind: "table",
+      rows: infoRows,
+      boldFirstColumn: true,
+      shadedHeader: false,
+      borderColor: BORDER,
+      padY: 70,
+      padX: 105,
+      columnSizes: [BODY, BODY],
+    },
+
+    section("Origin / destination"),
+    {
+      kind: "richTable",
+      borderColor: BORDER,
+      widths: [22, 78],
+      rows: [
+        [
+          [paragraph("Origin", { bold: true, size: BODY })],
+          [
+            paragraph(addressLine(order.origin_street, order.origin_city, order.origin_state, order.origin_zip), { bold: true, size: BODY }),
+            paragraph(`Contact: ${text(order.origin_contact)} · ${text(order.origin_phone)}`, { size: BODY }),
+          ],
+        ],
+        [
+          [paragraph("Destination", { bold: true, size: BODY })],
+          [
+            paragraph(addressLine(order.dest_street, order.dest_city, order.dest_state, order.dest_zip), { bold: true, size: BODY }),
+            paragraph(`Contact: ${text(order.dest_contact)} · ${text(order.dest_phone)}`, { size: BODY }),
+          ],
+        ],
       ],
     },
-    { kind: "label", text: "Vehicle information" },
+
+    section("Vehicle information"),
     {
       kind: "table",
       headerRow: true,
       shadedHeader: true,
+      headerShade: "F2F6F9",
+      borderColor: BORDER,
+      padY: 70,
+      padX: 105,
       rows: [
-        ["Unit #", "Year", "Make", "Model", "VIN", "Type", "Condition", "Buyer #", "Lot #"],
+        ["Unit #", "Year", "Make", "Model", "VIN", "Type", "Condition"],
         ...rows.map((unit) => [
           String(unit.position),
           text(unit.vehicle_year),
@@ -322,16 +336,24 @@ export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8
           text(unit.vin),
           text(unit.vehicle_type),
           CONDITION_LABEL[unit.condition ?? "running"] ?? text(unit.condition),
-          "n/a",
-          "n/a",
         ]),
       ],
-      columnSizes: [21, 21, 21, 21, 16, 21, 21, 21, 21],
+      columnSizes: [BODY, BODY, BODY, BODY, 18, BODY, BODY],
     },
-    { kind: "heading", text: "Terms and condition" },
-    ...CONTRACT_TERMS.map((paragraphText) => ({ kind: "paragraph" as const, text: paragraphText })),
-    { kind: "paragraph", text: "" },
-    { kind: "paragraph", text: "Maxim Golovatiuc, President — BOND AUTO TRANSPORT" },
-    { kind: "paragraph", text: `${text(order.customer_name)} — Customer` },
+
+    section("Terms and condition"),
+    ...CONTRACT_TERMS.map((paragraphText) => ({ kind: "paragraph" as const, text: paragraphText, size: 21, align: "both" as const, spaceAfter: 120 })),
+
+    {
+      kind: "richTable",
+      borderless: true,
+      widths: [50, 50],
+      rows: [
+        [
+          [paragraph("Maxim Golovatiuc, President — BOND AUTO TRANSPORT", { size: HEAD, spaceBefore: 420, ruleAbove: true })],
+          [paragraph(`${text(order.customer_name)} — Customer`, { size: HEAD, spaceBefore: 420, ruleAbove: true })],
+        ],
+      ],
+    },
   ]);
 }

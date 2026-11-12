@@ -18,6 +18,7 @@ import {
   type InvoiceRow,
   type OrderEventRow,
   type OrderRow,
+  type OrderContractRow,
   type OrderUnitRow,
 } from "./orders.ts";
 import { conditionLabel, lookupZip, parseCondition, priceQuote, roadMiles, type TransportType } from "./quote.ts";
@@ -33,7 +34,8 @@ import {
   adminOrderPage,
   adminOrdersPage,
   adminUsersPage,
-  orderModal,
+  historyTable,
+  orderModalCard,
   bookPage,
   invoicePage,
   trackPage,
@@ -132,10 +134,14 @@ function parseChatIds(value: string | null | undefined): string[] {
     .filter((part) => /^-?\d{5,20}$/.test(part));
 }
 
-async function loadAdsShare(db: D1Database): Promise<{ ads: number }> {
-  const stored = await getSetting(db, "ads_percent").catch(() => null);
-  const number = Number(stored ?? "");
-  return { ads: Number.isFinite(number) && number >= 0 && number <= 100 ? number : 0 };
+async function loadAdsShare(db: D1Database): Promise<{ ads: number; tax: number }> {
+  const read = async (key: string, fallback: number) => {
+    const stored = await getSetting(db, key).catch(() => null);
+    if (stored === null || stored.trim() === "") return fallback;
+    const number = Number(stored);
+    return Number.isFinite(number) && number >= 0 && number <= 100 ? number : fallback;
+  };
+  return { ads: await read("ads_percent", 15), tax: await read("tax_percent", 17) };
 }
 
 /** The console setting wins over the environment variable, so recipients can change without a deploy. */
@@ -430,7 +436,7 @@ app.post("/get-quote", async (c) => {
       vehicleYear: values.vehicle_year ?? "",
       vehicleMake: values.vehicle_make ?? "",
       vehicleModel: values.vehicle_model ?? "",
-      vin: "",
+      vin: field("vin"),
       originStreet: "",
       originCity: origin.city,
       originState: origin.state,
@@ -451,6 +457,45 @@ app.post("/get-quote", async (c) => {
     },
     "quoted",
   );
+
+  // Every vehicle on the quote becomes a unit on the order, not just the first.
+  const quoteUnits = [
+    {
+      year: values.vehicle_year ?? "",
+      make: values.vehicle_make ?? "",
+      model: values.vehicle_model ?? "",
+      vin: field("vin"),
+      condition,
+    },
+    ...extras.map((unit) => ({
+      year: unit.year,
+      make: unit.make,
+      model: unit.model,
+      vin: unit.vin,
+      condition: parseCondition(unit.condition),
+    })),
+  ];
+  const quoteNow = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM order_units WHERE order_id = ?").bind(quoteOrder.id),
+    ...quoteUnits.map((unit, index) =>
+      c.env.DB.prepare(
+        `INSERT INTO order_units (order_id, position, vehicle_year, vehicle_make, vehicle_model, vin, vehicle_type, condition, price, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        quoteOrder.id,
+        index + 1,
+        unit.year || null,
+        unit.make || null,
+        unit.model || null,
+        unit.vin || null,
+        transport,
+        unit.condition,
+        priceQuote(distance, transport, unit.condition, false).total,
+        quoteNow,
+      ),
+    ),
+  ]);
 
   if (leadId) {
     await c.env.DB.prepare(
@@ -545,7 +590,8 @@ function extraUnits(form: FormData): QuoteUnit[] {
     const model = String(form.get(`vehicle_model_${index}`) ?? "").trim();
     if (!year && !make && !model) continue;
     const condition = String(form.get(`condition_${index}`) ?? "").trim();
-    units.push({ year, make, model, condition: condition || "running" });
+    const vin = String(form.get(`vin_${index}`) ?? "").trim();
+    units.push({ year, make, model, vin, condition: condition || "running" });
   }
   return units;
 }
@@ -787,7 +833,7 @@ app.post("/book/submit", async (c) => {
       year: unit.year,
       make: unit.make,
       model: unit.model,
-      vin: "",
+      vin: unit.vin,
       condition: parseCondition(unit.condition),
     })),
   ];
@@ -1281,6 +1327,9 @@ const ORDER_SORTS: Record<string, string> = {
     ELSE 9
   END`,
   created: "created_at",
+  delivery_eta: "delivery_eta",
+  client_invoice: "client_invoice_amount",
+  carrier_invoice: "carrier_invoice_amount",
 };
 
 app.get("/admin/orders", async (c) => {
@@ -1290,16 +1339,54 @@ app.get("/admin/orders", async (c) => {
   const status = c.req.query("status") ?? "all";
   const sort = c.req.query("sort") ?? "created";
   const dir = c.req.query("dir") === "asc" ? "asc" : "desc";
+  const query = (c.req.query("q") ?? "").trim().slice(0, 80);
   const filtered = status !== "all" && isOrderStatus(status);
   const direction = dir === "asc" ? "ASC" : "DESC";
   const orderBy =
     sort === "route"
       ? `origin_zip ${direction}, dest_zip ${direction}`
       : `${ORDER_SORTS[sort] ?? "created_at"} ${direction}`;
-  const statement = filtered
-    ? c.env.DB.prepare(`SELECT * FROM orders WHERE status = ? ORDER BY ${orderBy} LIMIT 200`).bind(status)
-    : c.env.DB.prepare(`SELECT * FROM orders ORDER BY ${orderBy} LIMIT 200`);
+
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (filtered) {
+    conditions.push("status = ?");
+    params.push(status);
+  }
+  if (query) {
+    // one box, every column a dispatcher might type into it
+    const columns = [
+      "number",
+      "customer_name",
+      "customer_email",
+      "customer_phone",
+      "origin_zip",
+      "origin_city",
+      "origin_state",
+      "dest_zip",
+      "dest_city",
+      "dest_state",
+      "vehicle_year",
+      "vehicle_make",
+      "vehicle_model",
+      "vin",
+      "carrier_name",
+      "carrier_mc",
+      "driver_name",
+      "notes",
+      "status",
+    ];
+    conditions.push(`(${columns.map((column) => `${column} LIKE ?`).join(" OR ")})`);
+    for (let i = 0; i < columns.length; i += 1) params.push(`%${query}%`);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  // Page through the list: 50 at a time, one extra row tells us whether more exist.
+  const show = Math.min(Math.max(Number(c.req.query("show")) || 50, 50), 1000);
+  const statement = c.env.DB.prepare(`SELECT * FROM orders ${where} ORDER BY ${orderBy} LIMIT ${show + 1}`).bind(...params);
   const { results } = await statement.all<OrderRow>();
+  const hasMore = results.length > show;
+  if (hasMore) results.pop();
 
   const photos = results.length
     ? (
@@ -1328,20 +1415,6 @@ app.get("/admin/orders", async (c) => {
   const counts: Record<string, number> = {};
   for (const row of countRows) counts[row.status] = row.n;
 
-  const unitsByOrder = new Map<number, OrderUnitRow[]>();
-  if (results.length) {
-    const { results: units } = await c.env.DB.prepare(
-      `SELECT * FROM order_units WHERE order_id IN (${results.map(() => "?").join(",")}) ORDER BY position`,
-    )
-      .bind(...results.map((order) => order.id))
-      .all<OrderUnitRow>();
-    for (const unit of units) {
-      const list = unitsByOrder.get(unit.order_id);
-      if (list) list.push(unit);
-      else unitsByOrder.set(unit.order_id, [unit]);
-    }
-  }
-
   const errorOrder = Number(c.req.query("error_order"));
   return c.html(
     adminOrdersPage(
@@ -1355,7 +1428,9 @@ app.get("/admin/orders", async (c) => {
       counts,
       Number.isFinite(errorOrder) && errorOrder > 0 ? errorOrder : null,
       c.req.query("error"),
-      unitsByOrder,
+      query,
+      show,
+      hasMore,
     ),
   );
 });
@@ -1391,6 +1466,14 @@ function missingStepData(
     deliveredAt: number | null;
     brokerFee: number | null;
     carrierFee: number | null;
+    originContact: string | null;
+    destContact: string | null;
+    carrierName: string | null;
+    carrierMc: string | null;
+    carrierCompanyPhone: string | null;
+    carrierEmail: string | null;
+    driverName: string | null;
+    carrierPhone: string | null;
   },
 ): string | null {
   if (status === "quoted" && data.finalQuote === null) return "Set the final quote before moving to Booked.";
@@ -1401,10 +1484,24 @@ function missingStepData(
     if (data.finalQuote === null) missing.push("Final quote");
     if (data.brokerFee === null) missing.push("Broker fee");
     if (data.carrierFee === null) missing.push("Carrier fee");
+    if (!data.originContact) missing.push("Pickup contact");
+    if (!data.destContact) missing.push("Delivery contact");
     if (missing.length) return `Add ${missing.join(", ")} before moving to Contract draft.`;
   }
   if (status === "contract_draft" && !data.pickupEta) return "Add the pickup ETA before moving to Carrier assigned.";
   if (status === "assigned" && !data.pickupEta) return "Add the pickup ETA before moving to Picked up.";
+  if (status === "assigned" && !data.originContact) return "Add the pickup contact before moving to Picked up.";
+  if (status === "assigned" && !data.destContact) return "Add the delivery contact before moving to Picked up.";
+  if (status === "assigned") {
+    const carrierMissing: string[] = [];
+    if (!data.carrierName) carrierMissing.push("carrier company");
+    if (!data.carrierMc) carrierMissing.push("MC number");
+    if (!data.carrierCompanyPhone) carrierMissing.push("carrier phone");
+    if (!data.carrierEmail) carrierMissing.push("carrier email");
+    if (!data.driverName) carrierMissing.push("driver name");
+    if (!data.carrierPhone) carrierMissing.push("driver phone");
+    if (carrierMissing.length) return `Add the ${carrierMissing.join(", ")} before moving to Picked up.`;
+  }
   if (status === "picked_up" && !data.pickedUpAt) return "Add the pickup date and time before moving to Delivered.";
   if (status === "picked_up" && !data.deliveryEta) return "Add the delivery ETA before moving to Delivered.";
   if (status === "delivered" && !data.deliveredAt) return "Add the delivered date and time before moving to Payments.";
@@ -1457,10 +1554,25 @@ app.post("/admin/orders/:id/status", async (c) => {
       deliveredAt: deliveredAt ?? order.delivered_at,
       brokerFee: brokerFee ?? order.broker_fee,
       carrierFee: carrierFee ?? order.carrier_fee,
+      originContact: order.origin_contact,
+      destContact: order.dest_contact,
+      carrierName: order.carrier_name,
+      carrierMc: order.carrier_mc,
+      carrierCompanyPhone: order.carrier_company_phone,
+      carrierEmail: order.carrier_email,
+      driverName: order.driver_name,
+      carrierPhone: order.carrier_phone,
     });
     if (missing) {
       return c.redirect(`/admin/orders?error=${encodeURIComponent(missing)}&error_order=${id}#order-${id}`, 303);
     }
+  }
+
+  // Booking at a lower negotiated price: keep the original for the discount line.
+  if (status === "confirmed" && order && order.final_quote !== null && order.final_quote < order.price) {
+    await c.env.DB.prepare("UPDATE orders SET original_price = COALESCE(original_price, ?), price = ? WHERE id = ?")
+      .bind(order.price, order.final_quote, id)
+      .run();
   }
 
   await setStatus(
@@ -1500,7 +1612,7 @@ app.post("/admin/orders/:id/status", async (c) => {
   return c.redirect(destination, 303);
 });
 
-const PAYMENT_METHODS = ["Zelle", "Venmo", "CashApp", "PayPal", "Check", "ACH", "Wire"];
+const PAYMENT_METHODS = ["Zelle", "Venmo", "CashApp", "PayPal", "ACH", "Wire"];
 
 const ORDER_FIELD_LABELS: Record<string, string> = {
   customer_name: "Customer",
@@ -1741,7 +1853,16 @@ app.post("/admin/orders/:id/field", async (c) => {
       const before = column === "condition" ? parseCondition(String(oldRecord[column] ?? "running")) : oldRecord[column];
       return `${ORDER_FIELD_LABELS[column] ?? column}: ${formatOrderField(column, before)} → ${formatOrderField(column, values[column])}`;
     });
-  if (!changes.length) return c.redirect(back, 303);
+  const async = c.req.header("x-async") === "1";
+
+  if (!changes.length) {
+    // Nothing changed: still answer with the card so the modal never gets a redirect.
+    if (async) {
+      const unchanged = await loadOrderCardData(c.env.DB, id);
+      return c.html(orderModalCard(old, unchanged.photos, unchanged.events, undefined, unchanged.units, unchanged.contracts));
+    }
+    return c.redirect(back, 303);
+  }
 
   const now = Date.now();
   await c.env.DB.prepare(
@@ -1749,6 +1870,15 @@ app.post("/admin/orders/:id/field", async (c) => {
   )
     .bind(...group.columns.map((column) => values[column]), now, id)
     .run();
+
+  // Total price is always broker + carrier, so the order price follows the fees.
+  if (key === "broker_fee" || key === "carrier_fee") {
+    await c.env.DB.prepare(
+      "UPDATE orders SET price = COALESCE(broker_fee, 0) + COALESCE(carrier_fee, 0) WHERE id = ?",
+    )
+      .bind(id)
+      .run();
+  }
 
   await c.env.DB.prepare(
     "INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)",
@@ -1762,14 +1892,11 @@ app.post("/admin/orders/:id/field", async (c) => {
   );
 
   // The modal saves in place: send back just this card instead of the whole orders page.
-  if (c.req.header("x-async") === "1") {
-    const [order, { results: photos }, { results: events }] = await Promise.all([
-      c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>(),
-      c.env.DB.prepare("SELECT * FROM order_photos WHERE order_id = ? ORDER BY id").bind(id).all<OrderPhotoRow>(),
-      c.env.DB.prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id").bind(id).all<OrderEventRow>(),
-    ]);
-    if (!order) return c.html(notFoundPage(), 404);
-    return c.html(orderModal(order, photos, events));
+  if (async) {
+    const card = await loadOrderCardData(c.env.DB, id);
+    // Reuse the row we already read instead of asking D1 for it again.
+    const order = { ...old, ...values } as OrderRow;
+    return c.html(orderModalCard(order, card.photos, card.events, undefined, card.units, card.contracts));
   }
 
   return c.redirect(back, 303);
@@ -1786,10 +1913,21 @@ app.post("/admin/orders/:id/invoice/:kind/paid", async (c) => {
   if (!order) return c.html(notFoundPage(), 404);
 
   const now = Date.now();
+  const paidAmount =
+    kind === "carrier"
+      ? (order.carrier_invoice_amount ?? order.carrier_fee ?? 0)
+      : (order.client_invoice_amount ?? order.final_quote ?? order.price);
   await c.env.DB.prepare(
-    "INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO order_events (order_id, kind, note, actor, created_at, amount) VALUES (?, ?, ?, ?, ?, ?)",
   )
-    .bind(id, `invoice_${kind}_paid`, `${kind === "carrier" ? "Carrier" : "Client"} invoice marked paid`, user.email, now)
+    .bind(
+      id,
+      `invoice_${kind}_paid`,
+      `${kind === "carrier" ? "Carrier" : "Client"} invoice paid — ${paidAmount.toLocaleString("en-US", { style: "currency", currency: "USD" })}`,
+      user.email,
+      now,
+      paidAmount,
+    )
     .run();
 
   const { results: events } = await c.env.DB.prepare("SELECT kind FROM order_events WHERE order_id = ?").bind(id).all<{
@@ -1802,6 +1940,282 @@ app.post("/admin/orders/:id/invoice/:kind/paid", async (c) => {
 
   notify(c, `💰 Invoice paid on ${order.number}\n${kind === "carrier" ? "Carrier" : "Client"} invoice\nby ${user.email}`);
   return c.redirect(`/admin/orders?status=paid#order-${id}`, 303);
+});
+
+/** Add, edit or delete a vehicle on an order; the order price follows the units. */
+async function recalcOrderPrice(db: D1Database, orderId: number): Promise<void> {
+  const { results } = await db.prepare("SELECT price FROM order_units WHERE order_id = ?").bind(orderId).all<{ price: number | null }>();
+  if (!results.length) return;
+  const total = results.reduce((sum, row) => sum + (row.price ?? 0), 0);
+  await db.prepare("UPDATE orders SET price = ?, updated_at = ? WHERE id = ?").bind(total, Date.now(), orderId).run();
+}
+
+app.post("/admin/orders/:id/units/add", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  const body = await c.req.parseBody();
+  const text = (key: string) => String(body[key] ?? "").trim();
+  const { results: existing } = await c.env.DB.prepare("SELECT position FROM order_units WHERE order_id = ? ORDER BY position DESC LIMIT 1")
+    .bind(id)
+    .all<{ position: number }>();
+  const position = (existing[0]?.position ?? 0) + 1;
+  const condition = parseCondition(text("condition") || "running");
+  const transport: TransportType = order.transport_type === "enclosed" ? "enclosed" : "open";
+  const price = order.distance_miles ? priceQuote(order.distance_miles, transport, condition, false).total : null;
+
+  await c.env.DB.prepare(
+    `INSERT INTO order_units (order_id, position, vehicle_year, vehicle_make, vehicle_model, vin, vehicle_type, condition, price, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(id, position, text("vehicle_year") || null, text("vehicle_make") || null, text("vehicle_model") || null, text("vin") || null, transport, condition, price, Date.now())
+    .run();
+
+  await c.env.DB.prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)")
+    .bind(id, `Vehicle ${position} added`, user.email, Date.now())
+    .run();
+  await recalcOrderPrice(c.env.DB, id);
+  return c.redirect(`/admin/orders#order-${id}`, 303);
+});
+
+app.post("/admin/orders/:id/units/:unitId", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const unitId = Number(c.req.param("unitId"));
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  const body = await c.req.parseBody();
+  const text = (key: string) => String(body[key] ?? "").trim();
+  const condition = parseCondition(text("condition") || "running");
+  const transport: TransportType = order.transport_type === "enclosed" ? "enclosed" : "open";
+  // A price typed by dispatch wins; otherwise price it from the lane.
+  const typedPrice = Number(text("price"));
+  const price = Number.isFinite(typedPrice) && text("price") !== ""
+    ? Math.max(0, Math.round(typedPrice))
+    : order.distance_miles
+      ? priceQuote(order.distance_miles, transport, condition, false).total
+      : null;
+
+  await c.env.DB.prepare(
+    `UPDATE order_units SET vehicle_year = ?, vehicle_make = ?, vehicle_model = ?, vin = ?, condition = ?, price = ? WHERE id = ? AND order_id = ?`,
+  )
+    .bind(text("vehicle_year") || null, text("vehicle_make") || null, text("vehicle_model") || null, text("vin") || null, condition, price, unitId, id)
+    .run();
+
+  await c.env.DB.prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)")
+    .bind(id, `Vehicle ${unitId} updated`, user.email, Date.now())
+    .run();
+  await recalcOrderPrice(c.env.DB, id);
+  return c.redirect(`/admin/orders#order-${id}`, 303);
+});
+
+app.post("/admin/orders/:id/units/:unitId/delete", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const unitId = Number(c.req.param("unitId"));
+  const unit = await c.env.DB.prepare("SELECT position FROM order_units WHERE id = ? AND order_id = ?").bind(unitId, id).first<{ position: number }>();
+
+  await c.env.DB.prepare("DELETE FROM order_units WHERE id = ? AND order_id = ?").bind(unitId, id).run();
+
+  // keep the numbering contiguous after a removal
+  const { results: left } = await c.env.DB.prepare("SELECT id FROM order_units WHERE order_id = ? ORDER BY position").bind(id).all<{ id: number }>();
+  await c.env.DB.batch(
+    left.map((row, index) => c.env.DB.prepare("UPDATE order_units SET position = ? WHERE id = ?").bind(index + 1, row.id)),
+  );
+  await c.env.DB.prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)")
+    .bind(id, `Vehicle ${unit?.position ?? ""} removed`.trim(), user.email, Date.now())
+    .run();
+  await recalcOrderPrice(c.env.DB, id);
+  return c.redirect(`/admin/orders#order-${id}`, 303);
+});
+
+/** The order modal body, fetched when a row is opened. */
+/**
+ * Live inbox stream. Workers cannot hold a socket open indefinitely, so the stream
+ * lives ~27s, checks D1 every 3s, then closes and lets EventSource reconnect.
+ */
+app.get("/admin/api/stream", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.text("unauthorized", 401);
+
+  let cursor = Number(c.req.query("since")) || 0;
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const deadline = Date.now() + 27000;
+      const push = (payload: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      try {
+        while (Date.now() < deadline) {
+          const { results } = await c.env.DB.prepare(
+            "SELECT id, number, customer_name, origin_zip, dest_zip, price, created_at FROM orders WHERE status = 'quoted' AND created_at > ? ORDER BY created_at LIMIT 20",
+          )
+            .bind(cursor)
+            .all<{ id: number; number: string; customer_name: string; origin_zip: string; dest_zip: string; price: number; created_at: number }>();
+
+          if (results.length) {
+            cursor = results[results.length - 1]!.created_at;
+            push({ quotes: results, cursor });
+          } else {
+            controller.enqueue(encoder.encode(": ping\n\n"));
+          }
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+      } catch {
+        // stream ends; the browser reconnects
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-store",
+      "x-accel-buffering": "no",
+    },
+  });
+});
+
+/** Signed contract uploads: max 3 per order, stored in KV like the photos. */
+const MAX_CONTRACTS = 3;
+const CONTRACT_TYPES = new Map([
+  ["application/pdf", "pdf"],
+  ["application/msword", "doc"],
+  ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"],
+  ["image/png", "png"],
+  ["image/jpeg", "jpg"],
+]);
+
+app.post("/admin/orders/:id/contracts", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const back = `/admin/orders#order-${id}`;
+  const form = await c.req.formData();
+  const file = form.get("contract");
+  if (!(file instanceof File) || file.size === 0) return c.redirect(back, 303);
+
+  const { results: existing } = await c.env.DB.prepare("SELECT id FROM order_contracts WHERE order_id = ?")
+    .bind(id)
+    .all<{ id: number }>();
+  if (existing.length >= MAX_CONTRACTS) return c.redirect(`${back}`, 303);
+  if (file.size > 10 * 1024 * 1024) return c.redirect(back, 303);
+  const extension = CONTRACT_TYPES.get(file.type);
+  if (!extension) return c.redirect(back, 303);
+
+  const key = `contracts/${id}/${crypto.randomUUID()}.${extension}`;
+  await c.env.UPLOADS.put(key, await file.arrayBuffer(), { metadata: { contentType: file.type } });
+  await c.env.DB.prepare(
+    "INSERT INTO order_contracts (order_id, filename, content_type, size, storage_key, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(id, file.name || `contract.${extension}`, file.type, file.size, key, user.email, Date.now())
+    .run();
+  await c.env.DB.prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)")
+    .bind(id, `Signed contract uploaded: ${file.name || extension}`, user.email, Date.now())
+    .run();
+
+  notify(c, `📄 Signed contract uploaded on order ${id}\nby ${user.email}`);
+  return c.redirect(back, 303);
+});
+
+app.post("/admin/orders/:id/contracts/:contractId/delete", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const contractId = Number(c.req.param("contractId"));
+  const row = await c.env.DB.prepare("SELECT storage_key, filename FROM order_contracts WHERE id = ? AND order_id = ?")
+    .bind(contractId, id)
+    .first<{ storage_key: string; filename: string }>();
+
+  if (row) {
+    await c.env.UPLOADS.delete(row.storage_key);
+    await c.env.DB.prepare("DELETE FROM order_contracts WHERE id = ? AND order_id = ?").bind(contractId, id).run();
+    await c.env.DB.prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)")
+      .bind(id, `Signed contract removed: ${row.filename}`, user.email, Date.now())
+      .run();
+  }
+  return c.redirect(`/admin/orders#order-${id}`, 303);
+});
+
+app.get("/admin/order-contracts/:contractId", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const contractId = Number(c.req.param("contractId"));
+  const row = await c.env.DB.prepare("SELECT storage_key, content_type, filename FROM order_contracts WHERE id = ?")
+    .bind(contractId)
+    .first<{ storage_key: string; content_type: string | null; filename: string }>();
+  if (!row) return c.html(notFoundPage(), 404);
+
+  const object = await c.env.UPLOADS.get(row.storage_key, "arrayBuffer");
+  if (!object) return c.html(notFoundPage(), 404);
+
+  return new Response(object, {
+    headers: {
+      "content-type": row.content_type || "application/octet-stream",
+      "content-disposition": `inline; filename="${row.filename.replace(/"/g, "")}"`,
+      "cache-control": "no-store",
+    },
+  });
+});
+
+/** History table for the order card, fetched when the plus is pressed. */
+app.get("/admin/orders/:id/history", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.html(notFoundPage(), 404);
+
+  const id = Number(c.req.param("id"));
+  const { results } = await c.env.DB.prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id")
+    .bind(id)
+    .all<OrderEventRow>();
+  return c.html(historyTable(results));
+});
+
+/** Everything the order card needs, in a single D1 round trip. */
+async function loadOrderCardData(db: D1Database, id: number) {
+  const [photos, events, units, contracts] = await db.batch([
+    db.prepare("SELECT * FROM order_photos WHERE order_id = ? ORDER BY id").bind(id),
+    db.prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id").bind(id),
+    db.prepare("SELECT * FROM order_units WHERE order_id = ? ORDER BY position").bind(id),
+    db.prepare("SELECT * FROM order_contracts WHERE order_id = ? ORDER BY id").bind(id),
+  ]);
+  return {
+    photos: (photos?.results ?? []) as OrderPhotoRow[],
+    events: (events?.results ?? []) as OrderEventRow[],
+    units: (units?.results ?? []) as OrderUnitRow[],
+    contracts: (contracts?.results ?? []) as OrderContractRow[],
+  };
+}
+
+app.get("/admin/orders/:id/modal", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.html(notFoundPage(), 404);
+
+  const id = Number(c.req.param("id"));
+  const [order, card] = await Promise.all([
+    c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>(),
+    loadOrderCardData(c.env.DB, id),
+  ]);
+  if (!order) return c.html(notFoundPage(), 404);
+
+  return c.html(orderModalCard(order, card.photos, card.events, c.req.query("error"), card.units, card.contracts));
 });
 
 /** Draft contract: printable, and downloadable when ?download=1. */
@@ -1860,14 +2274,31 @@ app.post("/admin/orders/:id/invoice/:kind/send", async (c) => {
   const amount = moneyOrNull(body.amount);
   if (amount === null) return fail("Enter the invoice amount before sending.");
 
+  const method = String(body.method ?? "").trim();
   await c.env.DB.prepare(
-    `UPDATE orders SET ${kind === "client" ? "client_invoice_amount" : "carrier_invoice_amount"} = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE orders SET ${kind === "client" ? "client_invoice_amount" : "carrier_invoice_amount"} = ?, ${
+      kind === "client" ? "client_invoice_method" : "carrier_invoice_method"
+    } = ?, updated_at = ? WHERE id = ?`,
   )
-    .bind(amount, Date.now(), id)
+    .bind(amount, method || null, Date.now(), id)
     .run();
 
+  const origin = new URL(c.req.url).origin;
+  const day = (value: number | null) =>
+    value ? new Date(value).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", timeZone: "UTC" }) : "";
+  const { results: units } = await c.env.DB.prepare("SELECT * FROM order_units WHERE order_id = ? ORDER BY position")
+    .bind(id)
+    .all<OrderUnitRow>();
   const mail = buildInvoiceMail(
-    { ...order, invoice_amount: amount, track_url: `${new URL(c.req.url).origin}/track/${order.token}` },
+    {
+      ...order,
+      units,
+      invoice_amount: amount,
+      track_url: `${origin}/track/${order.token}`,
+      logo_url: `${origin}/logo.png`,
+      issued_on: day(Date.now()),
+      delivered_on: day(order.delivered_at ?? order.delivery_eta),
+    },
     kind,
   );
 
@@ -2165,10 +2596,13 @@ app.post("/admin/staff/marketing", async (c) => {
   if (user.role !== "admin") return c.html(notFoundPage(), 404);
 
   const body = await c.req.parseBody();
-  const value = Number(String(body.ads_percent ?? "").trim());
-  const percent = Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value * 10) / 10 : 0;
+  const read = (key: string, fallback: number) => {
+    const value = Number(String(body[key] ?? "").trim());
+    return Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value * 10) / 10 : fallback;
+  };
 
-  await setSetting(c.env.DB, "ads_percent", String(percent));
+  await setSetting(c.env.DB, "ads_percent", String(read("ads_percent", 15)));
+  await setSetting(c.env.DB, "tax_percent", String(read("tax_percent", 17)));
   return c.redirect("/admin/staff", 303);
 });
 

@@ -146,7 +146,7 @@ export function staffPerformancePage(
   data: StaffPerformance,
   viewer: UserRow,
   trends: RevenueTrends,
-  marketing: { ads: number },
+  marketing: { ads: number; tax: number },
 ): string {
   const href = (period: StaffPeriod, metric: StaffMetric) => `/admin/staff?period=${period}&metric=${metric}`;
   const periodTabs = (Object.keys(PERIOD_LABELS) as StaffPeriod[])
@@ -170,6 +170,28 @@ export function staffPerformancePage(
   );
   const revenueSeries: ChartSeries[] = revenueValues.some((value) => value > 0)
     ? [{ name: "Revenue", color: "#76a03c", values: revenueValues }]
+    : [];
+
+  // Fixed monthly charts: income, payout and profit over the last 12 months.
+  const monthlyMoney: ChartSeries[] = trends.month.revenueTotal > 0
+    ? [
+        { name: "Income", color: "#76a03c", values: trends.month.revenue },
+        {
+          name: "Carrier payout",
+          color: "#b6c4d2",
+          values: trends.month.revenue.map((value, index) => Math.max(0, value - (trends.month.profit[index] ?? 0))),
+        },
+        { name: "Broker profit", color: "#33475b", values: trends.month.profit },
+      ]
+    : [];
+  const monthlyOrders: ChartSeries[] = trends.month.orderTotal > 0
+    ? [{ name: "Orders paid", color: "#2f6f4f", values: trends.month.orders }]
+    : [];
+
+  // Paid orders per bucket come from the order trend, not from staff activity.
+  const paidTrend = trends[data.period === "year" ? "month" : data.period];
+  const paidSeries: ChartSeries[] = paidTrend.orderTotal > 0
+    ? [{ name: "Orders paid", color: "#2f6f4f", values: paidTrend.orders }]
     : [];
 
   const formatComparison = (value: number) =>
@@ -235,6 +257,13 @@ export function staffPerformancePage(
   </div>
 
   <div class="card chart-card">
+    <h3>Orders that reached Payments per ${PERIOD_LABELS[data.period].toLowerCase()}</h3>
+    ${paidSeries.length
+        ? `${barChart(paidTrend.buckets, paidSeries, "number", "status")}<p class="muted small">${paidTrend.orderTotal.toLocaleString()} orders marked paid in this range.</p>`
+        : '<p class="muted">No order has been marked paid in this period.</p>'}
+  </div>
+
+  <div class="card chart-card">
     <h3>${METRIC_LABELS[data.metric]} by staff per ${PERIOD_LABELS[data.period].toLowerCase()}</h3>
     ${metricSeries.length
         ? `${barChart(data.buckets, metricSeries, data.metric === "revenue" ? "money" : "number", data.metric)}${legend(metricSeries)}`
@@ -246,6 +275,20 @@ export function staffPerformancePage(
     ${revenueSeries.length
         ? barChart(data.buckets, revenueSeries, "money", "revenue")
         : '<p class="muted">No paid orders in this period.</p>'}
+  </div>
+
+  <h2 class="section-title mt">Monthly view</h2>
+  <div class="card chart-card">
+    <h3>Income, carrier payout and broker profit — per month</h3>
+    ${monthlyMoney.length
+        ? `${barChart(trends.month.buckets, monthlyMoney, "money", "revenue")}${legend(monthlyMoney)}<p class="muted small">Broker profit is what is left after the carrier is paid.</p>`
+        : '<p class="muted">No paid orders yet.</p>'}
+  </div>
+  <div class="card chart-card">
+    <h3>Orders marked paid — per month</h3>
+    ${monthlyOrders.length
+        ? `${barChart(trends.month.buckets, monthlyOrders, "number", "status")}<p class="muted small">${trends.month.orderTotal.toLocaleString()} paid orders in the last 12 months.</p>`
+        : '<p class="muted">No order has been marked paid yet.</p>'}
   </div>
 
   <h2 class="section-title mt">Revenue and profit</h2>
@@ -262,32 +305,40 @@ export function staffPerformancePage(
     ${trendChart(trends.month)}
   </div>
 
-  <h2 class="section-title mt">AdSense share of profit</h2>
+  <h2 class="section-title mt">Profit, tax and advertising</h2>
   <form class="card quote-form" method="post" action="/admin/staff/marketing">
     <div class="field-row">
-      <label class="field"><span>AdSense % of broker profit</span><input name="ads_percent" type="number" min="0" max="100" step="0.1" value="${marketing.ads}"></label>
+      <label class="field"><span>Advertising % of broker profit</span><input name="ads_percent" type="number" min="0" max="100" step="0.1" value="${marketing.ads}"></label>
+      <label class="field"><span>Tax reserve % of broker profit</span><input name="tax_percent" type="number" min="0" max="100" step="0.1" value="${marketing.tax}"></label>
     </div>
-    <button class="btn btn-accent btn-small" type="submit">Save percentage</button>
-    <p class="form-note">Applied to broker profit — the sum of broker fees on paid orders. Dispatchers can see the numbers; only admins can change the percentage.</p>
+    <button class="btn btn-accent btn-small" type="submit">Save percentages</button>
+    <p class="form-note">Both percentages apply to broker profit — the broker fee on orders marked paid. Dispatchers see the numbers; only admins change them.</p>
   </form>
 
   <table class="table">
-    <thead><tr><th>Range</th><th>Paid orders</th><th>Revenue</th><th>Broker profit</th><th>AdSense (${marketing.ads}%)</th><th>Kept</th></tr></thead>
+    <thead><tr><th>Range</th><th>Paid orders</th><th>Collected</th><th>Carrier payout</th><th>Broker profit</th><th>Tax (${marketing.tax}%)</th><th>Ads (${marketing.ads}%)</th><th>Kept</th><th>Ad budget / day</th></tr></thead>
     <tbody>${(["day", "week", "month"] as const)
         .map((key) => {
           const trend = trends[key];
+          const payout = Math.max(0, trend.revenueTotal - trend.profitTotal);
+          const tax = Math.round((trend.profitTotal * marketing.tax) / 100);
           const ads = Math.round((trend.profitTotal * marketing.ads) / 100);
+          const days = key === "day" ? 1 : key === "week" ? 7 : 30;
           return `<tr>
       <td>${TREND_LABELS[key]}</td>
       <td>${trend.orderTotal.toLocaleString()}</td>
       <td>${money(trend.revenueTotal)}</td>
+      <td>${money(payout)}</td>
       <td>${money(trend.profitTotal)}</td>
+      <td>${money(tax)}</td>
       <td>${money(ads)}</td>
-      <td><strong>${money(trend.profitTotal - ads)}</strong></td>
+      <td><strong>${money(trend.profitTotal - tax - ads)}</strong></td>
+      <td class="muted small">${money(Math.round(ads / days))}</td>
     </tr>`;
         })
         .join("")}</tbody>
   </table>
+  <p class="muted small">The daily figure is the ad budget divided by the length of the range — what you can spend per day at the current pace.</p>
 
   <h2 class="section-title mt">Staff comparison</h2>
   <p class="muted small">${METRIC_LABELS[data.metric]} — today, this week, this month and this year.</p>

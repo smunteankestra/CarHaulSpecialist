@@ -107,7 +107,14 @@ export type DocBlock =
   | { kind: "title"; text: string }
   | { kind: "subtitle"; text: string }
   | { kind: "heading"; text: string }
-  | { kind: "paragraph"; text: string; bold?: boolean; align?: "center" | "left"; size?: number }
+  | {
+      kind: "paragraph";
+      text: string;
+      bold?: boolean;
+      align?: "both" | "center" | "left" | "right";
+      size?: number;
+      spaceAfter?: number;
+    }
   | { kind: "label"; text: string }
   | {
       kind: "table";
@@ -116,8 +123,14 @@ export type DocBlock =
       boldFirstColumn?: boolean;
       shadedHeader?: boolean;
       columnSizes?: number[];
+      borderColor?: string;
+      headerShade?: string;
+      padY?: number;
+      padX?: number;
     }
   | { kind: "runs"; runs: { text: string; bold?: boolean; size?: number }[]; spaceBefore?: number }
+  | { kind: "richTable"; rows: string[][][]; borderColor?: string; widths?: number[]; borderless?: boolean }
+  | { kind: "raw"; xml: string }
   | { kind: "columns"; cells: DocBlock[][] };
 
 function escapeXml(value: string): string {
@@ -131,24 +144,51 @@ function escapeXml(value: string): string {
 
 const FONT = `<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>`;
 
-function run(text: string, opts: { bold?: boolean; size?: number; color?: string } = {}): string {
-  const rPr = `<w:rPr>${FONT}${opts.bold ? "<w:b/>" : ""}${opts.color ? `<w:color w:val="${opts.color}"/>` : ""}${opts.size ? `<w:sz w:val="${opts.size}"/><w:szCs w:val="${opts.size}"/>` : ""}</w:rPr>`;
+export function run(
+  text: string,
+  opts: { bold?: boolean; size?: number; color?: string; spacing?: number; caps?: boolean } = {},
+): string {
+  const rPr = `<w:rPr>${FONT}${opts.bold ? "<w:b/>" : ""}${opts.caps ? "<w:caps/>" : ""}${
+    opts.spacing ? `<w:spacing w:val="${opts.spacing}"/>` : ""
+  }${opts.color ? `<w:color w:val="${opts.color}"/>` : ""}${
+    opts.size ? `<w:sz w:val="${opts.size}"/><w:szCs w:val="${opts.size}"/>` : ""
+  }</w:rPr>`;
   return `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
 }
 
-function paragraph(
+export function paragraph(
   text: string,
-  opts: { bold?: boolean; size?: number; spaceBefore?: number; align?: "both" | "center" | "left"; color?: string } = {},
+  opts: {
+    bold?: boolean;
+    size?: number;
+    spaceBefore?: number;
+    spaceAfter?: number;
+    align?: "both" | "center" | "left" | "right";
+    color?: string;
+    spacing?: number;
+    caps?: boolean;
+    ruleAbove?: boolean;
+    keepNext?: boolean;
+  } = {},
 ): string {
-  const pPr = `<w:pPr>${opts.align ? `<w:jc w:val="${opts.align}"/>` : ""}${opts.spaceBefore ? `<w:spacing w:before="${opts.spaceBefore}"/>` : ""}</w:pPr>`;
+  const pPr = `<w:pPr>${
+    opts.keepNext ? "<w:keepNext/>" : ""
+  }${opts.ruleAbove ? '<w:pBdr><w:top w:val="single" w:sz="6" w:space="6" w:color="10161C"/></w:pBdr>' : ""}${
+    opts.align ? `<w:jc w:val="${opts.align}"/>` : ""
+  }${
+    opts.spaceBefore || opts.spaceAfter
+      ? `<w:spacing${opts.spaceBefore ? ` w:before="${opts.spaceBefore}"` : ""}${opts.spaceAfter ? ` w:after="${opts.spaceAfter}"` : ""}/>`
+      : ""
+  }</w:pPr>`;
   return `<w:p>${pPr}${run(text, opts)}</w:p>`;
 }
 
-const BORDERS = `<w:tblBorders>
-    <w:top w:val="single" w:sz="6" w:color="D9E2F3"/><w:left w:val="single" w:sz="6" w:color="D9E2F3"/>
-    <w:bottom w:val="single" w:sz="6" w:color="D9E2F3"/><w:right w:val="single" w:sz="6" w:color="D9E2F3"/>
-    <w:insideH w:val="single" w:sz="6" w:color="D9E2F3"/><w:insideV w:val="single" w:sz="6" w:color="D9E2F3"/>
+const borders = (color: string) => `<w:tblBorders>
+    <w:top w:val="single" w:sz="6" w:color="${color}"/><w:left w:val="single" w:sz="6" w:color="${color}"/>
+    <w:bottom w:val="single" w:sz="6" w:color="${color}"/><w:right w:val="single" w:sz="6" w:color="${color}"/>
+    <w:insideH w:val="single" w:sz="6" w:color="${color}"/><w:insideV w:val="single" w:sz="6" w:color="${color}"/>
   </w:tblBorders>`;
+
 
 function cell(inner: string, shade?: string, width?: number): string {
   const tcPr = `<w:tcPr>${width ? `<w:tcW w:w="${width}" w:type="dxa"/>` : `<w:tcW w:w="0" w:type="auto"/>`}${shade ? `<w:shd w:val="clear" w:color="auto" w:fill="${shade}"/>` : ""}</w:tcPr>`;
@@ -157,7 +197,16 @@ function cell(inner: string, shade?: string, width?: number): string {
 
 function table(
   rows: string[][],
-  opts: { headerRow?: boolean; boldFirstColumn?: boolean; shadedHeader?: boolean; columnSizes?: number[] } = {},
+  opts: {
+    headerRow?: boolean;
+    boldFirstColumn?: boolean;
+    shadedHeader?: boolean;
+    columnSizes?: number[];
+    borderColor?: string;
+    headerShade?: string;
+    padY?: number;
+    padX?: number;
+  } = {},
 ): string {
   const body = rows
     .map((cells, rowIndex) => {
@@ -165,14 +214,37 @@ function table(
       return `<w:tr>${cells
         .map((value, columnIndex) => {
           const bold = isHeader || (opts.boldFirstColumn && columnIndex === 0);
-          const shade = isHeader && opts.shadedHeader ? "D9E2F3" : undefined;
+          const shade = isHeader && opts.shadedHeader ? (opts.headerShade ?? "D9E2F3") : undefined;
           const size = opts.columnSizes?.[columnIndex] ?? 21;
           return cell(paragraph(value, { bold, size }), shade);
         })
         .join("")}</w:tr>`;
     })
     .join("");
-  return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${BORDERS}<w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="70" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="70" w:type="dxa"/></w:tblCellMar></w:tblPr>${body}</w:tbl>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${borders(opts.borderColor ?? "D9E2F3")}<w:tblCellMar><w:top w:w="${opts.padY ?? 40}" w:type="dxa"/><w:left w:w="${opts.padX ?? 70}" w:type="dxa"/><w:bottom w:w="${opts.padY ?? 40}" w:type="dxa"/><w:right w:w="${opts.padX ?? 70}" w:type="dxa"/></w:tblCellMar></w:tblPr>${body}</w:tbl>`;
+}
+
+/** A table whose cells hold several paragraphs each (party boxes). */
+export function richTable(
+  rows: string[][][],
+  opts: { borderColor?: string; padY?: number; padX?: number; widths?: number[]; borderless?: boolean } = {},
+): string {
+  const body = rows
+    .map(
+      (cells) =>
+        `<w:tr>${cells
+          .map((paragraphs, columnIndex) => {
+            const width = opts.widths?.[columnIndex];
+            const tcPr = `<w:tcPr>${width ? `<w:tcW w:w="${width}" w:type="pct"/>` : `<w:tcW w:w="0" w:type="auto"/>`}</w:tcPr>`;
+            return `<w:tc>${tcPr}${paragraphs.join("")}</w:tc>`;
+          })
+          .join("")}</w:tr>`,
+    )
+    .join("");
+  const frame = opts.borderless
+    ? `<w:tblBorders><w:top w:val="none" w:sz="0"/><w:left w:val="none" w:sz="0"/><w:bottom w:val="none" w:sz="0"/><w:right w:val="none" w:sz="0"/><w:insideH w:val="none" w:sz="0"/><w:insideV w:val="none" w:sz="0"/></w:tblBorders>`
+    : borders(opts.borderColor ?? "C9D4DE");
+  return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${frame}<w:tblCellMar><w:top w:w="${opts.padY ?? 60}" w:type="dxa"/><w:left w:w="${opts.padX ?? 90}" w:type="dxa"/><w:bottom w:w="${opts.padY ?? 60}" w:type="dxa"/><w:right w:w="${opts.padX ?? 90}" w:type="dxa"/></w:tblCellMar></w:tblPr>${body}</w:tbl>`;
 }
 
 /** Side-by-side blocks (nested tables inside a borderless layout table). */
@@ -202,13 +274,22 @@ function renderBlock(block: DocBlock): string {
     case "label":
       return paragraph(block.text.toUpperCase(), { bold: true, size: 27 });
     case "paragraph":
-      return paragraph(block.text, { size: block.size ?? 21, bold: block.bold, align: block.align ?? "both" });
+      return paragraph(block.text, {
+        size: block.size ?? 21,
+        bold: block.bold,
+        align: block.align ?? "both",
+        spaceAfter: block.spaceAfter,
+      });
     case "table":
       return table(block.rows, block);
     case "runs":
       return `<w:p><w:pPr>${block.spaceBefore ? `<w:spacing w:before="${block.spaceBefore}"/>` : ""}</w:pPr>${block.runs
         .map((item) => run(item.text, { bold: item.bold, size: item.size ?? 21 }))
         .join("")}</w:p>`;
+    case "raw":
+      return block.xml;
+    case "richTable":
+      return richTable(block.rows, { borderColor: block.borderColor, widths: block.widths, borderless: block.borderless });
     case "columns":
       return columns(block.cells);
   }
