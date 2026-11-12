@@ -149,6 +149,15 @@ if (location.pathname.indexOf('/admin') !== 0) {
   } catch (error) {}
 }
 </script>
+${!options.admin && site.clarityId
+      ? `<script type="text/javascript">
+(function(c,l,a,r,i,t,y){
+  c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+  t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+  y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+})(window, document, "clarity", "script", "${esc(site.clarityId)}");
+</script>`
+      : ""}
 </head>
 <body>
 ${options.admin ? adminInboxUi() : ""}
@@ -1694,9 +1703,60 @@ ${options.admin ? "" : `<footer class="site-footer">
   Array.prototype.forEach.call(document.querySelectorAll("[data-vehicle-catalog]"), initVehicleCatalog);
 })();
 </script>
-${!options.admin && site.clarityId
-      ? `<script src="/vendor/clarity.js" data-project="${esc(site.clarityId)}" defer></script>`
-      : ""}
+${options.admin
+      ? ""
+      : `<div class="lightbox" id="lightbox" hidden>
+  <button class="lightbox-close" type="button" aria-label="Close image">×</button>
+  <figure class="lightbox-body">
+    <img class="lightbox-img" alt="">
+    <figcaption class="lightbox-caption"></figcaption>
+  </figure>
+</div>
+<script>
+(function () {
+  var box = document.getElementById("lightbox");
+  if (!box) return;
+  var img = box.querySelector(".lightbox-img");
+  var caption = box.querySelector(".lightbox-caption");
+  var closeBtn = box.querySelector(".lightbox-close");
+
+  function open(source, text) {
+    img.src = source;
+    img.alt = text || "";
+    caption.textContent = text || "";
+    box.hidden = false;
+    document.body.style.overflow = "hidden";
+    closeBtn.focus();
+  }
+
+  function close() {
+    box.hidden = true;
+    img.removeAttribute("src");
+    document.body.style.overflow = "";
+  }
+
+  document.addEventListener("click", function (event) {
+    var item = event.target.closest ? event.target.closest("[data-lightbox]") : null;
+    if (item) {
+      event.preventDefault();
+      open(item.getAttribute("data-lightbox"), item.getAttribute("data-lightbox-caption"));
+      return;
+    }
+    if (!box.hidden && event.target === box) close();
+  });
+
+  closeBtn.addEventListener("click", close);
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && !box.hidden) close();
+    if ((event.key === "Enter" || event.key === " ") && event.target.closest && event.target.closest("[data-lightbox]")) {
+      event.preventDefault();
+      var item = event.target.closest("[data-lightbox]");
+      open(item.getAttribute("data-lightbox"), item.getAttribute("data-lightbox-caption"));
+    }
+  });
+})();
+</script>`}
 </body>
 </html>`;
 }
@@ -2057,6 +2117,8 @@ export function homePage(): string {
   </div>
 </section>
 
+${homepagePhotoStrip()}
+
 <section class="wrap section">
   <h2 class="section-title">Three steps, no phone tag</h2>
   <ol class="steps">
@@ -2361,6 +2423,46 @@ export function quotePage(options: {
   });
 }
 
+const SERVICE_VEHICLES: Record<string, string> = {
+  enclosed: `<h2 class="section-title mt">Vehicles we specialise in shipping enclosed</h2>
+  <div class="cards">
+    <div class="card"><h3>Classic &amp; vintage</h3><p>From pre-war antiques to restored American muscle. Low-clearance loading and zero exposure to the elements.</p></div>
+    <div class="card"><h3>Exotic &amp; sports cars</h3><p>High-performance coupes and supercars need soft wheel straps and low-angle ramps to protect carbon splitters and custom suspensions.</p></div>
+    <div class="card"><h3>Show &amp; exposition cars</h3><p>Concours d'Elegance, SEMA or a private showcase — showroom-ready arrival on your exact schedule.</p></div>
+    <div class="card"><h3>Project &amp; custom builds</h3><p>Non-running restorations, rolling chassis and hot rods loaded with winch-equipped enclosed carriers.</p></div>
+  </div>
+  <h2 class="section-title mt">How we load without touching the car</h2>
+  <ul class="ticks">
+    <li><strong>Over-the-wheel straps.</strong> Soft straps wrap the tyre tread instead of hooking axles or alloy spokes, so the car rides on its own suspension.</li>
+    <li><strong>Race Ramps and lift gates.</strong> Extended ramps create a gradual incline; hydraulic lift gates raise the car level before it rolls onto the deck.</li>
+    <li><strong>Winches for inoperable cars.</strong> Heavy-duty electric and hydraulic winches load projects and auction buys without jolts or drivetrain strain.</li>
+  </ul>`,
+  open: `<h2 class="section-title mt">Any vehicle, any configuration</h2>
+  <div class="cards">
+    <div class="card"><h3>Daily drivers &amp; family cars</h3><p>Sedans, coupes, hatchbacks, SUVs, minivans and electric vehicles.</p></div>
+    <div class="card"><h3>Powersports</h3><p>Motorcycles, ATVs, UTVs, side-by-sides and golf carts, secured with chocks and heavy-duty strapping.</p></div>
+    <div class="card"><h3>Vans &amp; heavy-duty trucks</h3><p>Sprinter and cargo vans, dually pickups, lifted trucks, box trucks and utility fleet vehicles.</p></div>
+    <div class="card"><h3>Oversized &amp; heavy equipment</h3><p>Tractors, skid steers, excavators and trailers moved on flatbed, step-deck and RGN haulers.</p></div>
+  </div>`,
+};
+
+const SERVICE_PHOTOS: Record<string, { src: string; alt: string; caption: string }[]> = {
+  open: [
+    { src: "/photos/open-1.jpg", alt: "Open multi-car carrier loaded with four vehicles", caption: "Multi-car open carriers on every major lane" },
+    { src: "/photos/open-2.jpg", alt: "Loaded open carrier with SUVs and pickups at dusk", caption: "SUVs, pickups and fleet units load together" },
+    { src: "/photos/open-3.jpg", alt: "White open carrier loaded with SUVs", caption: "Dealer inventory moving between lots" },
+    { src: "/photos/open-4.jpg", alt: "Close-up of a sedan secured with over-the-wheel soft straps", caption: "Over-the-wheel straps — no hooks on the chassis" },
+  ],
+  enclosed: [
+    { src: "/photos/enclosed-1.jpg", alt: "Rolls-Royce loaded inside an enclosed trailer", caption: "Hard-sided trailers, loaded level" },
+    { src: "/photos/enclosed-2.jpg", alt: "Porsche 718 Cayman inside a lit enclosed trailer", caption: "Interior lighting, air-ride suspension" },
+    { src: "/photos/enclosed-3.jpg", alt: "Ferrari on ramps inside an enclosed trailer", caption: "Race Ramps for low-clearance splitters" },
+    { src: "/photos/enclosed-4.jpg", alt: "Lamborghini Urus secured inside an enclosed trailer", caption: "Wheel baskets rather than chains" },
+    { src: "/photos/enclosed-5.jpg", alt: "Mercedes-AMG GT inside an enclosed trailer", caption: "Exotics loaded with the trailer closed" },
+    { src: "/photos/classic-1.jpg", alt: "Classic Mustang delivered from an enclosed trailer", caption: "Classics delivered showroom-ready" },
+  ],
+};
+
 const SERVICE_PAGES: Record<string, { title: string; intro: string; points: string[] }> = {
   open: {
     title: "Open vehicle transport",
@@ -2408,6 +2510,35 @@ const SERVICE_PAGES: Record<string, { title: string; intro: string; points: stri
   },
 };
 
+/** Photo gallery used on the service pages and the homepage strip. */
+function gallery(photos: { src: string; alt: string; caption?: string }[], columns = 3): string {
+  return `<div class="photo-gallery photo-gallery--${columns}">${photos
+    .map(
+      (photo) => `<figure class="gallery-item" data-lightbox="${esc(photo.src)}" data-lightbox-caption="${esc(photo.caption ?? photo.alt)}" role="button" tabindex="0" aria-label="Enlarge: ${esc(photo.alt)}">
+      <img src="${esc(photo.src)}" alt="${esc(photo.alt)}" loading="lazy" decoding="async">
+      ${photo.caption ? `<figcaption>${esc(photo.caption)}</figcaption>` : ""}
+    </figure>`,
+    )
+    .join("")}</div>`;
+}
+
+/** Three-across strip for the homepage. */
+export function homepagePhotoStrip(): string {
+  return `<section class="wrap section">
+  ${gallery(
+    [
+      { src: "/photos/open-1.jpg", alt: "Multi-car open carrier loaded with sedans", caption: "Open transport — the workhorse of US car hauling" },
+      { src: "/photos/enclosed-1.jpg", alt: "Rolls-Royce secured inside an enclosed trailer", caption: "Enclosed transport — hard-sided protection" },
+      { src: "/photos/open-carrier.jpg", alt: "Red nine-car open carrier on a suburban road", caption: "Nine-car carriers on every major lane" },
+      { src: "/photos/open-5.jpg", alt: "Loaded carrier with classic trucks and a pickup at a storage lot", caption: "Classics, trucks and daily drivers on one load" },
+      { src: "/photos/open-6.jpg", alt: "Blue carrier loaded with sedans and a red SUV", caption: "Dealer trades loaded and moving same day" },
+      { src: "/photos/open-2.jpg", alt: "Loaded open carrier with SUVs and pickups at dusk", caption: "Overnight runs on long-haul lanes" },
+    ],
+    3,
+  )}
+</section>`;
+}
+
 export function servicePage(slug: string, canonical = `/services/${slug}`): string | null {
   const page = SERVICE_PAGES[slug];
   if (!page) return null;
@@ -2423,6 +2554,8 @@ export function servicePage(slug: string, canonical = `/services/${slug}`): stri
   <ul class="ticks">
     ${page.points.map((point) => `<li>${esc(point)}</li>`).join("")}
   </ul>
+  ${SERVICE_VEHICLES[slug] ?? ""}
+  ${SERVICE_PHOTOS[slug] ? gallery(SERVICE_PHOTOS[slug]) : ""}
   <div class="cta-row">
     <a class="btn btn-accent" href="/get-quote">Get a price for this route</a>
     <a class="btn btn-ghost" href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">Call dispatch</a>

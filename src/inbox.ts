@@ -13,6 +13,7 @@ export function adminInboxUi(): string {
     </div>
     <p class="inbox-note" data-inbox-note role="status" hidden></p>
     <button class="inbox-sound" type="button" data-inbox-sound hidden>Sound is off — tap to enable alerts</button>
+    <button class="inbox-test" type="button" data-sound-test>Test Notification Sound</button>
     <ul class="inbox-list" data-inbox-list></ul>
   </div>
 </div>
@@ -62,34 +63,24 @@ export function adminInboxUi(): string {
     document.title = unseen.length ? "(" + unseen.length + ") " + document.title.replace(/^\\(\\d+\\)\\s*/, "") : document.title.replace(/^\\(\\d+\\)\\s*/, "");
     list.innerHTML = unseen.length
       ? unseen.map(function (q) {
-          return '<li><a href="/admin/orders?status=quoted#order-' + q.id + '"><strong>' + q.number + '</strong><span>' + (q.customer_name || "") + ' · ' + q.origin_zip + " → " + q.dest_zip + '</span><em>' + money(q.price) + '</em></a></li>';
+          return '<li><a href="/admin/orders?q=' + encodeURIComponent(q.number) + '#order-' + q.id + '"><strong>' + q.number + '</strong><span>' + (q.customer_name || "") + ' · ' + q.origin_zip + " → " + q.dest_zip + '</span><em>' + money(q.price) + '</em></a></li>';
         }).join("")
       : '<li class="inbox-empty">Nothing new right now.</li>';
   }
 
-  function chime() {
+  /** Quote alerts use the till; delivery reminders use the truck horn. */
+  function alertSound(kind) {
     try {
       if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
       if (audio.state === "suspended") audio.resume();
-      // three rising notes over ~1s so it is unmistakable in a background tab
-      [[880, 0], [1174.7, 0.34], [1567.98, 0.68]].forEach(function (pair) {
-        var freq = pair[0];
-        var offset = pair[1];
-        var osc = audio.createOscillator();
-        var gain = audio.createGain();
-        var start = audio.currentTime + offset;
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(0.22, start + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.4);
-        osc.connect(gain);
-        gain.connect(audio.destination);
-        osc.start(start);
-        osc.stop(start + 0.45);
-      });
+      var element = new Audio(kind === "reminder" ? "/sounds/truck-horn.mp3" : "/sounds/cash-register.mp3");
+      element.volume = 0.9;
+      var started = element.play();
+      if (started && started.catch) started.catch(function () {});
     } catch (error) {}
   }
+
+
 
   function toast(quote) {
     var el = document.createElement("div");
@@ -97,10 +88,30 @@ export function adminInboxUi(): string {
     el.innerHTML =
       '<div class="toast-body"><p class="toast-title">New quote ' + quote.number + '</p>' +
       '<p class="toast-sub">' + (quote.customer_name || "") + " · " + quote.origin_zip + " → " + quote.dest_zip + " · " + money(quote.price) + "</p>" +
-      '<a class="toast-link" href="/admin/orders?status=quoted#order-' + quote.id + '">Open order</a></div>' +
+      '<a class="toast-link" href="/admin/orders?q=' + encodeURIComponent(quote.number) + '#order-' + quote.id + '">Open order</a></div>' +
       '<button class="toast-close" type="button" aria-label="Dismiss">×</button>';
     el.querySelector(".toast-close").addEventListener("click", function () { el.remove(); });
     stack.appendChild(el);
+  }
+
+  function reminderToast(item) {
+    var el = document.createElement("div");
+    el.className = "toast toast-reminder";
+    var when = new Date(item.delivery_eta);
+    var label = item.window === "24h" ? "Delivery in 24 hours" : "Delivery in 2 hours";
+    el.innerHTML =
+      '<div class="toast-body"><p class="toast-title">' + label + ' — ' + item.number + '</p>' +
+      '<p class="toast-sub">' + (item.customer_name || "") + " · due " + when.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + "</p>" +
+      '<a class="toast-link" href="/admin/orders?q=' + encodeURIComponent(item.number) + '#order-' + item.id + '">Open order</a></div>' +
+      '<button class="toast-close" type="button" aria-label="Dismiss">×</button>';
+    el.querySelector(".toast-close").addEventListener("click", function () { el.remove(); });
+    stack.appendChild(el);
+  }
+
+  function receiveReminders(items) {
+    if (!items || !items.length) return;
+    items.forEach(reminderToast);
+    alertSound("reminder");
   }
 
   function receive(quotes, next) {
@@ -111,7 +122,7 @@ export function adminInboxUi(): string {
     if (!fresh.length) return;
     unseen = fresh.concat(unseen).slice(0, 20);
     fresh.slice().reverse().forEach(toast);
-    chime();
+    alertSound("quote");
     paint();
   }
 
@@ -122,6 +133,7 @@ export function adminInboxUi(): string {
       try {
         var payload = JSON.parse(event.data);
         if (payload.quotes && payload.quotes.length) receive(payload.quotes, payload.cursor);
+        if (payload.reminders && payload.reminders.length) receiveReminders(payload.reminders);
       } catch (error) {}
     };
     source.onerror = function () {
@@ -178,11 +190,19 @@ export function adminInboxUi(): string {
     if (!document.hidden && !source) connect();
   });
 
+  var soundTest = document.querySelector("[data-sound-test]");
+  if (soundTest) {
+    soundTest.addEventListener("click", function () {
+      unlockAudio();
+      alertSound("quote");
+    });
+  }
+
   var soundBtn = document.querySelector("[data-inbox-sound]");
   if (soundBtn) {
     soundBtn.addEventListener("click", function () {
       unlockAudio();
-      chime();
+      alertSound("quote");
     });
   }
 

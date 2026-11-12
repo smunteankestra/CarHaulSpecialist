@@ -5,12 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "npm run build:clarity && wrangler deploy",
+    "deploy": "wrangler deploy",
     "deploy:live": "wrangler deploy --name car-haul-specialist",
     "check": "tsc --noEmit",
     "db:local": "wrangler d1 execute car-haul-specialist --local --file=migrations/0001_init.sql",
-    "test": "node --test tests/*.test.ts",
-    "build:clarity": "esbuild src/clarity-client.ts --bundle --format=iife --minify --outfile=public/vendor/clarity.js"
+    "test": "node --test tests/*.test.ts"
   },
   "dependencies": {
     "@microsoft/clarity": "^1.0.2",

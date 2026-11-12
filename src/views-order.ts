@@ -520,6 +520,12 @@ const DATE_GROUPS = new Set(["picked_up_at", "pickup_eta", "delivery_eta", "deli
 
 const PAYMENT_METHODS = ["Zelle", "Venmo", "CashApp", "PayPal", "ACH", "Wire"];
 
+/** Live "in 4h 12m" label; the browser keeps it in sync with the clock. */
+function countdownTag(value: number | null): string {
+  if (!value) return "";
+  return `<br><span class="eta-countdown" data-countdown="${new Date(value).toISOString()}"></span>`;
+}
+
 function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = false): string {
   const vehicle = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—";
   const carrierLine = [order.carrier_mc, order.carrier_company_phone, order.carrier_email].filter(Boolean).join(" · ");
@@ -622,11 +628,17 @@ function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = fal
     `<div class="edit-grid">${text("dest_contact", "Contact name", order.dest_contact)}${text("dest_phone", "Phone", order.dest_phone)}</div>`,
     Boolean(order.dest_contact),
   )}
-      ${editable("Pick up ETA", "pickup_eta", dueSpan(order.pickup_eta, order.pickup_eta ? whenHtml(order.pickup_eta) : ""), dateTime("pickup_eta", "Date & time", order.pickup_eta), Boolean(order.pickup_eta))}
+      ${editable("Pick up ETA", "pickup_eta", dueSpan(order.pickup_eta, order.pickup_eta ? `${whenHtml(order.pickup_eta)}${countdownTag(order.pickup_eta)}` : ""), dateTime("pickup_eta", "Date & time", order.pickup_eta), Boolean(order.pickup_eta))}
       ${editable("Picked up at", "picked_up_at", order.picked_up_at ? whenHtml(order.picked_up_at) : "", dateTime("picked_up_at", "Date & time", order.picked_up_at), Boolean(order.picked_up_at))}
-      ${editable("Delivery ETA", "delivery_eta", dueSpan(order.delivery_eta, order.delivery_eta ? whenHtml(order.delivery_eta) : ""), dateTime("delivery_eta", "Date & time", order.delivery_eta), Boolean(order.delivery_eta))}
+      ${editable("Delivery ETA", "delivery_eta", dueSpan(order.delivery_eta, order.delivery_eta ? `${whenHtml(order.delivery_eta)}${countdownTag(order.delivery_eta)}` : ""), dateTime("delivery_eta", "Date & time", order.delivery_eta), Boolean(order.delivery_eta))}
       ${editable("Delivered at", "delivered_at", order.delivered_at ? whenHtml(order.delivered_at) : "", dateTime("delivered_at", "Date & time", order.delivered_at), Boolean(order.delivered_at))}
-      ${editable("Payment method", "payment_method", esc(order.payment_method ?? ""), `<select name="payment_method"><option value="">Select method</option>${PAYMENT_METHODS.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}</select>`)}
+      ${editable(
+        "Payment method",
+        "payment_method",
+        esc(order.payment_method ?? ""),
+        `<select name="payment_method" required><option value="">Select method</option>${PAYMENT_METHODS.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}</select>`,
+        Boolean(order.payment_method),
+      )}
       ${editable(
         "Payment status",
         "payment_state",
@@ -664,9 +676,9 @@ function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = fal
     "carrier",
     order.carrier_name ? `${esc(order.carrier_name)}${carrierLine ? `<br><span class="muted small">${esc(carrierLine)}</span>` : ""}${driverLine ? `<br><span class="muted small">Driver: ${esc(driverLine)}</span>` : ""}` : "",
     `<div class="edit-stack">
-          <div class="edit-grid">${text("carrier_name", "Company", order.carrier_name)}${text("carrier_mc", "MC number", order.carrier_mc)}</div>
-          <div class="edit-grid">${text("carrier_company_phone", "Company phone", order.carrier_company_phone)}${text("carrier_email", "Company email", order.carrier_email, ' type="email"')}</div>
-          <div class="edit-grid">${text("driver_name", "Driver name", order.driver_name)}${text("carrier_phone", "Driver phone", order.carrier_phone)}</div>
+          <div class="edit-grid">${text("carrier_name", "Company *", order.carrier_name, " required")}${text("carrier_mc", "MC number *", order.carrier_mc, " required")}</div>
+          <div class="edit-grid">${text("carrier_company_phone", "Company phone *", order.carrier_company_phone, " required")}${text("carrier_email", "Company email *", order.carrier_email, ' type="email" required')}</div>
+          <div class="edit-grid">${text("driver_name", "Driver name *", order.driver_name, " required")}${text("carrier_phone", "Driver phone *", order.carrier_phone, " required")}</div>
         </div>`,
     carrierComplete(order),
   )}
@@ -696,6 +708,7 @@ const REQUIRED_FIELDS: Record<string, [string, string][]> = {
     ["driver_name", "Driver name"],
     ["carrier_phone", "Driver phone"],
   ],
+  contract_draft: [["payment_method", "Payment method"]],
   picked_up: [
     ["picked_up_at", "Picked up at"],
     ["delivery_eta", "Delivery ETA"],
@@ -1074,6 +1087,7 @@ function fieldSaveAsync(): string {
         var current = modal.querySelector(".modal-card");
         if (fresh && current) current.outerHTML = fresh.outerHTML;
         initHistory(modal);
+        tickCountdowns();
       });
   }
 
@@ -1128,6 +1142,32 @@ function fieldSaveAsync(): string {
   window.addEventListener("hashchange", syncOpen);
   if (document.readyState !== "loading") syncOpen();
   else document.addEventListener("DOMContentLoaded", syncOpen);
+  // Countdowns tick on the real clock, so they stay right in every timezone.
+  function formatGap(ms) {
+    var totalMinutes = Math.round(Math.abs(ms) / 60000);
+    var days = Math.floor(totalMinutes / 1440);
+    var hours = Math.floor((totalMinutes % 1440) / 60);
+    var minutes = totalMinutes % 60;
+    if (days > 0) return days + "d " + hours + "h";
+    if (hours > 0) return hours + "h " + minutes + "m";
+    return minutes + "m";
+  }
+
+  function tickCountdowns() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-countdown]"), function (el) {
+      var target = new Date(el.getAttribute("data-countdown")).getTime();
+      if (!target || isNaN(target)) return;
+      var gap = target - Date.now();
+      var label = gap >= 0 ? "in " + formatGap(gap) : formatGap(gap) + " ago";
+      if (el.textContent !== label) el.textContent = label;
+      el.classList.toggle("is-overdue", gap < 0);
+      el.classList.toggle("is-soon", gap >= 0 && gap <= 2 * 3600000);
+    });
+  }
+
+  tickCountdowns();
+  setInterval(tickCountdowns, 15000);
+
   window.__refreshOrderModal = refresh;
   // Contract upload: drag a file onto the drop zone, or pick one.
   function contractDrop(node) {
@@ -1215,6 +1255,7 @@ function fieldSaveAsync(): string {
         }
         current.outerHTML = fresh.outerHTML;
         initHistory(modal);
+        tickCountdowns();
       })
       .catch(function () { form.submit(); });
   });

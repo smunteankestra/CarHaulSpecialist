@@ -9,6 +9,53 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "history-of-car-hauling-in-america",
+    title: "The History of Car Hauling in the United States",
+    date: "Nov 12, 2026",
+    readTime: "5 min read",
+    description:
+      "From wooden boxcars and drive-away drivers to 10-car stinger carriers and EV-rated trailers: how American car hauling grew into a nationwide logistics network.",
+    paragraphs: [
+      "The American auto transport industry grew alongside the automobile itself, evolving from makeshift railroad setups into a specialised nationwide logistics network moving millions of vehicles every year.",
+      "Early 1900s: railcars and drive-aways",
+      "In the earliest days of automotive manufacturing, getting a newly built car from a Detroit factory to a buyer across the country was a major challenge. Before paved highways existed, manufacturers relied on standard wooden railroad boxcars, manually rolling vehicles inside and bracing the wheels with wooden blocks. For shorter distances, companies hired drive-away drivers to physically drive new cars along dirt roads to dealerships, often causing heavy wear before the vehicle ever reached its first owner.",
+      "1920s-1930s: the birth of the multi-car trailer",
+      "As highway infrastructure expanded in the 1920s and assembly lines accelerated production, automakers needed a faster, more economical way to deliver several vehicles at once. Early pioneers in Michigan began welding steel frames onto flatbed trucks to stack two or three vehicles at an angle. By the 1930s the first recognisable two-tier open auto carriers appeared on American highways, letting a single truck move four or five cars at a time.",
+      "1950s-1960s: the Interstate boom and enclosed carriers",
+      "The Federal-Aid Highway Act of 1956 transformed the industry. With the Interstate Highway System under construction, coast-to-coast trucking became faster, safer and far more reliable. Trailer designs expanded to carry six to eight vehicles, and enclosed auto transport emerged to protect high-end luxury cars, prototypes and race cars from weather and road debris.",
+      "1980s-1990s: high-capacity haulers and deregulation",
+      "Following the Motor Carrier Act of 1980, which deregulated trucking, independent carriers and auto transport brokers flourished, making vehicle shipping accessible not just to automakers but to dealerships, snowbirds and private buyers. Hydraulic systems replaced manual ramps, allowing modern nine-car and ten-car stinger-steered carriers to maximise load capacity while lowering deck heights to accommodate aerodynamic sedans and sports cars.",
+      "2000s to today: digital dispatch, soft straps and EV logistics",
+      "Today's industry combines heavy-duty engineering with real-time logistics technology. Digital load boards, GPS tracking and electronic Bills of Lading connect shippers and carriers nationwide in minutes. Equipment has evolved to match modern vehicles too: non-abrasive over-the-wheel soft straps, hydraulic lift gates for low-clearance exotics, and reinforced trailers engineered for the heavier curb weights of electric vehicles, SUVs and commercial trucks.",
+    ],
+  },
+  {
+    slug: "auto-transport-insurance-explained",
+    title: "Auto Transport Insurance, Explained",
+    date: "Nov 12, 2026",
+    readTime: "6 min read",
+    description:
+      "How cargo insurance actually works when a car is shipped: carrier limits, exclusions, the broker's role, and why the Bill of Lading decides every claim.",
+    paragraphs: [
+      "In the U.S. auto transport industry, insurance is governed by federal rules set by the Federal Motor Carrier Safety Administration (FMCSA) and works through the motor carrier's cargo insurance policy. Understanding who covers what before the truck arrives is the difference between a smooth claim and an argument.",
+      "1. Primary coverage: motor carrier cargo insurance",
+      "The trucking company physically hauling your car is legally required to carry Commercial Auto Liability and Motor Truck Cargo Insurance.",
+      "Coverage limits: open carriers typically carry $100,000 to $250,000 in cargo insurance per load, covering every vehicle on the trailer combined. Enclosed carriers, which haul higher-value exotics, classics and luxury vehicles, typically carry $250,000 to $1,000,000 or more.",
+      "What it covers: damage caused by carrier negligence, loading and unloading accidents, equipment failure such as a snapped strap or hydraulic leak, trailer collisions, fire, and theft while the vehicle is in the carrier's care.",
+      "Deductibles: carrier policies usually carry a deductible, often $1,000 to $5,000. That deductible is the carrier's responsibility, not the vehicle owner's, when a valid damage claim is filed.",
+      "2. What is typically excluded",
+      "Carrier cargo insurance does not cover every type of loss. Standard exclusions include acts of God and severe weather such as hail, floods, tornadoes or lightning strikes, especially on open trailers. Road debris kicked up by other vehicles is usually excluded on open transport. Personal belongings packed in the trunk or cabin are not covered by the carrier's auto cargo policy, and adding heavy items can violate DOT weight limits. Pre-existing damage and mechanical failure are also excluded.",
+      "3. The broker versus the carrier",
+      "The motor carrier holds the primary insurance policy covering your vehicle during loading, transit and unloading. An auto transport broker connects you with a vetted carrier and verifies that the carrier's certificate of insurance is active and meets the required limits. Reputable brokers also carry contingent cargo insurance, which acts as a secondary backstop if a carrier's primary insurer refuses or fails to pay a legitimate claim.",
+      "4. The Bill of Lading is the document that decides claims",
+      "Insurance claims live or die by the Bill of Lading, the inspection report completed at both pickup and delivery. At pickup, you and the driver walk around the vehicle and note every existing scratch, dent or chip on the BOL diagram, and both parties sign. At delivery, before signing the final receipt, you inspect the car again. Any new damage must be noted in writing on the BOL before the driver leaves, supported by clear, timestamped photos. Signing a clean BOL without noting damage waives your ability to file a cargo claim.",
+      "5. Supplemental and gap coverage",
+      "Your own comprehensive auto policy often covers acts of God such as hail or road debris that a carrier's policy excludes, though filing a claim is subject to your personal deductible. For ultra-rare collector cars, prototypes or vehicles exceeding standard carrier limits, shippers and brokers can purchase single-trip declared-value cargo policies that guarantee full coverage with zero deductible.",
+      "What this means for your shipment",
+      "Ask for the carrier's certificate of insurance before pickup, photograph the vehicle at both ends, and never sign a clean Bill of Lading until you have walked around the car. Bond Auto Transport verifies active FMCSA authority and cargo limits for every carrier we assign, and we walk the BOL inspection with you at both ends.",
+    ],
+  },
+  {
     slug: "why-choose-a-car-hauling-service",
     title: "Why Choose a Car Hauling Service?",
     date: "Jan 21, 2026",

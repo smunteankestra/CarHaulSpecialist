@@ -147,6 +147,7 @@ export interface OrderRow {
   carrier_invoice_amount: number | null;
   client_invoice_method: string | null;
   carrier_invoice_method: string | null;
+  dest_tz: string | null;
   distance_miles: number | null;
   price: number;
   final_quote: number | null;

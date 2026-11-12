@@ -27,6 +27,7 @@ import { BLOG_POSTS, findBlogPost } from "./blog.ts";
 import { LEGACY_PAGES } from "./content.ts";
 import { blogIndexPage, blogPostPage, legacyPage } from "./views-content.ts";
 import { loadRevenueTrends, loadStaffPerformance, parseStaffMetric, parseStaffPeriod } from "./staff.ts";
+import { stateTimezone, zonedToUtc } from "./timezone.ts";
 import { staffPerformancePage } from "./views-staff.ts";
 import {
   accountPage,
@@ -1202,7 +1203,7 @@ function adminRedirect(body: Record<string, unknown>, fallback: string): string 
 }
 
 /** Combine a date plus 12-hour time fields into a UTC timestamp. */
-function parseDateTime(body: Record<string, string | File>, prefix: string): number | null {
+function parseDateTime(body: Record<string, string | File>, prefix: string, zone?: string): number | null {
   const month = Number(body[`${prefix}_month`] ?? "");
   const day = Number(body[`${prefix}_day`] ?? "");
   const year = Number(body[`${prefix}_year`] ?? "");
@@ -1229,7 +1230,10 @@ function parseDateTime(body: Record<string, string | File>, prefix: string): num
   }
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const safeDay = Math.min(day, lastDay);
-  const stamp = Date.UTC(year, month - 1, safeDay, (hour % 12) + (ampm === "PM" ? 12 : 0), minute);
+  const hour24 = (hour % 12) + (ampm === "PM" ? 12 : 0);
+  const stamp = zone
+    ? zonedToUtc(year, month, safeDay, hour24, minute, zone)
+    : Date.UTC(year, month - 1, safeDay, hour24, minute);
   return Number.isFinite(stamp) ? stamp : null;
 }
 
@@ -1474,6 +1478,7 @@ function missingStepData(
     carrierEmail: string | null;
     driverName: string | null;
     carrierPhone: string | null;
+    paymentMethod: string | null;
   },
 ): string | null {
   if (status === "quoted" && data.finalQuote === null) return "Set the final quote before moving to Booked.";
@@ -1489,6 +1494,7 @@ function missingStepData(
     if (missing.length) return `Add ${missing.join(", ")} before moving to Contract draft.`;
   }
   if (status === "contract_draft" && !data.pickupEta) return "Add the pickup ETA before moving to Carrier assigned.";
+  if (status === "contract_draft" && !data.paymentMethod) return "Add the payment method before moving to Carrier assigned.";
   if (status === "assigned" && !data.pickupEta) return "Add the pickup ETA before moving to Picked up.";
   if (status === "assigned" && !data.originContact) return "Add the pickup contact before moving to Picked up.";
   if (status === "assigned" && !data.destContact) return "Add the delivery contact before moving to Picked up.";
@@ -1519,9 +1525,11 @@ app.post("/admin/orders/:id/status", async (c) => {
   const status = moving ?? String(body.status ?? "");
   if (!isOrderStatus(status)) return c.redirect(`/admin/orders/${id}`, 303);
 
+  const statusOrder = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  const destZone = statusOrder ? (statusOrder.dest_tz ?? stateTimezone(statusOrder.dest_state)) : undefined;
   const pickedUpAt = parseDateTime(body, "picked_up");
-  const pickupEta = parseDateTime(body, "pickup_eta");
-  const deliveryEta = parseDateTime(body, "delivery_eta");
+  const pickupEta = parseDateTime(body, "pickup_eta", statusOrder ? stateTimezone(statusOrder.origin_state) : undefined);
+  const deliveryEta = parseDateTime(body, "delivery_eta", destZone);
   const deliveredAt = parseDateTime(body, "delivered");
   const paidRaw = String(body.paid_amount ?? "").trim();
   const paidNumber = paidRaw ? Number(paidRaw) : NaN;
@@ -1562,6 +1570,7 @@ app.post("/admin/orders/:id/status", async (c) => {
       carrierEmail: order.carrier_email,
       driverName: order.driver_name,
       carrierPhone: order.carrier_phone,
+      paymentMethod: order.payment_method,
     });
     if (missing) {
       return c.redirect(`/admin/orders?error=${encodeURIComponent(missing)}&error_order=${id}#order-${id}`, 303);
@@ -1761,7 +1770,7 @@ const ORDER_FIELD_GROUPS: Record<string, FieldGroup> = {
   },
   picked_up_at: { label: "Picked up at", columns: ["picked_up_at"], parse: (body) => datetimeField(body, "picked_up_at") },
   pickup_eta: { label: "Pickup ETA", columns: ["pickup_eta"], parse: (body) => datetimeField(body, "pickup_eta") },
-  delivery_eta: { label: "Delivery ETA", columns: ["delivery_eta"], parse: (body) => datetimeField(body, "delivery_eta") },
+  delivery_eta: { label: "Delivery ETA", columns: ["delivery_eta", "dest_tz"], parse: (body) => datetimeField(body, "delivery_eta") },
   delivered_at: { label: "Delivered at", columns: ["delivered_at"], parse: (body) => datetimeField(body, "delivered_at") },
   paid_amount: {
     label: "Paid amount",
@@ -1840,7 +1849,21 @@ app.post("/admin/orders/:id/field", async (c) => {
   const group = Object.hasOwn(ORDER_FIELD_GROUPS, key) ? ORDER_FIELD_GROUPS[key] : undefined;
   if (!group) return c.redirect(back, 303);
 
-  const values = group.parse(body);
+  // Times are typed as wall-clock where the car is, not where dispatch sits.
+  const originZone = old.dest_tz && key === "delivery_eta" ? old.dest_tz : stateTimezone(old.origin_state);
+  const destZone = old.dest_tz ?? stateTimezone(old.dest_state);
+  const values =
+    key === "delivery_eta" || key === "pickup_eta"
+      ? (() => {
+          if (fieldText(body, `${key}_clear`) === "1") return { [key]: null } as Record<string, unknown>;
+          const zone = key === "delivery_eta" ? destZone : originZone;
+          const parsed = parseDateTime(body, key, zone);
+          if (parsed === null) return null;
+          return key === "delivery_eta"
+            ? ({ delivery_eta: parsed, dest_tz: destZone } as Record<string, unknown>)
+            : ({ pickup_eta: parsed } as Record<string, unknown>);
+        })()
+      : group.parse(body);
   if (!values) return c.redirect(back, 303);
 
   const oldRecord = old as unknown as Record<string, unknown>;
@@ -1854,6 +1877,27 @@ app.post("/admin/orders/:id/field", async (c) => {
       return `${ORDER_FIELD_LABELS[column] ?? column}: ${formatOrderField(column, before)} → ${formatOrderField(column, values[column])}`;
     });
   const async = c.req.header("x-async") === "1";
+
+  // A carrier is either fully on the order or not at all — no half-assigned trucks.
+  if (key === "carrier") {
+    const carrierFields: [string, string][] = [
+      ["carrier_name", "company name"],
+      ["carrier_mc", "MC number"],
+      ["carrier_company_phone", "company phone"],
+      ["carrier_email", "company email"],
+      ["driver_name", "driver name"],
+      ["carrier_phone", "driver phone"],
+    ];
+    const blank = carrierFields.filter(([column]) => !String(values[column] ?? "").trim());
+    if (blank.length) {
+      const message = `Carrier not saved — add the ${blank.map(([, label]) => label).join(", ")}.`;
+      if (async) {
+        const partial = await loadOrderCardData(c.env.DB, id);
+        return c.html(orderModalCard(old, partial.photos, partial.events, message, partial.units, partial.contracts));
+      }
+      return c.redirect(`/admin/orders?error=${encodeURIComponent(message)}&error_order=${id}#order-${id}`, 303);
+    }
+  }
 
   if (!changes.length) {
     // Nothing changed: still answer with the card so the modal never gets a redirect.
@@ -2040,6 +2084,61 @@ app.post("/admin/orders/:id/units/:unitId/delete", async (c) => {
 
 /** The order modal body, fetched when a row is opened. */
 /**
+ * Finds deliveries inside the 24h and 2h windows and claims each reminder once
+ * by inserting an event row; a failed insert means someone else already fired it.
+ */
+async function collectDeliveryReminders(db: D1Database, now: number): Promise<
+  { id: number; number: string; customer_name: string; delivery_eta: number; window: "24h" | "2h" }[]
+> {
+  // `from` keeps the 24h reminder from firing late on a delivery that is already
+  // inside the 2h window — nobody wants both at once.
+  const windows: { kind: string; window: "24h" | "2h"; from: number; limit: number }[] = [
+    { kind: "reminder_24h", window: "24h", from: 2 * 3600000, limit: 24 * 3600000 },
+    { kind: "reminder_2h", window: "2h", from: 0, limit: 2 * 3600000 },
+  ];
+
+  const claimed: { id: number; number: string; customer_name: string; delivery_eta: number; window: "24h" | "2h" }[] = [];
+
+  for (const rule of windows) {
+    const { results } = await db
+      .prepare(
+        `SELECT o.id, o.number, o.customer_name, o.delivery_eta
+           FROM orders o
+          WHERE o.delivery_eta IS NOT NULL
+            AND o.delivery_eta > ?
+            AND o.delivery_eta <= ?
+            AND o.status IN ('confirmed', 'contract_draft', 'assigned', 'picked_up')
+            AND NOT EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.kind = ?)
+          LIMIT 5`,
+      )
+      .bind(now + rule.from, now + rule.limit, rule.kind)
+      .all<{ id: number; number: string; customer_name: string; delivery_eta: number }>();
+
+    for (const order of results) {
+      const claim = await db
+        .prepare(
+          `INSERT INTO order_events (order_id, kind, note, actor, created_at)
+           SELECT ?, ?, ?, 'system', ?
+            WHERE NOT EXISTS (SELECT 1 FROM order_events WHERE order_id = ? AND kind = ?)`,
+        )
+        .bind(
+          order.id,
+          rule.kind,
+          `Delivery ${rule.window === "24h" ? "in 24 hours" : "in 2 hours"}`,
+          now,
+          order.id,
+          rule.kind,
+        )
+        .run();
+      if ((claim.meta.changes ?? 0) === 0) continue;
+      claimed.push({ ...order, window: rule.window });
+    }
+  }
+
+  return claimed;
+}
+
+/**
  * Live inbox stream. Workers cannot hold a socket open indefinitely, so the stream
  * lives ~27s, checks D1 every 3s, then closes and lets EventSource reconnect.
  */
@@ -2068,6 +2167,13 @@ app.get("/admin/api/stream", async (c) => {
           } else {
             controller.enqueue(encoder.encode(": ping\n\n"));
           }
+
+          // Delivery reminders: once at T-24h, once at T-2h. The event row is the lock,
+          // so two open tabs cannot both fire the same reminder.
+          const now = Date.now();
+          const reminders = await collectDeliveryReminders(c.env.DB, now);
+          if (reminders.length) push({ reminders });
+
           await new Promise((resolve) => setTimeout(resolve, 3000));
         }
       } catch {
