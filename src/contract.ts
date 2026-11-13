@@ -43,6 +43,7 @@ export interface ContractOrder {
   customer_phone: string;
   customer_email: string;
   carrier_name: string | null;
+  carrier_mc: string | null;
   carrier_company_phone: string | null;
   carrier_email: string | null;
   driver_name: string | null;
@@ -167,7 +168,7 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
     <div class="party">
       <h2>Carrier company</h2>
       <strong>${text(order.carrier_name)}</strong>
-      <p>${text(order.carrier_company_phone)} · ${text(order.carrier_email)}</p>
+      <p>${order.carrier_mc ? `MC ${text(order.carrier_mc)} · ` : ""}${text(order.carrier_company_phone)} · ${text(order.carrier_email)}</p>
     </div>
     <div class="party">
       <h2>Driver</h2>
@@ -182,9 +183,10 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
     ${scheduleRow("Pick up ETA", unitColumns.map(() => dateOnly(order.pickup_eta)))}
     ${scheduleRow("Delivery ETA", unitColumns.map(() => dateOnly(order.delivery_eta)))}
     ${scheduleRow(
-      "Amount",
+      "Total amount",
       rows.map((unit, index) => money(index === 0 ? clientAmount : unit.price)),
     )}
+    ${scheduleRow("Broker fee", unitColumns.map(() => (order.broker_fee !== null ? money(order.broker_fee) : "—")))}
     ${scheduleRow("Payment method", unitColumns.map(() => text(order.payment_method)))}
     ${scheduleRow("Payee", unitColumns.map(() => "MGV Advisors LLC"))}
     ${scheduleRow("Carrier payment", unitColumns.map(() => `${money(carrierAmount)} to the driver`))}
@@ -247,7 +249,8 @@ export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8
     ["Unit #", String(rows.length > 1 ? `1 – ${rows.length}` : first?.position ?? 1)],
     ["Pick up ETA", dateOnly(order.pickup_eta)],
     ["Delivery ETA", dateOnly(order.delivery_eta)],
-    ["Amount", money(clientAmount)],
+    ["Total amount", money(clientAmount)],
+    ["Broker fee", order.broker_fee !== null ? money(order.broker_fee) : "—"],
     ["Payment method", text(order.payment_method)],
     ["Payee", "MGV Advisors LLC"],
     ["Carrier payment", `${money(order.carrier_fee)} to the driver`],
@@ -275,7 +278,11 @@ export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8
           party("Customer", text(order.customer_name), `${text(order.customer_phone)} · ${text(order.customer_email)}`),
         ],
         [
-          party("Carrier company", text(order.carrier_name), `${text(order.carrier_company_phone)} · ${text(order.carrier_email)}`),
+          party(
+            "Carrier company",
+            text(order.carrier_name),
+            `${order.carrier_mc ? `MC ${order.carrier_mc} · ` : ""}${text(order.carrier_company_phone)} · ${text(order.carrier_email)}`,
+          ),
           party("Driver", text(order.driver_name), text(order.carrier_phone)),
         ],
       ],

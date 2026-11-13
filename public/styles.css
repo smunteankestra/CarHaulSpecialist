@@ -4214,3 +4214,20 @@ main {
   background: #fdecea;
   color: #b91c1c;
 }
+
+/* read notifications stay on screen, just dimmed */
+.toast.is-read {
+  opacity: 0.55;
+  filter: grayscale(0.35);
+  box-shadow: 0 6px 16px rgba(11, 22, 32, 0.08);
+}
+
+.toast.is-read:hover {
+  opacity: 0.9;
+}
+
+/* explicit picker for mobile, where the label trick is unreliable */
+.contract-pick {
+  justify-self: start;
+  margin-top: -0.3rem;
+}

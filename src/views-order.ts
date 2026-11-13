@@ -79,8 +79,10 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       </div>`
       : fields;
 
-  const pickupFolded = has(values.origin_zip) && has(values.origin_city);
-  const deliveryFolded = has(values.dest_zip) && has(values.dest_city);
+  const pickupFolded =
+    has(values.origin_street) && has(values.origin_city) && has(values.origin_state) && has(values.origin_zip);
+  const deliveryFolded =
+    has(values.dest_street) && has(values.dest_city) && has(values.dest_state) && has(values.dest_zip);
 
   return layout({
     title: "Book your transport — Bond Auto Transport",
@@ -156,9 +158,9 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       ${fold(
         `${esc(values.origin_city ?? "")}${values.origin_state ? `, ${esc(values.origin_state)}` : ""} ${esc(values.origin_zip ?? "")}`,
         `<div class="field-row">
-        <label class="field"><span>Street address</span><input name="origin_street" value="${v("origin_street")}" autocomplete="street-address"></label>
-        <label class="field"><span>City</span><input name="origin_city" value="${v("origin_city")}"></label>
-        <label class="field"><span>State</span><select name="origin_state">${stateOptions(values.origin_state)}</select></label>
+        <label class="field"><span>Street address *</span><input name="origin_street" required value="${v("origin_street")}" autocomplete="street-address"></label>
+        <label class="field"><span>City *</span><input name="origin_city" required value="${v("origin_city")}"></label>
+        <label class="field"><span>State *</span><select name="origin_state" required>${stateOptions(values.origin_state)}</select></label>
         <label class="field"><span>ZIP *</span><input name="origin_zip" inputmode="numeric" maxlength="5" required value="${v("origin_zip")}"></label>
       </div>`,
         pickupFolded,
@@ -179,9 +181,9 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       ${fold(
         `${esc(values.dest_city ?? "")}${values.dest_state ? `, ${esc(values.dest_state)}` : ""} ${esc(values.dest_zip ?? "")}`,
         `<div class="field-row">
-        <label class="field"><span>Street address</span><input name="dest_street" value="${v("dest_street")}"></label>
-        <label class="field"><span>City</span><input name="dest_city" value="${v("dest_city")}"></label>
-        <label class="field"><span>State</span><select name="dest_state">${stateOptions(values.dest_state)}</select></label>
+        <label class="field"><span>Street address *</span><input name="dest_street" required value="${v("dest_street")}"></label>
+        <label class="field"><span>City *</span><input name="dest_city" required value="${v("dest_city")}"></label>
+        <label class="field"><span>State *</span><select name="dest_state" required>${stateOptions(values.dest_state)}</select></label>
         <label class="field"><span>ZIP *</span><input name="dest_zip" inputmode="numeric" maxlength="5" required value="${v("dest_zip")}"></label>
       </div>`,
         deliveryFolded,
@@ -881,9 +883,10 @@ function signedContracts(order: OrderRow, contracts: OrderContractRow[]): string
       <label class="contract-drop" data-contract-drop>
         <input class="contract-input" type="file" name="contract" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" required>
         <span class="contract-plus" aria-hidden="true">+</span>
-        <span class="contract-drop-text">Drop the signed contract here or click to choose</span>
+        <span class="contract-drop-text">Drop the signed contract here or choose a file</span>
         <span class="contract-drop-sub">PDF, Word or a scan · up to 10 MB${contracts.length ? ` · ${contracts.length} of 3` : ""}</span>
       </label>
+      <button class="btn btn-ghost btn-small contract-pick" type="button" data-contract-pick>Choose file</button>
       <button class="btn btn-accent btn-small" type="submit">Upload Signed Contract</button>
     </form>`;
   }
@@ -1201,6 +1204,14 @@ function fieldSaveAsync(): string {
     if (label) label.textContent = files[0].name;
   });
 
+  document.addEventListener("click", function (event) {
+    var pick = event.target.closest ? event.target.closest("[data-contract-pick]") : null;
+    if (!pick) return;
+    var form = pick.closest("form");
+    var input = form ? form.querySelector('input[type="file"]') : null;
+    if (input) input.click();
+  });
+
   document.addEventListener("change", function (event) {
     var drop = contractDrop(event.target);
     if (!drop) return;
@@ -1404,12 +1415,15 @@ function invoiceConfirmUi(): string {
     if (!pending) return;
     var form = pending;
     var modal = form.closest(".modal");
+    var markingPaid = form.classList.contains("invoice-paid");
     yes.disabled = true;
     yes.textContent = busyLabel;
     fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin" })
       .then(function (response) { return response.text(); })
       .then(function () {
         close();
+        // money in the door: play the till sound on a successful mark-paid
+        if (markingPaid && window.__playAlert) window.__playAlert("quote");
         if (!modal || !window.__refreshOrderModal) { window.location.reload(); return; }
         window.__refreshOrderModal(modal).catch(function () { window.location.reload(); });
       })
@@ -1980,7 +1994,12 @@ export function adminUsersPage(
   });
 }
 
-export function accountPage(user: UserRow, message?: string, error?: string): string {
+export function accountPage(
+  user: UserRow,
+  message?: string,
+  error?: string,
+  calendar?: { feed: string; webcal: string },
+): string {
   return layout({
     admin: true,
     title: "Your account — Bond Auto Transport",
@@ -2010,6 +2029,17 @@ export function accountPage(user: UserRow, message?: string, error?: string): st
     <button class="btn btn-accent" type="submit">Update password</button>
     <p class="form-note">At least 10 characters. You stay signed in on this device.</p>
   </form>
+
+  ${calendar
+      ? `<h2 class="section-title mt">Delivery calendar</h2>
+  <div class="card">
+    <p>Subscribe once and every pickup and delivery ETA lands in your calendar app — Apple Calendar, Google Calendar, Outlook. It refreshes on its own, so a moved ETA moves in the calendar too.</p>
+    <p class="muted small">Paste this address into Apple Calendar → <em>File → New Calendar Subscription</em>, or Google Calendar → <em>Other calendars → From URL</em>:</p>
+    <p><input class="copy-field" value="${esc(calendar.feed)}" readonly onclick="this.select()" aria-label="Calendar feed address"></p>
+    <p><a class="btn btn-accent btn-small" href="${esc(calendar.webcal)}">Open in Apple Calendar</a></p>
+    <p class="muted small">The address is the password: anyone who has it can read the feed. Do not post it anywhere public. Ask me to regenerate it if it leaks.</p>
+  </div>`
+      : ""}
 </section>`,
   });
 }

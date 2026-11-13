@@ -16,6 +16,8 @@ export const site = {
   dot: "DOT #4250470",
   /** Microsoft Clarity project id — paste it from Clarity → Settings → Setup. Empty disables tracking. */
   clarityId: "zcghn2nuxn",
+  /** Cloudflare Turnstile site key (public). Empty hides the human check. */
+  turnstileSiteKey: "",
 };
 
 export function esc(value: unknown): string {
@@ -579,7 +581,7 @@ ${options.admin ? "" : `<footer class="site-footer">
   var sent = {};
 
   function page() { return location.pathname; }
-  function clean(value) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, 60); }
+  function clean(value) { return String(value || "").replace(/\\s+/g, " ").trim().slice(0, 60); }
   function fieldName(el) { return el.getAttribute("name") || el.id || el.type || "field"; }
   function fieldLabel(el) {
     var wrap = el.closest ? el.closest("label") : null;
@@ -754,6 +756,10 @@ ${options.admin ? "" : `<footer class="site-footer">
 </script>
 <script>
 (function () {
+  // Ten US digits, shown as (305) 555-0134. Numbers typed with a leading + are
+  // left alone, so international contacts keep working.
+  var SELECTOR = 'input[name="phone"], input[name="origin_phone"], input[name="dest_phone"], input[name="customer_phone"], input[name="carrier_phone"], input[name="carrier_company_phone"], input[autocomplete="tel"], input[type="tel"]';
+
   function formatPhone(value) {
     if (value.trim().startsWith("+")) return value;
     var digits = value.replace(/\\D/g, "");
@@ -764,22 +770,31 @@ ${options.admin ? "" : `<footer class="site-footer">
     if (digits.length <= 6) return "(" + digits.slice(0, 3) + ") " + digits.slice(3);
     return "(" + digits.slice(0, 3) + ") " + digits.slice(3, 6) + "-" + digits.slice(6);
   }
-  var selector = 'input[name="phone"], input[name="origin_phone"], input[name="dest_phone"], input[name="customer_phone"], input[name="carrier_phone"], input[name="carrier_company_phone"], input[autocomplete="tel"]';
-  document.querySelectorAll(selector).forEach(function (input) {
-    input.addEventListener("keydown", function (event) {
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (input.value.trim().startsWith("+")) return;
-      if (event.key.length !== 1 || event.key < "0" || event.key > "9") return;
-      var digits = input.value.replace(/\\D/g, "");
-      var selected = input.selectionEnd - input.selectionStart;
-      if (digits.length >= 10 && selected === 0) event.preventDefault();
-    });
-    input.addEventListener("input", function () {
-      if (input.value.trim().startsWith("+")) return;
-      var caret = input.selectionStart;
-      var digitsBefore = (input.value.slice(0, caret).match(/\\d/g) || []).length;
-      var formatted = formatPhone(input.value);
-      if (formatted === input.value) return;
+
+  function isPhoneInput(node) {
+    return node && node.matches && node.matches(SELECTOR);
+  }
+
+  // Delegated, so inputs injected later (order modals) behave the same.
+  document.addEventListener("keydown", function (event) {
+    var input = event.target;
+    if (!isPhoneInput(input)) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (input.value.trim().startsWith("+")) return;
+    if (event.key.length !== 1 || event.key < "0" || event.key > "9") return;
+    var digits = input.value.replace(/\\D/g, "");
+    var selected = input.selectionEnd - input.selectionStart;
+    if (digits.length >= 10 && selected === 0) event.preventDefault();
+  }, true);
+
+  document.addEventListener("input", function (event) {
+    var input = event.target;
+    if (!isPhoneInput(input)) return;
+    if (input.value.trim().startsWith("+")) return;
+    var caret = input.selectionStart;
+    var digitsBefore = (input.value.slice(0, caret).match(/\\d/g) || []).length;
+    var formatted = formatPhone(input.value);
+    if (formatted !== input.value) {
       input.value = formatted;
       var position = 0;
       var count = 0;
@@ -796,12 +811,19 @@ ${options.admin ? "" : `<footer class="site-footer">
         if (count < digitsBefore) position = formatted.length;
       }
       input.setSelectionRange(position, position);
-    });
-    input.addEventListener("blur", function () {
-      var formatted = formatPhone(input.value);
-      if (formatted !== input.value) input.value = formatted;
-    });
-  });
+    }
+    // keep the form valid at 10 digits, or any international number
+    var digits = input.value.replace(/\\D/g, "");
+    var international = input.value.trim().startsWith("+");
+    input.setCustomValidity(!international && digits.length > 0 && digits.length < 10 ? "Enter all 10 digits." : "");
+  }, true);
+
+  document.addEventListener("blur", function (event) {
+    var input = event.target;
+    if (!isPhoneInput(input)) return;
+    var formatted = formatPhone(input.value);
+    if (formatted !== input.value) input.value = formatted;
+  }, true);
 })();
 </script>
 <script>
@@ -1757,6 +1779,40 @@ ${options.admin
   });
 })();
 </script>`}
+${options.admin
+      ? `<script>
+(function () {
+  var match = document.cookie.match(/(?:^|; )chs_csrf=([^;]+)/);
+  var token = match ? decodeURIComponent(match[1]) : "";
+  if (!token) return;
+
+  // stamp every POST form so a plain submit carries the token too
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!form || form.tagName !== "FORM") return;
+    if ((form.getAttribute("method") || "get").toLowerCase() !== "post") return;
+    if (form.querySelector('input[name="csrf"]')) return;
+    var input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "csrf";
+    input.value = token;
+    form.appendChild(input);
+  }, true);
+
+  // and every fetch POST, which is how the modal saves
+  var nativeFetch = window.fetch;
+  window.fetch = function (input, init) {
+    var options = init || {};
+    if ((options.method || "GET").toUpperCase() === "POST") {
+      var headers = new Headers(options.headers || {});
+      if (!headers.has("x-csrf-token")) headers.set("x-csrf-token", token);
+      options.headers = headers;
+    }
+    return nativeFetch(input, options);
+  };
+})();
+</script>`
+      : ""}
 </body>
 </html>`;
 }
@@ -2740,8 +2796,10 @@ export function adminLoginPage(error?: string): string {
     ${error ? `<p class="form-error">${esc(error)}</p>` : ""}
     <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="username"></label>
     <label class="field"><span>Password</span><input name="password" type="password" required autocomplete="current-password"></label>
+    ${site.turnstileSiteKey ? `<div class="cf-turnstile" data-sitekey="${esc(site.turnstileSiteKey)}" data-theme="light"></div>` : ""}
     <button class="btn btn-accent btn-block" type="submit">Sign in</button>
   </form>
+  ${site.turnstileSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : ""}
 </section>`,
   });
 }

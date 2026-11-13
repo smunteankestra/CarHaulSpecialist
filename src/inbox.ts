@@ -82,6 +82,26 @@ export function adminInboxUi(): string {
 
 
 
+  var MAX_VISIBLE = 2;
+
+  /** Keeps only the newest two cards on screen; older ones fall off the stack. */
+  function trimStack() {
+    while (stack.children.length > MAX_VISIBLE) stack.removeChild(stack.firstElementChild);
+  }
+
+  /** Reading a notification greys it out instead of removing it. */
+  function markRead(el) {
+    el.classList.add("is-read");
+  }
+
+  function wireToast(el) {
+    el.querySelector(".toast-close").addEventListener("click", function () {
+      markRead(el);
+    });
+    var link = el.querySelector(".toast-link");
+    if (link) link.addEventListener("click", function () { markRead(el); });
+  }
+
   function toast(quote) {
     var el = document.createElement("div");
     el.className = "toast";
@@ -90,8 +110,9 @@ export function adminInboxUi(): string {
       '<p class="toast-sub">' + (quote.customer_name || "") + " · " + quote.origin_zip + " → " + quote.dest_zip + " · " + money(quote.price) + "</p>" +
       '<a class="toast-link" href="/admin/orders?q=' + encodeURIComponent(quote.number) + '#order-' + quote.id + '">Open order</a></div>' +
       '<button class="toast-close" type="button" aria-label="Dismiss">×</button>';
-    el.querySelector(".toast-close").addEventListener("click", function () { el.remove(); });
+    wireToast(el);
     stack.appendChild(el);
+    trimStack();
   }
 
   function reminderToast(item) {
@@ -104,8 +125,9 @@ export function adminInboxUi(): string {
       '<p class="toast-sub">' + (item.customer_name || "") + " · due " + when.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + "</p>" +
       '<a class="toast-link" href="/admin/orders?q=' + encodeURIComponent(item.number) + '#order-' + item.id + '">Open order</a></div>' +
       '<button class="toast-close" type="button" aria-label="Dismiss">×</button>';
-    el.querySelector(".toast-close").addEventListener("click", function () { el.remove(); });
+    wireToast(el);
     stack.appendChild(el);
+    trimStack();
   }
 
   function receiveReminders(items) {
@@ -205,6 +227,9 @@ export function adminInboxUi(): string {
       alertSound("quote");
     });
   }
+
+  // Exposed so other admin actions (marking an invoice paid) can play the same sound.
+  window.__playAlert = alertSound;
 
   paint();
   paintSoundHint();

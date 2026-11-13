@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
-import { SESSION_COOKIE, sessionMaxAge, signSession, timingSafeEqual, verifySession } from "./auth.ts";
+import { CSRF_COOKIE, SESSION_COOKIE, sessionMaxAge, signSession, timingSafeEqual, verifySession } from "./auth.ts";
 import { contractDocx, contractDocument } from "./contract.ts";
 import { isLeadStatus } from "./leads.ts";
 import { buildInvoiceMail, sendMail } from "./mail.ts";
@@ -13,6 +13,7 @@ import {
   createOrder,
   isOrderStatus,
   markInvoicePaid,
+  randomToken,
   STATUS_LABELS,
   setStatus,
   type InvoiceRow,
@@ -26,8 +27,11 @@ import { stateCode, stateName } from "./states.ts";
 import { BLOG_POSTS, findBlogPost } from "./blog.ts";
 import { LEGACY_PAGES } from "./content.ts";
 import { blogIndexPage, blogPostPage, legacyPage } from "./views-content.ts";
+import { buildCalendar, type CalendarEvent } from "./calendar.ts";
 import { loadRevenueTrends, loadStaffPerformance, parseStaffMetric, parseStaffPeriod } from "./staff.ts";
 import { stateTimezone, zonedToUtc } from "./timezone.ts";
+import { formatPhone } from "./phone.ts";
+import { verifyTurnstile } from "./turnstile.ts";
 import { staffPerformancePage } from "./views-staff.ts";
 import {
   accountPage,
@@ -110,6 +114,7 @@ interface Bindings {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
   RESEND_API_KEY?: string;
+  TURNSTILE_SECRET?: string;
   MAIL_FROM?: string;
 }
 
@@ -197,6 +202,55 @@ app.use("/admin", async (c, next) => {
 });
 
 app.use("/admin/*", async (c, next) => {
+  // Origin guard: a browser that sends Origin must be on this host. Requests
+  // without Origin (curl, calendar apps) are unaffected — this only stops
+  // cross-site browser calls, which is all an Origin check can ever do.
+  const origin = c.req.header("origin");
+  if (origin) {
+    try {
+      if (new URL(origin).host !== new URL(c.req.url).host) {
+        return c.text("Blocked: this endpoint only answers its own origin.", 403);
+      }
+    } catch {
+      return c.text("Blocked: malformed origin.", 403);
+    }
+  }
+
+  // CSRF: every admin write must carry the token from the login cookie, or at
+  // least come from this origin. Login itself is exempt (no session yet).
+  if (c.req.method === "POST" && c.req.path !== "/admin/login") {
+    const cookie = getCookie(c, CSRF_COOKIE) ?? "";
+    const header = c.req.header("x-csrf-token") ?? "";
+    let bodyToken = "";
+    if (!header) {
+      const type = c.req.header("content-type") ?? "";
+      if (type.includes("application/x-www-form-urlencoded") || type.includes("multipart/form-data")) {
+        try {
+          const parsed = await c.req.parseBody();
+          bodyToken = String(parsed.csrf ?? "");
+        } catch {
+          bodyToken = "";
+        }
+      }
+    }
+    const supplied = header || bodyToken;
+    const sameOrigin = (() => {
+      const origin = c.req.header("origin") ?? c.req.header("referer") ?? "";
+      if (!origin) return false;
+      try {
+        return new URL(origin).host === new URL(c.req.url).host;
+      } catch {
+        return false;
+      }
+    })();
+    const tokenOk = Boolean(cookie && supplied && timingSafeEqual(supplied, cookie));
+    if (!tokenOk && !sameOrigin) {
+      return c.html(
+        `<p>Request blocked: the form did not carry a valid security token. Reload the page and try again.</p>`,
+        403,
+      );
+    }
+  }
   await next();
   for (const [key, value] of Object.entries(PRIVATE_HEADERS)) c.header(key, value);
 });
@@ -431,7 +485,7 @@ app.post("/get-quote", async (c) => {
       leadId,
       customerName: values.name,
       customerEmail: values.email,
-      customerPhone: values.phone,
+      customerPhone: formatPhone(values.phone ?? ""),
       transportType: transport,
       condition,
       vehicleYear: values.vehicle_year ?? "",
@@ -785,7 +839,7 @@ app.post("/book/submit", async (c) => {
     leadId,
     customerName: values.name,
     customerEmail: values.email,
-    customerPhone: values.phone,
+    customerPhone: formatPhone(values.phone ?? ""),
     transportType: values.transport_type === "enclosed" ? "enclosed" : "open",
     condition: parseCondition(values.condition ?? "running"),
     vehicleYear: values.vehicle_year ?? "",
@@ -797,13 +851,13 @@ app.post("/book/submit", async (c) => {
     originState: stateCode(values.origin_state ?? ""),
     originZip: values.origin_zip ?? "",
     originContact: values.origin_contact ?? "",
-    originPhone: values.origin_phone ?? "",
+    originPhone: formatPhone(values.origin_phone ?? ""),
     destStreet: values.dest_street ?? "",
     destCity: values.dest_city ?? "",
     destState: stateCode(values.dest_state ?? ""),
     destZip: values.dest_zip ?? "",
     destContact: values.dest_contact ?? "",
-    destPhone: values.dest_phone ?? "",
+    destPhone: formatPhone(values.dest_phone ?? ""),
     readyDate: values.ready_date ?? "",
     readyAsap: values.ready_asap === "1",
     distanceMiles: distance,
@@ -1141,6 +1195,26 @@ app.post("/admin/login", async (c) => {
   const email = String(body.email ?? "").trim().toLowerCase();
   const password = String(body.password ?? "");
 
+  // Human check first: no point comparing passwords for a bot.
+  const human = await verifyTurnstile(
+    c.env.TURNSTILE_SECRET,
+    String(body["cf-turnstile-response"] ?? ""),
+    c.req.header("cf-connecting-ip") ?? undefined,
+  );
+  if (!human) return c.html(adminLoginPage("That human check did not pass. Try again."), 403);
+
+  // Brute-force throttle: five failures in fifteen minutes locks that email.
+  const ip = c.req.header("cf-connecting-ip") ?? "unknown";
+  const windowStart = Date.now() - 15 * 60000;
+  const { results: recent } = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM login_attempts WHERE email = ? AND created_at > ?",
+  )
+    .bind(email, windowStart)
+    .all<{ n: number }>();
+  if ((recent[0]?.n ?? 0) >= 5) {
+    return c.html(adminLoginPage("Too many attempts. Wait 15 minutes or reset the password."), 429);
+  }
+
   let user = await findUserByEmail(c.env.DB, email);
   let authenticated = Boolean(user && user.active && (await verifyPassword(password, user)));
 
@@ -1155,8 +1229,14 @@ app.post("/admin/login", async (c) => {
   }
 
   if (!authenticated || !user) {
+    await c.env.DB.prepare("INSERT INTO login_attempts (email, ip, created_at) VALUES (?, ?, ?)")
+      .bind(email, ip, Date.now())
+      .run();
     return c.html(adminLoginPage("Wrong email or password."), 401);
   }
+
+  // A good password clears the counter.
+  await c.env.DB.prepare("DELETE FROM login_attempts WHERE email = ?").bind(email).run();
 
   await touchLogin(c.env.DB, user.id);
   const token = await signSession(c.env.SESSION_SECRET, user.email);
@@ -1167,11 +1247,21 @@ app.post("/admin/login", async (c) => {
     maxAge: sessionMaxAge,
     secure: new URL(c.req.url).protocol === "https:",
   });
+  // Double-submit CSRF token: paired with every admin POST. Readable by our own
+  // script so it can stamp every form, which is the point of the pattern.
+  setCookie(c, CSRF_COOKIE, randomToken().slice(0, 32), {
+    httpOnly: false,
+    sameSite: "Lax",
+    path: "/",
+    maxAge: sessionMaxAge,
+    secure: new URL(c.req.url).protocol === "https:",
+  });
   return c.redirect("/admin/orders", 303);
 });
 
 app.post("/admin/logout", (c) => {
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  deleteCookie(c, CSRF_COOKIE, { path: "/" });
   return c.redirect("/admin/login", 303);
 });
 
@@ -1531,6 +1621,14 @@ app.post("/admin/orders/:id/status", async (c) => {
   const pickupEta = parseDateTime(body, "pickup_eta", statusOrder ? stateTimezone(statusOrder.origin_state) : undefined);
   const deliveryEta = parseDateTime(body, "delivery_eta", destZone);
   const deliveredAt = parseDateTime(body, "delivered");
+
+  // Timestamps that record something that already happened cannot be in the future.
+  if (pickedUpAt && pickedUpAt > Date.now() + 60000) {
+    return c.redirect(`/admin/orders?error=${encodeURIComponent("The pickup date cannot be in the future.")}&error_order=${id}#order-${id}`, 303);
+  }
+  if (deliveredAt && deliveredAt > Date.now() + 60000) {
+    return c.redirect(`/admin/orders?error=${encodeURIComponent("The delivery date cannot be in the future.")}&error_order=${id}#order-${id}`, 303);
+  }
   const paidRaw = String(body.paid_amount ?? "").trim();
   const paidNumber = paidRaw ? Number(paidRaw) : NaN;
   const paidAmount = Number.isFinite(paidNumber) && paidNumber >= 0 ? Math.round(paidNumber) : null;
@@ -1876,7 +1974,30 @@ app.post("/admin/orders/:id/field", async (c) => {
       const before = column === "condition" ? parseCondition(String(oldRecord[column] ?? "running")) : oldRecord[column];
       return `${ORDER_FIELD_LABELS[column] ?? column}: ${formatOrderField(column, before)} → ${formatOrderField(column, values[column])}`;
     });
+  // Phone columns are normalised on the way in, so the database is consistent
+  // whether the value came from a form, a paste or the API.
+  for (const column of ["customer_phone", "origin_phone", "dest_phone", "carrier_phone", "carrier_company_phone"]) {
+    if (values && typeof values[column] === "string") values[column] = formatPhone(values[column] as string);
+  }
+
   const async = c.req.header("x-async") === "1";
+
+  // Timestamps that record something that already happened cannot be in the future.
+  const futureGuard: Record<string, string> = {
+    picked_up_at: "The pickup date cannot be in the future.",
+    delivered_at: "The delivery date cannot be in the future.",
+  };
+  if (values && futureGuard[key]) {
+    const value = values[key];
+    if (typeof value === "number" && value > Date.now() + 60000) {
+      const message = futureGuard[key] as string;
+      if (async) {
+        const current = await loadOrderCardData(c.env.DB, id);
+        return c.html(orderModalCard(old, current.photos, current.events, message, current.units, current.contracts));
+      }
+      return c.redirect(`/admin/orders?error=${encodeURIComponent(message)}&error_order=${id}#order-${id}`, 303);
+    }
+  }
 
   // A carrier is either fully on the order or not at all — no half-assigned trucks.
   if (key === "carrier") {
@@ -2836,10 +2957,93 @@ app.post("/admin/telegram/test", async (c) => {
   );
 });
 
+/**
+ * Calendar subscription: Apple, Google and Outlook can all follow an .ics URL.
+ * The token in the path is the credential, because calendar apps cannot log in.
+ */
+app.get("/calendar/:file", async (c) => {
+  const file = c.req.param("file");
+  if (!file.endsWith(".ics")) return c.html(notFoundPage(), 404);
+  const token = file.slice(0, -4);
+  const expected = await getSetting(c.env.DB, "calendar_token").catch(() => null);
+  if (!expected || token !== expected) return c.html(notFoundPage(), 404);
+
+  const horizon = Date.now() + 120 * 24 * 3600000;
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, number, customer_name, origin_zip, dest_zip, carrier_name, pickup_eta, delivery_eta
+       FROM orders
+      WHERE status IN ('quoted', 'confirmed', 'contract_draft', 'assigned', 'picked_up')
+        AND (pickup_eta IS NOT NULL OR delivery_eta IS NOT NULL)
+        AND (COALESCE(delivery_eta, pickup_eta) >= ? AND COALESCE(pickup_eta, delivery_eta) <= ?)
+      ORDER BY COALESCE(pickup_eta, delivery_eta)
+      LIMIT 300`,
+  )
+    .bind(Date.now() - 7 * 24 * 3600000, horizon)
+    .all<{
+      id: number;
+      number: string;
+      customer_name: string;
+      origin_zip: string;
+      dest_zip: string;
+      carrier_name: string | null;
+      pickup_eta: number | null;
+      delivery_eta: number | null;
+    }>();
+
+  const events: CalendarEvent[] = [];
+  for (const order of results) {
+    if (order.pickup_eta) {
+      events.push({
+        id: order.id,
+        number: order.number,
+        kind: "pickup",
+        at: order.pickup_eta,
+        customer: order.customer_name,
+        origin: order.origin_zip,
+        destination: order.dest_zip,
+        carrier: order.carrier_name,
+      });
+    }
+    if (order.delivery_eta) {
+      events.push({
+        id: order.id,
+        number: order.number,
+        kind: "delivery",
+        at: order.delivery_eta,
+        customer: order.customer_name,
+        origin: order.origin_zip,
+        destination: order.dest_zip,
+        carrier: order.carrier_name,
+      });
+    }
+  }
+
+  return new Response(buildCalendar(events), {
+    headers: {
+      "content-type": "text/calendar; charset=utf-8",
+      "content-disposition": 'inline; filename="bondautotransport.ics"',
+      "cache-control": "no-store",
+    },
+  });
+});
+
+/** Creates the subscription token once and returns it. */
+async function calendarToken(db: D1Database): Promise<string> {
+  const existing = await getSetting(db, "calendar_token").catch(() => null);
+  if (existing) return existing;
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  await setSetting(db, "calendar_token", token);
+  return token;
+}
+
 app.get("/admin/account", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.redirect("/admin/login", 303);
-  return c.html(accountPage(user));
+  const token = await calendarToken(c.env.DB);
+  const origin = new URL(c.req.url).origin;
+  return c.html(accountPage(user, undefined, undefined, { feed: `${origin}/calendar/${token}.ics`, webcal: `webcal://${origin.replace(/^https?:\/\//, "")}/calendar/${token}.ics` }));
 });
 
 app.post("/admin/account", async (c) => {

@@ -206,9 +206,8 @@ export function buildInvoiceMail(order: InvoiceOrder, kind: "client" | "carrier"
       meta: [
         ["Invoice #:", order.number],
         ["Order ID:", order.number],
-        ["PO #:", ""],
         ["Date:", order.issued_on || ""],
-        ["Payment terms:", order.payment_method || ""],
+        ["Payment terms:", kind === "client" ? "Due on receipt" : order.payment_method || ""],
         ["Load delivered:", order.delivered_on || "Pending"],
       ],
       billTo,

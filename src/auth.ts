@@ -1,6 +1,7 @@
 const encoder = new TextEncoder();
 
 export const SESSION_COOKIE = "chs_admin";
+export const CSRF_COOKIE = "chs_csrf";
 const SESSION_SECONDS = 60 * 60 * 12;
 
 function toBase64Url(bytes: Uint8Array): string {
