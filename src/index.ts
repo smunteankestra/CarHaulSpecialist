@@ -369,8 +369,12 @@ app.post("/get-quote", async (c) => {
 
   const distance = origin && destination ? roadMiles(origin, destination) : null;
   const extras = extraUnits(form);
-  const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false);
-  const extraTotal = distance === null ? 0 : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false).total, 0);
+  const route = { originState: origin?.state ?? null, destState: destination?.state ?? null };
+  const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false, undefined, route);
+  const extraTotal =
+    distance === null
+      ? 0
+      : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false, undefined, route).total, 0);
 
 
   const unitRows = distance === null ? [] : [
@@ -381,7 +385,7 @@ app.post("/get-quote", async (c) => {
       year: values.vehicle_year ?? "",
       make: values.vehicle_make ?? "",
       model: values.vehicle_model ?? "",
-      price: priceQuote(distance, transport, condition, false).total,
+      price: priceQuote(distance, transport, condition, false, undefined, route).total,
     },
     ...extras.map((unit, index) => {
       const unitCondition = parseCondition(unit.condition);
@@ -392,12 +396,15 @@ app.post("/get-quote", async (c) => {
         year: unit.year,
         make: unit.make,
         model: unit.model,
-        price: priceQuote(distance, transport, unitCondition, false).total,
+        price: priceQuote(distance, transport, unitCondition, false, undefined, route).total,
       };
     }),
   ];
 
-  const extraDeposit = distance === null ? 0 : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false).deposit, 0);
+  const extraDeposit =
+    distance === null
+      ? 0
+      : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false, undefined, route).deposit, 0);
 
   const stored: string[] = [];
   for (const photo of photos) {
@@ -745,8 +752,12 @@ app.post("/quote/refresh", async (c) => {
   const condition = parseCondition(values.condition ?? "running");
   const distance = origin && destination ? roadMiles(origin, destination) : null;
   const extras = extraUnits(form);
-  const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false);
-  const extraTotal = distance === null ? 0 : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false).total, 0);
+  const route = { originState: origin?.state ?? null, destState: destination?.state ?? null };
+  const breakdown = distance === null ? null : priceQuote(distance, transport, condition, false, undefined, route);
+  const extraTotal =
+    distance === null
+      ? 0
+      : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false, undefined, route).total, 0);
   const unitRows = distance === null ? [] : [
     {
       label: [values.vehicle_year, values.vehicle_make, values.vehicle_model].filter(Boolean).join(" ") || "Vehicle 1",
@@ -755,7 +766,7 @@ app.post("/quote/refresh", async (c) => {
       year: values.vehicle_year ?? "",
       make: values.vehicle_make ?? "",
       model: values.vehicle_model ?? "",
-      price: priceQuote(distance, transport, condition, false).total,
+      price: priceQuote(distance, transport, condition, false, undefined, route).total,
     },
     ...extras.map((unit, index) => {
       const unitCondition = parseCondition(unit.condition);
@@ -766,12 +777,15 @@ app.post("/quote/refresh", async (c) => {
         year: unit.year,
         make: unit.make,
         model: unit.model,
-        price: priceQuote(distance, transport, unitCondition, false).total,
+        price: priceQuote(distance, transport, unitCondition, false, undefined, route).total,
       };
     }),
   ];
 
-  const extraDeposit = distance === null ? 0 : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false).deposit, 0);
+  const extraDeposit =
+    distance === null
+      ? 0
+      : extras.reduce((sum, unit) => sum + priceQuote(distance, transport, parseCondition(unit.condition), false, undefined, route).deposit, 0);
 
   const leadId = field("lead_id") ? Number(field("lead_id")) : undefined;
   const orderToken = field("order_token") || undefined;

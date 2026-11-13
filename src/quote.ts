@@ -6,28 +6,70 @@ export interface MinimumBand {
 }
 
 export interface PricingRules {
-  openPerMile: number;
-  enclosedPerMile: number;
+  /**
+   * Open-trailer price follows a power curve, not a straight line: short hauls
+   * cost a lot per mile because loading and dispatch are fixed costs, and the
+   * rate falls steadily as the trip gets longer.
+   *
+   *   price = openBase × miles ^ openExponent
+   *
+   * The defaults reproduce published 2026 market medians within a few percent:
+   * 300 mi ≈ $620, 1,250 mi ≈ $1,110, 2,750 mi ≈ $1,535.
+   */
+  openBase: number;
+  openExponent: number;
+  /** Enclosed transport runs about 70% above open on the same lane. */
+  enclosedMultiplier: number;
   inopFee: number;
   noSteerFee: number;
   oversizeFee: number;
   depositPercent: number;
   minimums: MinimumBand[];
+  /** Seasonal demand, applied on top of the curve. */
+  seasonFactor: (miles: number, originState: string | null, destState: string | null, at?: Date) => number;
+}
+
+const SNOWBIRD_STATES = new Set(["FL", "AZ", "TX", "SC", "GA", "NV", "CA"]);
+
+/** Snowbirds in winter, tax-season purchases at year end, moving season in summer. */
+function defaultSeasonFactor(_miles: number, originState: string | null, destState: string | null, at = new Date()): number {
+  const month = at.getUTCMonth() + 1;
+  const day = at.getUTCDate();
+  let factor = 1;
+
+  const north = (state: string | null) => Boolean(state) && !SNOWBIRD_STATES.has(String(state).toUpperCase());
+  const south = (state: string | null) => Boolean(state) && SNOWBIRD_STATES.has(String(state).toUpperCase());
+
+  // November to March: the snowbird flow runs north to south
+  if (month >= 11 || month <= 3) {
+    if (north(originState) && south(destState)) factor += 0.08;
+    else if (south(originState) && north(destState)) factor -= 0.03;
+  }
+
+  // mid-December to mid-January: people buy cars for the tax year
+  if ((month === 12 && day >= 10) || (month === 1 && day <= 10)) factor += 0.05;
+
+  // June to August: family moves
+  if (month >= 6 && month <= 8) factor += 0.04;
+
+  return Math.min(1.15, Math.max(0.95, factor));
 }
 
 export const DEFAULT_RULES: PricingRules = {
-  openPerMile: 0.95,
-  enclosedPerMile: 1.35,
+  openBase: 60.1,
+  openExponent: 0.409,
+  enclosedMultiplier: 1.7,
   inopFee: 150,
   noSteerFee: 250,
   oversizeFee: 200,
   depositPercent: 20,
+  seasonFactor: defaultSeasonFactor,
   minimums: [
-    { upToMiles: 25, open: 125, enclosed: 175 },
-    { upToMiles: 75, open: 200, enclosed: 275 },
-    { upToMiles: 150, open: 300, enclosed: 425 },
-    { upToMiles: 300, open: 400, enclosed: 550 },
-    { upToMiles: Number.POSITIVE_INFINITY, open: 450, enclosed: 650 },
+    { upToMiles: 25, open: 275, enclosed: 450 },
+    { upToMiles: 75, open: 375, enclosed: 600 },
+    { upToMiles: 150, open: 450, enclosed: 700 },
+    { upToMiles: 300, open: 550, enclosed: 850 },
+    { upToMiles: Number.POSITIVE_INFINITY, open: 600, enclosed: 950 },
   ],
 };
 
@@ -127,12 +169,14 @@ export function priceQuote(
   condition: VehicleCondition,
   oversize: boolean,
   rules: PricingRules = DEFAULT_RULES,
+  route: { originState?: string | null; destState?: string | null; at?: Date } = {},
 ): QuoteBreakdown {
-  const perMile = transport === "enclosed" ? rules.enclosedPerMile : rules.openPerMile;
   const band = rules.minimums.find((entry) => distanceMiles <= entry.upToMiles);
   const minimum = band ? (transport === "enclosed" ? band.enclosed : band.open) : 0;
 
-  const raw = distanceMiles * perMile;
+  const curve = rules.openBase * Math.pow(Math.max(1, distanceMiles), rules.openExponent);
+  const season = rules.seasonFactor(distanceMiles, route.originState ?? null, route.destState ?? null, route.at);
+  const raw = curve * (transport === "enclosed" ? rules.enclosedMultiplier : 1) * season;
   const minimumApplied = raw < minimum;
   const base = Math.round(minimumApplied ? minimum : raw);
   const conditionFee =

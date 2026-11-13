@@ -13,42 +13,41 @@ test("road distance between Miami and New York is in the right band", () => {
   assert.ok(road > 1280 && road < 1360, `road miles were ${road}`);
 });
 
-test("open transport is priced per mile above the minimum", () => {
-  const quote = priceQuote(1000, "open", "running", false);
-  assert.equal(quote.base, 950);
+test("open transport follows the distance curve above the minimum", () => {
+  const quote = priceQuote(1000, "open", "running", false, undefined, { at: new Date("2026-05-01T12:00:00Z") });
+  assert.equal(quote.base, 1014);
   assert.equal(quote.conditionFee, 0);
-  assert.equal(quote.total, 950);
-  assert.equal(quote.deposit, 190);
+  assert.equal(quote.total, 1014);
+  assert.equal(quote.deposit, 203);
   assert.equal(quote.minimumApplied, false);
 });
 
 test("a short local move uses the local minimum, not the long-haul floor", () => {
-  const quote = priceQuote(7, "open", "running", false);
-  assert.equal(quote.base, 125);
-  assert.equal(quote.total, 125);
-  assert.equal(quote.deposit, 25);
+  const quote = priceQuote(7, "open", "running", false, undefined, { at: new Date("2026-05-01T12:00:00Z") });
+  assert.equal(quote.base, 275);
+  assert.equal(quote.total, 275);
+  assert.equal(quote.deposit, 55);
   assert.equal(quote.minimumApplied, true);
 });
 
 test("enclosed local moves use the enclosed local minimum", () => {
-  assert.equal(priceQuote(7, "enclosed", "running", false).base, 175);
+  assert.equal(priceQuote(7, "enclosed", "running", false).base, 450);
 });
 
 test("minimums step up with distance", () => {
   const cases: Array<[number, number]> = [
-    [7, 125],
-    [25, 125],
-    [26, 200],
-    [75, 200],
-    [76, 300],
-    [150, 300],
-    [151, 400],
-    [300, 400],
-    [301, 450],
-    [474, 450],
+    [7, 275],
+    [25, 275],
+    [26, 375],
+    [75, 375],
+    [76, 450],
+    [130, 450],
+    [151, 550],
+    [200, 550],
+    [301, 620],
   ];
   for (const [miles, expected] of cases) {
-    assert.equal(priceQuote(miles, "open", "running", false).base, expected, `${miles} mi`);
+    assert.equal(priceQuote(miles, "open", "running", false, undefined, { at: new Date("2026-05-01T12:00:00Z") }).base, expected, `${miles} mi`);
   }
 });
 
@@ -61,11 +60,47 @@ test("a longer route never costs less than a shorter one", () => {
   }
 });
 
-test("enclosed costs more than open on the same route", () => {
-  const open = priceQuote(1000, "open", "running", false);
-  const enclosed = priceQuote(1000, "enclosed", "running", false);
+test("enclosed costs about 70% more than open on the same route", () => {
+  const at = new Date("2026-05-01T12:00:00Z");
+  const open = priceQuote(1000, "open", "running", false, undefined, { at });
+  const enclosed = priceQuote(1000, "enclosed", "running", false, undefined, { at });
   assert.ok(enclosed.total > open.total);
-  assert.equal(enclosed.total, 1350);
+  assert.ok(Math.abs(enclosed.total - open.total * 1.7) <= 1, `${enclosed.total} vs ${open.total * 1.7}`);
+});
+
+test("the rate per mile falls as the distance grows", () => {
+  const at = new Date("2026-05-01T12:00:00Z");
+  let previousRate = Infinity;
+  for (const miles of [100, 300, 600, 1000, 1500, 2000, 2500, 3000]) {
+    const total = priceQuote(miles, "open", "running", false, undefined, { at }).total;
+    const rate = total / miles;
+    assert.ok(rate < previousRate, `${miles} mi priced ${rate.toFixed(2)}/mi, not below ${previousRate.toFixed(2)}`);
+    previousRate = rate;
+  }
+});
+
+test("long hauls match published market medians within 10%", () => {
+  const at = new Date("2026-05-01T12:00:00Z");
+  const market: Array<[number, number]> = [
+    [300, 620],
+    [1250, 1110],
+    [1750, 1290],
+    [2250, 1415],
+    [2750, 1535],
+  ];
+  for (const [miles, expected] of market) {
+    const total = priceQuote(miles, "open", "running", false, undefined, { at }).total;
+    const drift = Math.abs(total - expected) / expected;
+    assert.ok(drift < 0.1, `${miles} mi priced ${total}, market ${expected}`);
+  }
+});
+
+test("snowbird season adds a premium north to south", () => {
+  const winter = new Date("2026-12-20T12:00:00Z");
+  const summer = new Date("2026-05-01T12:00:00Z");
+  const southbound = priceQuote(1200, "open", "running", false, undefined, { originState: "NY", destState: "FL", at: winter }).total;
+  const offSeason = priceQuote(1200, "open", "running", false, undefined, { originState: "NY", destState: "FL", at: summer }).total;
+  assert.ok(southbound > offSeason, "winter southbound should cost more");
 });
 
 test("both inoperable conditions add their fee, and the legacy value maps to steer-and-roll", () => {
@@ -93,7 +128,8 @@ test("conditions normalize legacy values and label all options", () => {
 });
 
 test("oversize adds the size fee on top of condition", () => {
-  const quote = priceQuote(1000, "open", "non-running", true);
+  const at = new Date("2026-05-01T12:00:00Z");
+  const quote = priceQuote(1000, "open", "non-running", true, undefined, { at });
   assert.equal(quote.conditionFee, DEFAULT_RULES.inopFee + DEFAULT_RULES.oversizeFee);
-  assert.equal(quote.total, 950 + 150 + 200);
+  assert.equal(quote.total, quote.base + 150 + 200);
 });
