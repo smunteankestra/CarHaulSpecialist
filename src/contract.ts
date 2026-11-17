@@ -2,7 +2,7 @@ import { buildDocx, paragraph } from "./docx.ts";
 
 /** Transportation Agreement text, taken from the signed template (F60086). */
 export const CONTRACT_TERMS: string[] = [
-  `TERMS AND CONDITION BOND AUTO TRANSPORT is a fully licensed and bonded Transport Management Company registered with the USDOT # 4250470. This agreement is between solely the customer and his, her or its duly authorized agents, (hereinafter referred to as “Customer”), and BOND AUTO TRANSPORT. *Cancellation & Refund Policy* The option to cancel a shipping order is available at any time, at no cost and with no cancellation fee, as long as the order has not yet been assigned (dispatched) to a Carrier (transporter). Our services are considered rendered when a Carrier (transporter) is assigned to an order. Refunds will be processed within 48 business hours of the cancellation request. Cancellation of an order must be submitted in writing via email sent to operations@bondautotransportl.com. BOND AUTO TRANSPORT does not accept or honor cancellations made via phone call. Once a Carrier (transporter) has been assigned (dispatched) to a shipping order, BOND AUTO TRANSPORT notifies Customer via email (to the email address provided at service booking). If the Customer decides to cancel the shipping order after a Carrier (transporter) has been assigned (dispatched), a $199 cancellation fee will be applied, as our services have been rendered. This fee does not include any cancellation fees imposed by an oceanic transporter. Any remaining balance will be refunded in full. *Contract Terms and Liability Disclaimer*`,
+  `BOND AUTO TRANSPORT is a fully licensed and bonded Transport Management Company registered with the USDOT # 4250470. This agreement is between solely the customer and his, her or its duly authorized agents, (hereinafter referred to as “Customer”), and BOND AUTO TRANSPORT. Cancellation & Refund Policy The option to cancel a shipping order is available at any time, at no cost and with no cancellation fee, as long as the order has not yet been assigned (dispatched) to a Carrier (transporter). Our services are considered rendered when a Carrier (transporter) is assigned to an order. Refunds will be processed within 48 business hours of the cancellation request. Cancellation of an order must be submitted in writing via email sent to operations@bondautotransportl.com. BOND AUTO TRANSPORT does not accept or honor cancellations made via phone call. Once a Carrier (transporter) has been assigned (dispatched) to a shipping order, BOND AUTO TRANSPORT notifies Customer via email (to the email address provided at service booking). If the Customer decides to cancel the shipping order after a Carrier (transporter) has been assigned (dispatched), a $199 cancellation fee will be applied, as our services have been rendered. This fee does not include any cancellation fees imposed by an oceanic transporter. Any remaining balance will be refunded in full. Contract Terms and Liability Disclaimer`,
   `1. The Carrier will pick up and deliver as close to the Customer’s door as legally and safely as possible. A mutually agreed upon place to load or unload the vehicle(s) may be necessary due to low hanging trees, low hanging wires, narrow streets and residential area restrictions.`,
   `2. BOND AUTO TRANSPORT shall provide the Customer with an estimated pickup and estimated delivery date. However, delays may occur prior to, and/or during, transport due to weather, road conditions, mechanical problems, etc. There are absolutely no guarantees regarding pickup or delivery times and dates. BOND AUTO TRANSPORT/Carrier shall not be held responsible for loss or damages occasioned by delays of any kind or for any reason, car rental fees or any accommodation fees. BOND AUTO TRANSPORT/Carrier shall not be held liable for failure of mechanical or operating parts of Customer’s vehicle.`,
   `3. Carriers authorized to operate and transport Customer’s motor vehicle between its pickup location and the destination set forth on the shipping order and Bill of Lading.`,
@@ -44,6 +44,7 @@ export interface ContractOrder {
   customer_email: string;
   carrier_name: string | null;
   carrier_mc: string | null;
+  carrier_invoice_method?: string | null;
   carrier_company_phone: string | null;
   carrier_email: string | null;
   driver_name: string | null;
@@ -78,9 +79,21 @@ export interface ContractOrder {
 }
 
 const CONDITION_LABEL: Record<string, string> = {
-  running: "operable",
-  inoperable_steer_roll: "inoperable (steers and rolls)",
-  inoperable_no_steer: "inoperable (no steer / no roll)",
+  running: "Run and drive",
+  inoperable_steer_roll: "Inoperable — steers and rolls",
+  inoperable_no_steer: "Inoperable — no steer or roll",
+};
+
+/** "open" alone reads like a database value; the contract should read like English. */
+const TRAILER_LABEL: Record<string, string> = {
+  open: "Open trailer",
+  enclosed: "Enclosed trailer",
+};
+
+/** Drops a trailing " · —" when the contact details are missing. */
+const contactLine = (...parts: (string | null | undefined)[]) => {
+  const kept = parts.map((part) => (part ?? "").trim()).filter((part) => part && part !== "—");
+  return kept.length ? kept.join(" · ") : "—";
 };
 
 function addressLine(street: string | null, city: string | null, state: string | null, zip: string): string {
@@ -110,11 +123,10 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
   const scheduleRow = (label: string, cells: string[]) =>
     `<tr><th>${label}</th>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
 
-  const unitColumns = rows.map((unit) => unit.position);
   const vehicleRows = rows
     .map(
       (unit) =>
-        `<tr><td>${unit.position}</td><td>${text(unit.vehicle_year)}</td><td>${text(unit.vehicle_make)}</td><td>${text(unit.vehicle_model)}</td><td>${text(unit.vin)}</td><td>${text(unit.vehicle_type ?? "—")}</td><td>${CONDITION_LABEL[unit.condition ?? "running"] ?? text(unit.condition)}</td></tr>`,
+        `<tr><td>${unit.position}</td><td>${text(unit.vehicle_year)}</td><td>${text(unit.vehicle_make)}</td><td>${text(unit.vehicle_model)}</td><td>${text(unit.vin)}</td><td>${TRAILER_LABEL[unit.vehicle_type ?? ""] ?? text(unit.vehicle_type)}</td><td>${CONDITION_LABEL[unit.condition ?? "running"] ?? text(unit.condition)}</td></tr>`,
     )
     .join("");
 
@@ -168,7 +180,7 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
     <div class="party">
       <h2>Carrier company</h2>
       <strong>${text(order.carrier_name)}</strong>
-      <p>${order.carrier_mc ? `MC ${text(order.carrier_mc)} · ` : ""}${text(order.carrier_company_phone)} · ${text(order.carrier_email)}</p>
+      <p>${contactLine(order.carrier_mc ? `MC ${order.carrier_mc}` : "", order.carrier_company_phone, order.carrier_email)}</p>
     </div>
     <div class="party">
       <h2>Driver</h2>
@@ -179,29 +191,27 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
 
   <h2 class="section">Order information schedule / payment</h2>
   <table>
-    <tr><th>Unit #</th>${unitColumns.map((n) => `<td>${n}</td>`).join("")}</tr>
-    ${scheduleRow("Pick up ETA", unitColumns.map(() => dateOnly(order.pickup_eta)))}
-    ${scheduleRow("Delivery ETA", unitColumns.map(() => dateOnly(order.delivery_eta)))}
-    ${scheduleRow(
-      "Total amount",
-      rows.map((unit, index) => money(index === 0 ? clientAmount : unit.price)),
-    )}
-    ${scheduleRow("Broker fee", unitColumns.map(() => (order.broker_fee !== null ? money(order.broker_fee) : "—")))}
-    ${scheduleRow("Payment method", unitColumns.map(() => text(order.payment_method)))}
-    ${scheduleRow("Payee", unitColumns.map(() => "MGV Advisors LLC"))}
-    ${scheduleRow("Carrier payment", unitColumns.map(() => `${money(carrierAmount)} to the driver`))}
-    ${scheduleRow("Trailer type", unitColumns.map(() => text(order.transport_type)))}
+    ${scheduleRow("Unit #", [rows.length > 1 ? `1 – ${rows.length}` : String(rows[0]?.position ?? 1)])}
+    ${scheduleRow("Pick up ETA", [dateOnly(order.pickup_eta)])}
+    ${scheduleRow("Delivery ETA", [dateOnly(order.delivery_eta)])}
+    ${scheduleRow("Trailer type", [TRAILER_LABEL[order.transport_type ?? ""] ?? text(order.transport_type)])}
+    ${scheduleRow("Total amount", [money(clientAmount)])}
+    ${scheduleRow("Carrier fee", [money(carrierAmount)])}
+    ${scheduleRow("Carrier payment method", [text(order.carrier_invoice_method)])}
+    ${scheduleRow("Broker fee", [order.broker_fee !== null ? money(order.broker_fee) : "—"])}
+    ${scheduleRow("Payment method", [text(order.payment_method)])}
+    ${scheduleRow("Payee", ["MGV Advisors LLC"])}
   </table>
 
   <h2 class="section">Origin / destination</h2>
   <table>
     <tr><th>Origin</th><td>
       <strong>${text(addressLine(order.origin_street, order.origin_city, order.origin_state, order.origin_zip))}</strong><br>
-      Contact: ${text(order.origin_contact)} · ${text(order.origin_phone)}
+      Contact: ${contactLine(order.origin_contact, order.origin_phone)}
     </td></tr>
     <tr><th>Destination</th><td>
       <strong>${text(addressLine(order.dest_street, order.dest_city, order.dest_state, order.dest_zip))}</strong><br>
-      Contact: ${text(order.dest_contact)} · ${text(order.dest_phone)}
+      Contact: ${contactLine(order.dest_contact, order.dest_phone)}
     </td></tr>
   </table>
 
@@ -250,11 +260,12 @@ export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8
     ["Pick up ETA", dateOnly(order.pickup_eta)],
     ["Delivery ETA", dateOnly(order.delivery_eta)],
     ["Total amount", money(clientAmount)],
+    ["Carrier fee", money(order.carrier_fee)],
+    ["Carrier payment method", text(order.carrier_invoice_method)],
     ["Broker fee", order.broker_fee !== null ? money(order.broker_fee) : "—"],
     ["Payment method", text(order.payment_method)],
     ["Payee", "MGV Advisors LLC"],
-    ["Carrier payment", `${money(order.carrier_fee)} to the driver`],
-    ["Trailer type", text(order.transport_type)],
+    ["Trailer type", TRAILER_LABEL[order.transport_type ?? ""] ?? text(order.transport_type)],
   ];
 
   return buildDocx([
@@ -281,7 +292,7 @@ export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8
           party(
             "Carrier company",
             text(order.carrier_name),
-            `${order.carrier_mc ? `MC ${order.carrier_mc} · ` : ""}${text(order.carrier_company_phone)} · ${text(order.carrier_email)}`,
+            contactLine(order.carrier_mc ? `MC ${order.carrier_mc}` : "", order.carrier_company_phone, order.carrier_email),
           ),
           party("Driver", text(order.driver_name), text(order.carrier_phone)),
         ],
@@ -311,14 +322,14 @@ export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8
           [paragraph("Origin", { bold: true, size: BODY })],
           [
             paragraph(addressLine(order.origin_street, order.origin_city, order.origin_state, order.origin_zip), { bold: true, size: BODY }),
-            paragraph(`Contact: ${text(order.origin_contact)} · ${text(order.origin_phone)}`, { size: BODY }),
+            paragraph(`Contact: ${contactLine(order.origin_contact, order.origin_phone)}`, { size: BODY }),
           ],
         ],
         [
           [paragraph("Destination", { bold: true, size: BODY })],
           [
             paragraph(addressLine(order.dest_street, order.dest_city, order.dest_state, order.dest_zip), { bold: true, size: BODY }),
-            paragraph(`Contact: ${text(order.dest_contact)} · ${text(order.dest_phone)}`, { size: BODY }),
+            paragraph(`Contact: ${contactLine(order.dest_contact, order.dest_phone)}`, { size: BODY }),
           ],
         ],
       ],
@@ -341,7 +352,7 @@ export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8
           text(unit.vehicle_make),
           text(unit.vehicle_model),
           text(unit.vin),
-          text(unit.vehicle_type),
+          TRAILER_LABEL[unit.vehicle_type ?? ""] ?? text(unit.vehicle_type),
           CONDITION_LABEL[unit.condition ?? "running"] ?? text(unit.condition),
         ]),
       ],

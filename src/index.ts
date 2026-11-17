@@ -28,11 +28,23 @@ import { BLOG_POSTS, findBlogPost } from "./blog.ts";
 import { LEGACY_PAGES } from "./content.ts";
 import { blogIndexPage, blogPostPage, legacyPage } from "./views-content.ts";
 import { buildCalendar, type CalendarEvent } from "./calendar.ts";
-import { loadRevenueTrends, loadStaffPerformance, parseStaffMetric, parseStaffPeriod } from "./staff.ts";
+import {
+  channelOf,
+  loadAdSpend,
+  loadRevenueTrends,
+  loadSourceFunnel,
+  loadStaffPerformance,
+  parseStaffMetric,
+  parseStaffPeriod,
+  saveAdSpend,
+  type Channel,
+  type ChannelRow,
+} from "./staff.ts";
 import { stateTimezone, zonedToUtc } from "./timezone.ts";
 import { formatPhone } from "./phone.ts";
+import { deleteObject, getObject, putObject } from "./storage.ts";
 import { verifyTurnstile } from "./turnstile.ts";
-import { staffPerformancePage } from "./views-staff.ts";
+import { calendarPage, staffPerformancePage, type CalendarBar, type CalendarDay } from "./views-staff.ts";
 import {
   accountPage,
   telegramPage,
@@ -106,7 +118,8 @@ const SITEMAP_PATHS = [
 
 interface Bindings {
   DB: D1Database;
-  UPLOADS: KVNamespace;
+  UPLOADS?: KVNamespace;
+  UPLOADS_R2?: R2Bucket;
   ASSETS: Fetcher;
   ADMIN_EMAIL: string;
   ADMIN_PASSWORD: string;
@@ -409,13 +422,13 @@ app.post("/get-quote", async (c) => {
   const stored: string[] = [];
   for (const photo of photos) {
     const key = `leads/${crypto.randomUUID()}.${PHOTO_TYPES.get(photo.type) ?? "jpg"}`;
-    await c.env.UPLOADS.put(key, await photo.arrayBuffer(), {
-      metadata: { contentType: photo.type },
-    });
+    await putObject(c.env, key, await photo.arrayBuffer(), photo.type);
     stored.push(key);
   }
 
   let leadId: number | null = null;
+  // Where the visitor came from: our own copy of what GA4 sees.
+  const traffic = readTraffic(form, c.req.header("referer") ?? "", new URL(c.req.url).hostname);
   const leadStatus = breakdown ? "quote_sent" : "new";
 
   try {
@@ -423,8 +436,9 @@ app.post("/get-quote", async (c) => {
       `INSERT INTO leads
          (name, email, phone, origin_zip, origin_city, origin_state, dest_zip, dest_city, dest_state,
           transport_type, vehicle_year, vehicle_make, vehicle_model, condition, available_date,
-          distance_miles, price_estimate, price_is_estimate, notes, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+          distance_miles, price_estimate, price_is_estimate, notes, status, created_at,
+          source, medium, campaign, click_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         values.name,
@@ -447,6 +461,10 @@ app.post("/get-quote", async (c) => {
         values.notes || null,
         leadStatus,
         Date.now(),
+        traffic.source,
+        traffic.medium,
+        traffic.campaign,
+        traffic.clickId,
       )
       .run();
 
@@ -469,7 +487,7 @@ app.post("/get-quote", async (c) => {
     if (leadId !== null) {
       await c.env.DB.prepare("DELETE FROM leads WHERE id = ?").bind(leadId).run();
     }
-    await Promise.all(stored.map((key) => c.env.UPLOADS.delete(key)));
+    await Promise.all(stored.map((key) => deleteObject(c.env, key)));
     throw error;
   }
 
@@ -490,6 +508,10 @@ app.post("/get-quote", async (c) => {
     c.env.DB,
     {
       leadId,
+      source: traffic.source,
+      medium: traffic.medium,
+      campaign: traffic.campaign,
+      clickId: traffic.clickId,
       customerName: values.name,
       customerEmail: values.email,
       customerPhone: formatPhone(values.phone ?? ""),
@@ -726,7 +748,13 @@ app.post("/book", async (c) => {
 
 /** Re-price the quote page after a customer edits a detail in the summary. No lead, no notification. */
 app.post("/quote/refresh", async (c) => {
-  const form = await c.req.formData();
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    // Someone posted an empty body (or a bot); show the form instead of crashing.
+    return c.html(quotePage({ values: {}, error: "Enter the route and try again." }), 400);
+  }
   const field = (name: string) => String(form.get(name) ?? "").trim();
   const values: QuoteFormValues = {
     name: field("name"),
@@ -820,6 +848,7 @@ app.post("/quote/refresh", async (c) => {
 
 app.post("/book/submit", async (c) => {
   const form = await c.req.formData();
+  const traffic = readTraffic(form, c.req.header("referer") ?? "", new URL(c.req.url).hostname);
   const values = bookValuesFrom(form);
   values.ready_date = futureDate(values.ready_date);
   await hydrateFromZips(values);
@@ -851,6 +880,10 @@ app.post("/book/submit", async (c) => {
   const leadId = values.lead_id ? Number(values.lead_id) : null;
   const orderInput = {
     leadId,
+    source: traffic.source,
+    medium: traffic.medium,
+    campaign: traffic.campaign,
+    clickId: traffic.clickId,
     customerName: values.name,
     customerEmail: values.email,
     customerPhone: formatPhone(values.phone ?? ""),
@@ -933,9 +966,7 @@ app.post("/book/submit", async (c) => {
     for (const photo of photos) {
       const extension = photoExtension(photo) ?? "jpg";
       const key = `orders/${crypto.randomUUID()}.${extension}`;
-      await c.env.UPLOADS.put(key, await photo.arrayBuffer(), {
-        metadata: { contentType: photoContentType(photo, extension) },
-      });
+      await putObject(c.env, key, await photo.arrayBuffer(), photoContentType(photo, extension));
       stored.push(key);
     }
     try {
@@ -950,7 +981,7 @@ app.post("/book/submit", async (c) => {
         ),
       );
     } catch (error) {
-      await Promise.all(stored.map((key) => c.env.UPLOADS.delete(key)));
+      await Promise.all(stored.map((key) => deleteObject(c.env, key)));
       throw error;
     }
   }
@@ -1307,6 +1338,27 @@ function adminRedirect(body: Record<string, unknown>, fallback: string): string 
 }
 
 /** Combine a date plus 12-hour time fields into a UTC timestamp. */
+/** Reads the traffic source the browser attached to the form, plus the referrer. */
+function readTraffic(
+  form: FormData,
+  referer: string,
+  selfHost = "",
+): { source: string; medium: string; campaign: string; clickId: string } {
+  const pick = (name: string) => String(form.get(name) ?? "").trim().slice(0, 120);
+  let referrerHost = "";
+  try {
+    referrerHost = referer ? new URL(referer).hostname.replace(/^www\./, "") : "";
+  } catch {
+    referrerHost = "";
+  }
+  // A page on this site referring to itself is not a channel.
+  if (referrerHost && selfHost && referrerHost === selfHost.replace(/^www\./, "")) referrerHost = "";
+  const clickId = pick("click_id") || pick("gclid") || pick("fbclid");
+  const source = pick("utm_source") || referrerHost || "direct";
+  const medium = pick("utm_medium") || (clickId ? "cpc" : referrerHost ? "referral" : "none");
+  return { source, medium, campaign: pick("utm_campaign"), clickId };
+}
+
 function parseDateTime(body: Record<string, string | File>, prefix: string, zone?: string): number | null {
   const month = Number(body[`${prefix}_month`] ?? "");
   const day = Number(body[`${prefix}_day`] ?? "");
@@ -1383,12 +1435,12 @@ app.get("/admin/photos/:id", async (c) => {
     .first<{ photo_key: string }>();
   if (!photo) return c.notFound();
 
-  const object = await c.env.UPLOADS.getWithMetadata<{ contentType?: string }>(photo.photo_key, "arrayBuffer");
-  if (!object.value) return c.notFound();
+  const object = await getObject(c.env, photo.photo_key);
+  if (!object) return c.notFound();
 
-  return new Response(object.value, {
+  return new Response(object.body, {
     headers: {
-      "content-type": object.metadata?.contentType ?? "application/octet-stream",
+      "content-type": object.contentType,
       "cache-control": "private, max-age=3600",
       "x-content-type-options": "nosniff",
     },
@@ -1405,12 +1457,12 @@ app.get("/admin/order-photos/:id", async (c) => {
     .first<{ photo_key: string }>();
   if (!photo) return c.notFound();
 
-  const object = await c.env.UPLOADS.getWithMetadata<{ contentType?: string }>(photo.photo_key, "arrayBuffer");
-  if (!object.value) return c.notFound();
+  const object = await getObject(c.env, photo.photo_key);
+  if (!object) return c.notFound();
 
-  return new Response(object.value, {
+  return new Response(object.body, {
     headers: {
-      "content-type": object.metadata?.contentType ?? "application/octet-stream",
+      "content-type": object.contentType,
       "cache-control": "private, max-age=3600",
       "x-content-type-options": "nosniff",
     },
@@ -1431,7 +1483,8 @@ const ORDER_SORTS: Record<string, string> = {
     WHEN 'picked_up' THEN 5
     WHEN 'delivered' THEN 6
     WHEN 'paid' THEN 7
-    WHEN 'cancelled' THEN 8
+    WHEN 'paid_in_full' THEN 8
+    WHEN 'cancelled' THEN 9
     ELSE 9
   END`,
   created: "created_at",
@@ -1583,6 +1636,7 @@ function missingStepData(
     driverName: string | null;
     carrierPhone: string | null;
     paymentMethod: string | null;
+    invoicesSettled: boolean;
   },
 ): string | null {
   if (status === "quoted" && data.finalQuote === null) return "Set the final quote before moving to Booked.";
@@ -1683,9 +1737,18 @@ app.post("/admin/orders/:id/status", async (c) => {
       driverName: order.driver_name,
       carrierPhone: order.carrier_phone,
       paymentMethod: order.payment_method,
+      invoicesSettled: order.payment_state === "full",
     });
     if (missing) {
       return c.redirect(`/admin/orders?error=${encodeURIComponent(missing)}&error_order=${id}#order-${id}`, 303);
+    }
+    // Settling means the money is in on both sides, not just that the stage was reached.
+    if (moving === "paid_in_full" && order.payment_state !== "full") {
+      const message =
+        order.payment_state === "partial"
+          ? "One invoice is still unpaid. Mark the client and carrier invoices paid before settling the order."
+          : "Neither invoice is marked paid. Mark the client and carrier invoices paid before settling the order.";
+      return c.redirect(`/admin/orders?error=${encodeURIComponent(message)}&error_order=${id}#order-${id}`, 303);
     }
   }
 
@@ -2282,6 +2345,7 @@ app.get("/admin/api/stream", async (c) => {
   if (!user) return c.text("unauthorized", 401);
 
   let cursor = Number(c.req.query("since")) || 0;
+  let bookedCursor = Number(c.req.query("booked")) || 0;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -2301,6 +2365,22 @@ app.get("/admin/api/stream", async (c) => {
             push({ quotes: results, cursor });
           } else {
             controller.enqueue(encoder.encode(": ping\n\n"));
+          }
+
+          // A customer finishing the booking form is a notification too.
+          const booked = await c.env.DB.prepare(
+            `SELECT o.id, o.number, o.customer_name, o.origin_zip, o.dest_zip, o.price, e.created_at
+               FROM order_events e
+               JOIN orders o ON o.id = e.order_id
+              WHERE e.kind = 'confirmed' AND e.actor = 'customer' AND e.created_at > ?
+              ORDER BY e.created_at LIMIT 20`,
+          )
+            .bind(bookedCursor)
+            .all<{ id: number; number: string; customer_name: string; origin_zip: string; dest_zip: string; price: number; created_at: number }>();
+
+          if (booked.results.length) {
+            bookedCursor = booked.results[booked.results.length - 1]!.created_at;
+            push({ booked: booked.results, bookedCursor });
           }
 
           // Delivery reminders: once at T-24h, once at T-2h. The event row is the lock,
@@ -2340,7 +2420,25 @@ const CONTRACT_TYPES = new Map([
   ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"],
   ["image/png", "png"],
   ["image/jpeg", "jpg"],
+  ["image/jpg", "jpg"],
+  // iPhone photos arrive as HEIC, and some pickers report octet-stream
+  ["image/heic", "heic"],
+  ["image/heif", "heif"],
+  ["image/webp", "webp"],
 ]);
+
+/** Falls back to the file extension when the browser sends no useful MIME type. */
+function contractExtension(file: File): string | null {
+  const byType = CONTRACT_TYPES.get(file.type);
+  if (byType) return byType;
+  const match = /\.([a-z0-9]+)$/i.exec(file.name || "");
+  const suffix = match ? match[1]!.toLowerCase() : "";
+  return ["pdf", "doc", "docx", "png", "jpg", "jpeg", "heic", "heif", "webp"].includes(suffix)
+    ? suffix === "jpeg"
+      ? "jpg"
+      : suffix
+    : null;
+}
 
 app.post("/admin/orders/:id/contracts", async (c) => {
   const user = await sessionUser(c);
@@ -2348,24 +2446,28 @@ app.post("/admin/orders/:id/contracts", async (c) => {
 
   const id = Number(c.req.param("id"));
   const back = `/admin/orders#order-${id}`;
+  const fail = (message: string) =>
+    c.redirect(`/admin/orders?error=${encodeURIComponent(message)}&error_order=${id}#order-${id}`, 303);
+
   const form = await c.req.formData();
   const file = form.get("contract");
-  if (!(file instanceof File) || file.size === 0) return c.redirect(back, 303);
+  if (!(file instanceof File) || file.size === 0) return fail("Choose a file first, then upload it.");
 
   const { results: existing } = await c.env.DB.prepare("SELECT id FROM order_contracts WHERE order_id = ?")
     .bind(id)
     .all<{ id: number }>();
-  if (existing.length >= MAX_CONTRACTS) return c.redirect(`${back}`, 303);
-  if (file.size > 10 * 1024 * 1024) return c.redirect(back, 303);
-  const extension = CONTRACT_TYPES.get(file.type);
-  if (!extension) return c.redirect(back, 303);
+  if (existing.length >= MAX_CONTRACTS) return fail(`This order already has ${MAX_CONTRACTS} contracts. Delete one first.`);
+  if (file.size > 20 * 1024 * 1024) return fail("That file is larger than 20 MB. Send a smaller scan or a PDF.");
+  const extension = contractExtension(file);
+  if (!extension) return fail("That file type is not supported. Use a PDF, Word document, photo or scan.");
 
   const key = `contracts/${id}/${crypto.randomUUID()}.${extension}`;
-  await c.env.UPLOADS.put(key, await file.arrayBuffer(), { metadata: { contentType: file.type } });
+  const contentType = file.type && file.type !== "application/octet-stream" ? file.type : `application/${extension}`;
+  await putObject(c.env, key, await file.arrayBuffer(), contentType);
   await c.env.DB.prepare(
     "INSERT INTO order_contracts (order_id, filename, content_type, size, storage_key, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(id, file.name || `contract.${extension}`, file.type, file.size, key, user.email, Date.now())
+    .bind(id, file.name || `contract.${extension}`, contentType, file.size, key, user.email, Date.now())
     .run();
   await c.env.DB.prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)")
     .bind(id, `Signed contract uploaded: ${file.name || extension}`, user.email, Date.now())
@@ -2386,7 +2488,7 @@ app.post("/admin/orders/:id/contracts/:contractId/delete", async (c) => {
     .first<{ storage_key: string; filename: string }>();
 
   if (row) {
-    await c.env.UPLOADS.delete(row.storage_key);
+    await deleteObject(c.env, row.storage_key);
     await c.env.DB.prepare("DELETE FROM order_contracts WHERE id = ? AND order_id = ?").bind(contractId, id).run();
     await c.env.DB.prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, 'edited', ?, ?, ?)")
       .bind(id, `Signed contract removed: ${row.filename}`, user.email, Date.now())
@@ -2405,10 +2507,10 @@ app.get("/admin/order-contracts/:contractId", async (c) => {
     .first<{ storage_key: string; content_type: string | null; filename: string }>();
   if (!row) return c.html(notFoundPage(), 404);
 
-  const object = await c.env.UPLOADS.get(row.storage_key, "arrayBuffer");
+  const object = await getObject(c.env, row.storage_key);
   if (!object) return c.html(notFoundPage(), 404);
 
-  return new Response(object, {
+  return new Response(object.body, {
     headers: {
       "content-type": row.content_type || "application/octet-stream",
       "content-disposition": `inline; filename="${row.filename.replace(/"/g, "")}"`,
@@ -2817,18 +2919,113 @@ app.get("/admin/invoices/:id", async (c) => {
   return c.html(invoicePage(invoice, order));
 });
 
+app.get("/admin/calendar", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const startRaw = c.req.query("start") ?? "";
+  const parsedStart = /^\d{4}-\d{2}-\d{2}$/.test(startRaw) ? Date.parse(`${startRaw}T00:00:00Z`) : NaN;
+  const today = new Date();
+  const todayStart = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  // Two weeks, starting two days back so yesterday's moves stay in view.
+  const span = 14 * 86400000;
+  const start = Number.isFinite(parsedStart) ? parsedStart : todayStart - 2 * 86400000;
+  const end = start + span;
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, number, customer_name, status, origin_zip, dest_zip, pickup_eta, delivery_eta
+       FROM orders
+      WHERE status <> 'cancelled'
+        AND ((pickup_eta >= ? AND pickup_eta < ?) OR (delivery_eta >= ? AND delivery_eta < ?))
+      ORDER BY COALESCE(pickup_eta, delivery_eta)
+      LIMIT 500`,
+  )
+    .bind(start, end, start, end)
+    .all<{
+      id: number;
+      number: string;
+      customer_name: string;
+      status: string;
+      origin_zip: string;
+      dest_zip: string;
+      pickup_eta: number | null;
+      delivery_eta: number | null;
+    }>();
+
+  const days: CalendarDay[] = [];
+  for (let offset = 0; offset < 14; offset += 1) {
+    const dayStart = start + offset * 86400000;
+    const date = new Date(dayStart);
+    days.push({
+      label: date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+      weekday: date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+      isToday: dayStart === todayStart,
+      isWeekStart: offset % 7 === 0,
+    });
+  }
+
+  // One bar per order: from the pickup day to the delivery day, clamped to the window.
+  const dayIndex = (value: number) => Math.floor((value - start) / 86400000);
+  const bars: CalendarBar[] = [];
+  for (const order of results) {
+    const pickupIdx = order.pickup_eta ? dayIndex(order.pickup_eta) : null;
+    const deliveryIdx = order.delivery_eta ? dayIndex(order.delivery_eta) : null;
+    const first = pickupIdx ?? deliveryIdx;
+    const last = deliveryIdx ?? pickupIdx;
+    if (first === null || last === null) continue;
+    const from = Math.max(0, Math.min(first, last));
+    const to = Math.min(13, Math.max(first, last));
+    bars.push({
+      id: order.id,
+      number: order.number,
+      customer: order.customer_name,
+      status: order.status,
+      route: `${order.origin_zip} → ${order.dest_zip}`,
+      start: from,
+      span: Math.max(1, to - from + 1),
+      pickup: pickupIdx !== null,
+      delivery: deliveryIdx !== null,
+    });
+  }
+  bars.sort((a, b) => a.start - b.start || a.number.localeCompare(b.number));
+
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  return c.html(calendarPage(days, bars, iso(start), iso(start - span), iso(start + span)));
+});
+
 app.get("/admin/staff", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.redirect("/admin/login", 303);
 
   const period = parseStaffPeriod(c.req.query("period"));
   const metric = parseStaffMetric(c.req.query("metric"));
-  const [data, trends, marketing] = await Promise.all([
+  const now = new Date();
+  const spendMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const spendMonthLabel = now.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+
+  const [data, trends, marketing, rawSources, spend] = await Promise.all([
     loadStaffPerformance(c.env.DB, period, metric),
     loadRevenueTrends(c.env.DB),
     loadAdsShare(c.env.DB),
+    loadSourceFunnel(c.env.DB),
+    loadAdSpend(c.env.DB, spendMonth),
   ]);
-  return c.html(staffPerformancePage(data, user, trends, marketing));
+
+  // Fold whatever channels exist into the three we actually run.
+  const channels: ChannelRow[] = (["google", "meta", "direct"] as Channel[]).map((channel) => {
+    const rows = rawSources.filter((row) => channelOf(row.source, row.medium) === channel);
+    return {
+      channel,
+      quotes: rows.reduce((n, row) => n + row.quotes, 0),
+      booked: rows.reduce((n, row) => n + row.booked, 0),
+      paid: rows.reduce((n, row) => n + row.paid, 0),
+      revenue: rows.reduce((n, row) => n + row.revenue, 0),
+      broker: rows.reduce((n, row) => n + row.broker, 0),
+      spend: (spend[channel] ?? 0) / 100,
+    };
+  });
+
+  return c.html(staffPerformancePage(data, user, trends, marketing, channels, spendMonth, spendMonthLabel));
 });
 
 app.post("/admin/staff/marketing", async (c) => {
@@ -3051,6 +3248,24 @@ async function calendarToken(db: D1Database): Promise<string> {
   await setSetting(db, "calendar_token", token);
   return token;
 }
+
+app.post("/admin/staff/spend", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const body = await c.req.parseBody();
+  const month = String(body.month ?? "");
+  if (!/^\d{4}-\d{2}$/.test(month)) return c.redirect("/admin/staff", 303);
+
+  const amounts: Record<string, number> = {};
+  for (const channel of ["google", "meta"] as const) {
+    const raw = String(body[`spend_${channel}`] ?? "").replace(/[^0-9.]/g, "");
+    const value = Number(raw);
+    amounts[channel] = Number.isFinite(value) ? Math.round(value * 100) : 0;
+  }
+  await saveAdSpend(c.env.DB, month, amounts);
+  return c.redirect("/admin/staff", 303);
+});
 
 app.get("/admin/account", async (c) => {
   const user = await sessionUser(c);

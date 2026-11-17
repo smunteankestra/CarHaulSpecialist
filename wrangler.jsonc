@@ -14,6 +14,14 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
+  // Files live in R2 now: 10 GB free and no daily write ceiling.
+  // KV stays bound during the migration, then it can be removed.
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS_R2",
+      "bucket_name": "bond-uploads"
+    }
+  ],
   "kv_namespaces": [
     {
       "binding": "UPLOADS",

@@ -1,6 +1,8 @@
 import { esc, layout, money, whenHtml } from "./views.ts";
 import type { UserRow } from "./users.ts";
+import { CHANNEL_LABELS } from "./staff.ts";
 import type {
+  ChannelRow,
   RevenueTrends,
   StaffBucket,
   StaffMetric,
@@ -142,11 +144,189 @@ const TREND_LABELS: Record<"day" | "week" | "month", string> = {
   month: "Per month — last 12 months",
 };
 
+/** The three channels with spend, profit and return on ad spend. */
+function sourceFunnelCard(rows: ChannelRow[], month: string, monthLabel: string): string {
+  const total = rows.reduce(
+    (sum, row) => ({
+      quotes: sum.quotes + row.quotes,
+      booked: sum.booked + row.booked,
+      paid: sum.paid + row.paid,
+      revenue: sum.revenue + row.revenue,
+      broker: sum.broker + row.broker,
+      spend: sum.spend + row.spend,
+    }),
+    { quotes: 0, booked: 0, paid: 0, revenue: 0, broker: 0, spend: 0 },
+  );
+
+  const pct = (part: number, whole: number) => (whole ? (part / whole) * 100 : 0);
+  const label = (part: number, whole: number) => (whole ? `${pct(part, whole).toFixed(1)}%` : "—");
+  const roas = (broker: number, spend: number) => (spend > 0 ? `${(broker / spend).toFixed(1)}×` : "—");
+
+  const body = rows
+    .map((row) => {
+      const paidRate = pct(row.paid, row.quotes);
+      const bookedRate = pct(row.booked, row.quotes);
+      const net = row.broker - row.spend;
+      return `<div class="source-row">
+      <div class="source-head">
+        <strong>${esc(CHANNEL_LABELS[row.channel])}</strong>
+        <span class="source-tag ${net >= 0 ? "is-up" : "is-down"}">${row.spend ? `${net >= 0 ? "+" : ""}${money(net)} net` : "no spend set"}</span>
+      </div>
+      <div class="source-bar" title="${label(row.booked, row.quotes)} booked · ${label(row.paid, row.quotes)} paid">
+        <span class="source-bar-booked" style="width:${Math.max(bookedRate, 0).toFixed(1)}%"></span>
+        <span class="source-bar-paid" style="width:${Math.max(paidRate, 0).toFixed(1)}%"></span>
+      </div>
+      <div class="source-stats">
+        <div><strong>${row.quotes.toLocaleString()}</strong><span>quotes</span></div>
+        <div><strong>${row.paid.toLocaleString()}</strong><span>paid</span></div>
+        <div><strong>${money(row.revenue)}</strong><span>revenue</span></div>
+        <div><strong>${money(row.broker)}</strong><span>broker fee</span></div>
+        <div><strong>${row.spend ? money(row.spend) : "—"}</strong><span>spent</span></div>
+        <div><strong>${roas(row.broker, row.spend)}</strong><span>return</span></div>
+      </div>
+    </div>`;
+    })
+    .join("");
+
+  const spendInputs = rows
+    .filter((row) => row.channel !== "direct")
+    .map(
+      (row) => `<label class="field"><span>${esc(CHANNEL_LABELS[row.channel])} · ${esc(monthLabel)}</span>
+        <input name="spend_${row.channel}" inputmode="decimal" placeholder="0" value="${row.spend ? row.spend.toFixed(2).replace(/\.00$/, "") : ""}"></label>`,
+    )
+    .join("");
+
+  return `<div class="card chart-card">
+    <h3>Conversion by source</h3>
+    <p class="muted small">Three channels only: Direct, Google Ads, Meta. Everything else folds into Direct. Dark bar: booked · green bar: paid.</p>
+    ${body}
+    <div class="source-total">
+      <span><strong>${total.quotes.toLocaleString()}</strong> quotes</span>
+      <span><strong>${total.paid.toLocaleString()}</strong> paid</span>
+      <span><strong>${label(total.paid, total.quotes)}</strong> quote → paid</span>
+      <span><strong>${money(total.broker)}</strong> broker fee</span>
+      <span><strong>${total.spend ? money(total.spend) : "—"}</strong> spent</span>
+      <span><strong>${roas(total.broker, total.spend)}</strong> return</span>
+    </div>
+    <form class="spend-form" method="post" action="/admin/staff/spend">
+      <input type="hidden" name="month" value="${esc(month)}">
+      ${spendInputs}
+      <button class="btn btn-ghost btn-small" type="submit">Save spend</button>
+    </form>
+    <p class="muted small">Enter what you actually paid the platform that month. Return is broker fee ÷ spend.</p>
+  </div>`;
+}
+
+
+export interface CalendarDay {
+  label: string;
+  weekday: string;
+  isToday: boolean;
+  isWeekStart: boolean;
+}
+
+export interface CalendarBar {
+  id: number;
+  number: string;
+  customer: string;
+  status: string;
+  route: string;
+  /** 0-based column where the bar starts. */
+  start: number;
+  /** How many day columns the bar covers. */
+  span: number;
+  pickup: boolean;
+  delivery: boolean;
+}
+
+/** Gantt view: one row per order, the bar runs from pickup to delivery. */
+export function calendarPage(
+  days: CalendarDay[],
+  bars: CalendarBar[],
+  start: string,
+  prevStart: string,
+  nextStart: string,
+): string {
+  const columns = days.length;
+  const head = days
+    .map(
+      (day) =>
+        `<div class="gantt-day${day.isToday ? " is-today" : ""}${day.isWeekStart ? " is-week" : ""}">
+      <span>${esc(day.weekday)}</span><strong>${esc(day.label)}</strong>
+    </div>`,
+    )
+    .join("");
+
+  const rows = bars.length
+    ? bars
+        .map(
+          (bar) => `<div class="gantt-row">
+      <a class="gantt-label" href="/admin/orders?q=${encodeURIComponent(bar.number)}#order-${bar.id}">
+        <strong>${esc(bar.number)}</strong>
+        <span>${esc(bar.customer)}</span>
+      </a>
+      <div class="gantt-track" style="grid-column:${bar.start + 2} / span ${bar.span}">
+        <a class="gantt-bar gantt-${esc(bar.status)}" href="/admin/orders?q=${encodeURIComponent(bar.number)}#order-${bar.id}"
+           title="${esc(bar.number)} · ${esc(bar.customer)} · ${esc(bar.route)}">
+          ${bar.pickup ? '<span class="gantt-cap start"></span>' : ""}
+          <span class="gantt-text">${esc(bar.number)}</span>
+          ${bar.delivery ? '<span class="gantt-cap end"></span>' : ""}
+        </a>
+      </div>
+    </div>`,
+        )
+        .join("")
+    : `<p class="muted small">No pickups or deliveries in these three weeks.</p>`;
+
+  return layout({
+    admin: true,
+    title: "Schedule — Bond Auto Transport",
+    description: "Pickups and deliveries for the next two weeks.",
+    body: `
+<section class="wrap section">
+  <div class="admin-head">
+    <div>
+      <p class="eyebrow">Dispatch</p><h1 class="page-title">Schedule</h1>
+      <nav class="admin-nav">
+        <a href="/admin/orders">Orders</a>
+        <a href="/admin/calendar" class="active">Schedule</a>
+        <a href="/admin/staff">Performance</a>
+        <a href="/admin/account">Account</a>
+      </nav>
+    </div>
+  </div>
+  <div class="card chart-card">
+    <div class="cal-head">
+      <h3>Two weeks from ${esc(start)}</h3>
+      <div class="cal-nav">
+        <a class="chip" href="/admin/calendar?start=${esc(prevStart)}">← 2 weeks</a>
+        <a class="chip" href="/admin/calendar">Today</a>
+        <a class="chip" href="/admin/calendar?start=${esc(nextStart)}">2 weeks →</a>
+      </div>
+    </div>
+    <p class="muted small">One row per order. The bar runs from the pickup date to the delivery date; the colour is the status. A dot at the edge means that end is not scheduled yet.</p>
+    <div class="gantt-scroll">
+      <div class="gantt" style="--gantt-days:${columns}">
+        <div class="gantt-head">
+          <div class="gantt-corner">Order</div>
+          ${head}
+        </div>
+        ${rows}
+      </div>
+    </div>
+  </div>
+</section>`,
+  });
+}
+
 export function staffPerformancePage(
   data: StaffPerformance,
   viewer: UserRow,
   trends: RevenueTrends,
   marketing: { ads: number; tax: number },
+  sources: ChannelRow[] = [],
+  spendMonth = "",
+  spendMonthLabel = "",
 ): string {
   const href = (period: StaffPeriod, metric: StaffMetric) => `/admin/staff?period=${period}&metric=${metric}`;
   const periodTabs = (Object.keys(PERIOD_LABELS) as StaffPeriod[])
@@ -256,6 +436,8 @@ export function staffPerformancePage(
     <div class="staff-stat"><strong>${data.activeStaff}</strong><span>Active staff</span></div>
   </div>
 
+  ${sourceFunnelCard(sources, spendMonth, spendMonthLabel)}
+
   <div class="card chart-card">
     <h3>Orders that reached Payments per ${PERIOD_LABELS[data.period].toLowerCase()}</h3>
     ${paidSeries.length
@@ -355,3 +537,4 @@ export function staffPerformancePage(
 </section>`,
   });
 }
+

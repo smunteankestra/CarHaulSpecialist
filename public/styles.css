@@ -3559,6 +3559,7 @@ main {
 
 .contract-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.6rem;
@@ -3568,11 +3569,23 @@ main {
 }
 
 .contract-name {
-  flex: 1;
+  flex: 1 1 12rem;
   min-width: 0;
   font-size: 0.85rem;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+/* on a phone the file name takes its own line instead of one letter per row */
+@media (max-width: 560px) {
+  .contract-row {
+    align-items: flex-start;
+  }
+
+  .contract-name,
+  .contract-row > .muted.small {
+    flex: 1 1 100%;
+  }
 }
 
 .contract-row form {
@@ -3842,71 +3855,7 @@ main {
   color: var(--muted);
 }
 
-.toast-stack {
-  position: fixed;
-  top: 4.1rem;
-  right: 1rem;
-  z-index: 115;
-  display: grid;
-  gap: 0.5rem;
-  width: 330px;
-}
 
-.toast {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.75rem 0.8rem;
-  border: 1px solid #e3c8c4;
-  border-left: 4px solid #b91c1c;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 16px 40px rgba(11, 22, 32, 0.18);
-  animation: toast-in 0.18s ease-out;
-}
-
-@keyframes toast-in {
-  from { transform: translateX(12px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-.toast-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.toast-title {
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #b91c1c;
-}
-
-.toast-sub {
-  margin: 0.15rem 0 0.35rem;
-  font-size: 0.76rem;
-  color: #33475b;
-}
-
-.toast-link {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--accent);
-}
-
-.toast-close {
-  border: none;
-  background: none;
-  color: #8a97a5;
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 0.1rem;
-}
-
-.toast-close:hover {
-  color: #b91c1c;
-}
 
 /* the "Mark all seen" button answers instead of acting */
 .inbox-note {
@@ -4183,14 +4132,7 @@ main {
 }
 
 /* delivery reminder toast: amber, not red — it is a warning, not a lead */
-.toast-reminder {
-  border-left-color: #b45309;
-  border-color: #e8d5b5;
-}
 
-.toast-reminder .toast-title {
-  color: #b45309;
-}
 
 /* live countdown next to the ETAs */
 .eta-countdown {
@@ -4216,18 +4158,388 @@ main {
 }
 
 /* read notifications stay on screen, just dimmed */
-.toast.is-read {
-  opacity: 0.55;
-  filter: grayscale(0.35);
-  box-shadow: 0 6px 16px rgba(11, 22, 32, 0.08);
-}
 
-.toast.is-read:hover {
-  opacity: 0.9;
-}
 
 /* explicit picker for mobile, where the label trick is unreliable */
 .contract-pick {
   justify-self: start;
   margin-top: -0.3rem;
 }
+
+/* social and review links */
+.social-links {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+  padding: 0;
+}
+
+.social-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #d7e0e8;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.social-links a:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(11, 22, 32, 0.18);
+}
+
+.social-links img {
+  display: block;
+  width: 1.15rem;
+  height: 1.15rem;
+  object-fit: contain;
+}
+
+/* unread notifications: red dot + bold, read ones stay in the list */
+.inbox-list a {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  grid-template-areas:
+    "dot title amount"
+    "dot sub amount";
+  gap: 0.1rem 0.45rem;
+  align-items: start;
+}
+
+.inbox-list a strong {
+  grid-area: title;
+}
+
+.inbox-list a span:not(.inbox-dot) {
+  grid-area: sub;
+}
+
+.inbox-list a em {
+  grid-area: amount;
+  align-self: center;
+}
+
+.inbox-dot {
+  grid-area: dot;
+  width: 7px;
+  height: 7px;
+  margin-top: 0.42rem;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.inbox-list a.is-unread .inbox-dot {
+  background: #b91c1c;
+}
+
+.inbox-list a.is-unread strong {
+  font-weight: 800;
+  color: #10161c;
+}
+
+.inbox-list a:not(.is-unread) strong {
+  font-weight: 600;
+  color: #33475b;
+}
+
+.inbox-list a:not(.is-unread) {
+  opacity: 0.72;
+}
+
+/* conversion by source: readable rows instead of a wide table */
+.source-row {
+  padding: 0.85rem 0;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.source-row:last-of-type {
+  border-bottom: none;
+}
+
+.source-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.source-head strong {
+  font-size: 0.95rem;
+}
+
+.source-tag {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: #eef4f8;
+  color: #4a6274;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.source-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: #eef2f6;
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+
+.source-bar-booked,
+.source-bar-paid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.source-bar-booked {
+  background: #33475b;
+  opacity: 0.35;
+}
+
+.source-bar-paid {
+  background: #76a03c;
+}
+
+.source-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.source-stats div {
+  display: grid;
+  gap: 0.05rem;
+}
+
+.source-stats strong {
+  font-size: 0.9rem;
+  color: #10161c;
+}
+
+.source-stats span {
+  font-size: 0.66rem;
+  color: #6b7f90;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.source-total {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 2px solid #eef2f6;
+  font-size: 0.78rem;
+  color: #4a6274;
+}
+
+@media (max-width: 720px) {
+  .source-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem 0.5rem;
+  }
+}
+
+/* spend form under the channel rows */
+.spend-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #eef2f6;
+}
+
+.spend-form .field {
+  flex: 1 1 10rem;
+  margin: 0;
+}
+
+.source-tag.is-up {
+  background: #eaf4dc;
+  color: #4d7020;
+}
+
+.source-tag.is-down {
+  background: #fdecea;
+  color: #b91c1c;
+}
+
+/* schedule: one row per order, bar runs pickup → delivery across three weeks */
+.cal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.cal-nav {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.gantt-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.4rem;
+}
+
+.gantt {
+  min-width: 820px;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.gantt-head,
+.gantt-row {
+  display: grid;
+  grid-template-columns: 11rem repeat(var(--gantt-days, 21), minmax(2.1rem, 1fr));
+  gap: 0.15rem;
+  align-items: center;
+}
+
+.gantt-corner {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7b8fa1;
+  padding-left: 0.2rem;
+}
+
+.gantt-day {
+  display: grid;
+  gap: 0.02rem;
+  justify-items: center;
+  padding: 0.15rem 0;
+  border-left: 1px solid #eef2f6;
+  font-size: 0.62rem;
+  color: #7b8fa1;
+}
+
+.gantt-day strong {
+  font-size: 0.72rem;
+  color: #33475b;
+}
+
+.gantt-day.is-week {
+  border-left: 2px solid #d7e0e8;
+}
+
+.gantt-day.is-today {
+  background: #f4f9ec;
+  border-radius: 6px;
+}
+
+.gantt-day.is-today strong {
+  color: #4d7020;
+}
+
+.gantt-row {
+  padding: 0.15rem 0;
+}
+
+.gantt-label {
+  display: grid;
+  gap: 0.02rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  text-decoration: none;
+  color: #26333f;
+  background: #f7fafc;
+}
+
+.gantt-label strong {
+  font-size: 0.74rem;
+}
+
+.gantt-label span {
+  font-size: 0.68rem;
+  color: #6b7f90;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gantt-track {
+  position: relative;
+  height: 1.6rem;
+  display: flex;
+  align-items: center;
+}
+
+.gantt-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  height: 1.25rem;
+  padding: 0 0.45rem;
+  border-radius: 6px;
+  background: #dfe7ee;
+  color: #10161c;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.gantt-bar:hover {
+  filter: brightness(0.96);
+}
+
+.gantt-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gantt-cap {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10161c;
+  flex: none;
+}
+
+.gantt-cap.end {
+  margin-left: auto;
+}
+
+/* status colours */
+.gantt-quoted { background: #e3e9ef; }
+.gantt-confirmed { background: #d6e6f7; }
+.gantt-contract_draft { background: #e2dbf5; }
+.gantt-assigned { background: #fbe6c8; }
+.gantt-picked_up { background: #cdeae4; }
+.gantt-delivered { background: #dcecc4; }
+.gantt-paid { background: #c7e3c3; }
+
+
+/* settled order: deeper green than Payments, so the two read apart */
+.chip-status-paid_in_full {
+  --chip-bg: #c7e3c3;
+  --chip-fg: #1f5d22;
+  --chip-active: #1f5d22;
+}
+
+.badge-paid_in_full,
+.status-paid_in_full {
+  background: #2f7d32;
+  color: #fff;
+}
+
+.gantt-paid_in_full { background: #b7dcb3; }

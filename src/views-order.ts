@@ -443,7 +443,7 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       <p class="muted small">Price ${money(order.final_quote ?? order.price)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} miles` : ""}</p>
       ${order.carrier_name ? `<p class="muted small">Carrier: ${esc(order.carrier_name)}${order.driver_name ? ` · Driver: ${esc(order.driver_name)}` : ""}${order.carrier_phone ? ` · ${esc(order.carrier_phone)}` : ""}</p>` : ""}
       ${order.picked_up_at ? `<p class="muted small">Picked up ${whenHtml(order.picked_up_at)}</p>` : ""}
-      ${!["picked_up", "delivered", "paid"].includes(order.status) && order.pickup_eta ? `<p class="muted small">Pickup ETA ${whenHtml(order.pickup_eta)}</p>` : ""}
+      ${!["picked_up", "delivered", "paid", "paid_in_full"].includes(order.status) && order.pickup_eta ? `<p class="muted small">Pickup ETA ${whenHtml(order.pickup_eta)}</p>` : ""}
       ${order.status === "picked_up" && order.delivery_eta ? `<p class="muted small">Delivery ETA ${whenHtml(order.delivery_eta)}</p>` : ""}
       ${order.delivered_at ? `<p class="muted small">Delivered ${whenHtml(order.delivered_at)}</p>` : ""}
     </div>
@@ -733,16 +733,22 @@ function carrierComplete(order: OrderRow): boolean {
 }
 
 /** Labels of the required fields still empty at this step. */
-function missingRequired(order: OrderRow): string[] {
-  return (REQUIRED_FIELDS[order.status] ?? [])
+function missingRequired(order: OrderRow, target?: OrderStatus): string[] {
+  const missing = (REQUIRED_FIELDS[order.status] ?? [])
     .filter(([column]) => isBlank((order as unknown as Record<string, unknown>)[column]))
     .map(([, label]) => label);
+
+  // Settling an order means both invoices are actually paid, not just issued.
+  if (target === "paid_in_full" && order.payment_state !== "full") {
+    missing.push(order.payment_state === "partial" ? "The other invoice marked paid" : "Both invoices marked paid");
+  }
+  return missing;
 }
 
 function nextStatusButton(order: OrderRow): string {
   const next = ORDER_STATUSES[ORDER_STATUSES.indexOf(order.status as OrderStatus) + 1];
   if (!next || next === "cancelled") return "";
-  const missing = missingRequired(order);
+  const missing = missingRequired(order, next);
   if (missing.length) {
     return `<button class="btn btn-danger btn-block btn-tall" type="submit" name="move_status" value="${next}" data-blocked="1">Mandatory fields: ${esc(missing.join(", "))}</button>`;
   }
@@ -776,7 +782,7 @@ function paymentStateBadge(state: string, paidAmount: number | null): string {
 
 /** Status badge, except on Payments where the payment state is what matters. */
 function orderStatusBadge(order: OrderRow, withEmoji = false): string {
-  return order.status === "paid"
+  return order.status === "paid" || order.status === "paid_in_full"
     ? paymentStateBadge(order.payment_state, order.paid_amount)
     : statusBadge(order.status, withEmoji);
 }
@@ -881,10 +887,10 @@ function signedContracts(order: OrderRow, contracts: OrderContractRow[]): string
         ? `<p class="muted small">Three signed contracts uploaded — delete one to replace it.</p>`
         : `<form class="contract-upload" method="post" action="/admin/orders/${order.id}/contracts" enctype="multipart/form-data">
       <label class="contract-drop" data-contract-drop>
-        <input class="contract-input" type="file" name="contract" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" required>
+        <input class="contract-input" type="file" name="contract" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.heic,.heif,.webp,image/*,application/pdf" required>
         <span class="contract-plus" aria-hidden="true">+</span>
         <span class="contract-drop-text">Drop the signed contract here or choose a file</span>
-        <span class="contract-drop-sub">PDF, Word or a scan · up to 10 MB${contracts.length ? ` · ${contracts.length} of 3` : ""}</span>
+        <span class="contract-drop-sub">PDF, Word or a photo · up to 20 MB${contracts.length ? ` · ${contracts.length} of 3` : ""}</span>
       </label>
       <button class="btn btn-ghost btn-small contract-pick" type="button" data-contract-pick>Choose file</button>
       <button class="btn btn-accent btn-small" type="submit">Upload Signed Contract</button>
@@ -1027,7 +1033,7 @@ export function orderModalCard(
     ${signedContracts(order, contracts)}`
       : ""}
 
-    ${order.status === "paid"
+    ${(order.status === "paid" || order.status === "paid_in_full")
       ? `<h3 class="section-title mt">Invoices</h3>
     <div class="invoice-actions">
       ${invoiceAction(order, events, "client")}
@@ -1656,7 +1662,7 @@ export function adminOrdersPage(
   };
 
   const invoiceCell = (order: OrderRow, kind: "client" | "carrier") => {
-    if (order.status !== "paid") return '<span class="muted small">—</span>';
+    if (order.status !== "paid" && order.status !== "paid_in_full") return '<span class="muted small">—</span>';
     const events = eventsByOrder.get(order.id) ?? [];
     const paidEvent = events.find((event) => event.kind === `invoice_${kind}_paid`);
     if (paidEvent) {
@@ -1669,7 +1675,7 @@ export function adminOrdersPage(
 
   const rows = orders
     .map(
-      (order) => `<tr${order.status !== "paid" && isDeliveryDue(order.delivery_eta) ? ' class="row-due"' : ""}>
+      (order) => `<tr${order.status !== "paid" && order.status !== "paid_in_full" && isDeliveryDue(order.delivery_eta) ? ' class="row-due"' : ""}>
       <td><a class="row-link" href="#order-${order.id}">${esc(order.number)}</a></td>
       <td>${esc(order.customer_name)}<br><span class="muted small">${esc(order.customer_phone)}</span></td>
       <td>${esc(order.origin_zip)} → ${esc(order.dest_zip)}<br><span class="muted small">${esc(order.transport_type)}${order.distance_miles ? ` · ${order.distance_miles.toLocaleString()} mi` : ""}</span></td>
@@ -1691,7 +1697,7 @@ export function adminOrdersPage(
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
     <nav class="admin-nav">
-      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a><a href="/admin/staff">Performance</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
+      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a><a href="/admin/calendar">Schedule</a><a href="/admin/staff">Performance</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
     </nav>
   </div>
   <form class="orders-search" method="get" action="/admin/orders" role="search">

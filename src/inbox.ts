@@ -1,4 +1,4 @@
-/** Admin-only live inbox: bell, toasts and a chime for new quotes. */
+/** Admin-only live inbox: bell, notification list and alert sounds. */
 export function adminInboxUi(): string {
   return `
 <div class="inbox" data-inbox>
@@ -17,7 +17,7 @@ export function adminInboxUi(): string {
     <ul class="inbox-list" data-inbox-list></ul>
   </div>
 </div>
-<div class="toast-stack" data-toast-stack aria-live="polite"></div>
+
 
 <script>
 (function () {
@@ -32,19 +32,55 @@ export function adminInboxUi(): string {
   var panel = document.querySelector("[data-inbox-panel]");
   var list = document.querySelector("[data-inbox-list]");
   var clearBtn = document.querySelector("[data-inbox-clear]");
-  var stack = document.querySelector("[data-toast-stack]");
-  if (!bell || !stack) return;
+  if (!bell) return;
 
   var CURSOR_KEY = "inbox_cursor";
   var stored = Number(localStorage.getItem(CURSOR_KEY));
   var cursor = Number.isFinite(stored) && stored > 0 ? stored : Date.now() - 60000;
-  var unseen = [];
+  var storedBooked = Number(localStorage.getItem("inbox_booked"));
+  var bookedCursor = Number.isFinite(storedBooked) && storedBooked > 0 ? storedBooked : Date.now() - 60000;
+  var ITEMS_KEY = "inbox_items";
+  var BOOKED_KEY = "inbox_booked";
+  var MAX_ITEMS = 50;
+  var items = [];
+  try {
+    var storedItems = JSON.parse(localStorage.getItem(ITEMS_KEY) || "[]");
+    if (Object.prototype.toString.call(storedItems) === "[object Array]") items = storedItems;
+  } catch (error) {
+    items = [];
+  }
   var audio = null;
   var source = null;
+
+  function saveItems() {
+    try {
+      localStorage.setItem(ITEMS_KEY, JSON.stringify(items.slice(0, MAX_ITEMS)));
+    } catch (error) {}
+  }
+
+  function unreadCount() {
+    return items.filter(function (item) { return !item.read; }).length;
+  }
+
+  /** Adds a notification once; an existing one keeps its read state. */
+  function remember(item) {
+    var key = item.kind + "-" + item.id;
+    var existing = items.find(function (entry) { return entry.kind + "-" + entry.id === key; });
+    if (existing) return false;
+    items.unshift(Object.assign({ read: false }, item));
+    items = items.slice(0, MAX_ITEMS);
+    saveItems();
+    return true;
+  }
 
   function saveCursor(value) {
     cursor = value;
     try { localStorage.setItem(CURSOR_KEY, String(value)); } catch (error) {}
+  }
+
+  function saveBookedCursor(value) {
+    bookedCursor = value;
+    try { localStorage.setItem(BOOKED_KEY, String(value)); } catch (error) {}
   }
 
   function money(value) { return "$" + Number(value || 0).toLocaleString(); }
@@ -57,16 +93,50 @@ export function adminInboxUi(): string {
   }
 
   function paint() {
-    countEl.textContent = String(unseen.length);
-    countEl.hidden = unseen.length === 0;
-    bell.classList.toggle("has-alerts", unseen.length > 0);
-    document.title = unseen.length ? "(" + unseen.length + ") " + document.title.replace(/^\\(\\d+\\)\\s*/, "") : document.title.replace(/^\\(\\d+\\)\\s*/, "");
-    list.innerHTML = unseen.length
-      ? unseen.map(function (q) {
-          return '<li><a href="/admin/orders?q=' + encodeURIComponent(q.number) + '#order-' + q.id + '"><strong>' + q.number + '</strong><span>' + (q.customer_name || "") + ' · ' + q.origin_zip + " → " + q.dest_zip + '</span><em>' + money(q.price) + '</em></a></li>';
-        }).join("")
-      : '<li class="inbox-empty">Nothing new right now.</li>';
+    var unread = unreadCount();
+    countEl.textContent = String(unread);
+    countEl.hidden = unread === 0;
+    bell.classList.toggle("has-alerts", unread > 0);
+    document.title = unread
+      ? "(" + unread + ") " + document.title.replace(/^\\(\\d+\\)\\s*/, "")
+      : document.title.replace(/^\\(\\d+\\)\\s*/, "");
+
+    list.innerHTML = items.length
+      ? items
+          .map(function (item) {
+            var label =
+              item.kind === "reminder"
+                ? (item.window === "24h" ? "Delivery in 24h" : "Delivery in 2h") + " — " + item.number
+                : item.kind === "booked"
+                  ? "Booked by customer — " + item.number
+                  : "New quote " + item.number;
+            var sub =
+              item.kind === "reminder"
+                ? (item.customer_name || "") + " · due " + new Date(item.delivery_eta).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+                : (item.customer_name || "") + " · " + item.origin_zip + " → " + item.dest_zip;
+            var amount = item.kind === "reminder" ? "" : money(item.price);
+            return (
+              '<li><a class="' + (item.read ? "" : "is-unread") + '" data-inbox-item="' + item.kind + "-" + item.id + '" href="/admin/orders?q=' + encodeURIComponent(item.number) + '#order-' + item.id + '">' +
+              '<span class="inbox-dot" aria-hidden="true"></span>' +
+              "<strong>" + label + "</strong><span>" + sub + "</span><em>" + amount + "</em></a></li>"
+            );
+          })
+          .join("")
+      : '<li class="inbox-empty">Nothing yet.</li>';
   }
+
+  /** Opening a notification keeps it in the list; it just stops being bold. */
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest ? event.target.closest("[data-inbox-item]") : null;
+    if (!link) return;
+    var key = link.getAttribute("data-inbox-item");
+    items = items.map(function (item) {
+      if (item.kind + "-" + item.id === key) item.read = true;
+      return item;
+    });
+    saveItems();
+    paint();
+  });
 
   /** Quote alerts use the till; delivery reminders use the truck horn. */
   function alertSound(kind) {
@@ -82,80 +152,51 @@ export function adminInboxUi(): string {
 
 
 
-  var MAX_VISIBLE = 2;
-
-  /** Keeps only the newest two cards on screen; older ones fall off the stack. */
-  function trimStack() {
-    while (stack.children.length > MAX_VISIBLE) stack.removeChild(stack.firstElementChild);
-  }
-
-  /** Reading a notification greys it out instead of removing it. */
-  function markRead(el) {
-    el.classList.add("is-read");
-  }
-
-  function wireToast(el) {
-    el.querySelector(".toast-close").addEventListener("click", function () {
-      markRead(el);
+  /** A customer finished the booking form: that is worth a sound. */
+  function receiveBooked(list, next) {
+    if (next) saveBookedCursor(next);
+    var added = 0;
+    list.forEach(function (item) {
+      if (
+        remember({
+          kind: "booked",
+          id: item.id,
+          number: item.number,
+          customer_name: item.customer_name,
+          origin_zip: item.origin_zip,
+          dest_zip: item.dest_zip,
+          price: item.price,
+        })
+      ) {
+        added += 1;
+      }
     });
-    var link = el.querySelector(".toast-link");
-    if (link) link.addEventListener("click", function () { markRead(el); });
-  }
-
-  function toast(quote) {
-    var el = document.createElement("div");
-    el.className = "toast";
-    el.innerHTML =
-      '<div class="toast-body"><p class="toast-title">New quote ' + quote.number + '</p>' +
-      '<p class="toast-sub">' + (quote.customer_name || "") + " · " + quote.origin_zip + " → " + quote.dest_zip + " · " + money(quote.price) + "</p>" +
-      '<a class="toast-link" href="/admin/orders?q=' + encodeURIComponent(quote.number) + '#order-' + quote.id + '">Open order</a></div>' +
-      '<button class="toast-close" type="button" aria-label="Dismiss">×</button>';
-    wireToast(el);
-    stack.appendChild(el);
-    trimStack();
-  }
-
-  function reminderToast(item) {
-    var el = document.createElement("div");
-    el.className = "toast toast-reminder";
-    var when = new Date(item.delivery_eta);
-    var label = item.window === "24h" ? "Delivery in 24 hours" : "Delivery in 2 hours";
-    el.innerHTML =
-      '<div class="toast-body"><p class="toast-title">' + label + ' — ' + item.number + '</p>' +
-      '<p class="toast-sub">' + (item.customer_name || "") + " · due " + when.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + "</p>" +
-      '<a class="toast-link" href="/admin/orders?q=' + encodeURIComponent(item.number) + '#order-' + item.id + '">Open order</a></div>' +
-      '<button class="toast-close" type="button" aria-label="Dismiss">×</button>';
-    wireToast(el);
-    stack.appendChild(el);
-    trimStack();
-  }
-
-  function receiveReminders(items) {
-    if (!items || !items.length) return;
-    items.forEach(reminderToast);
-    alertSound("reminder");
+    if (added) alertSound("quote");
+    paint();
+    if (added) openPanel();
   }
 
   function receive(quotes, next) {
-    var fresh = quotes.filter(function (quote) {
-      return !unseen.some(function (item) { return item.id === quote.id; });
-    });
     if (next) saveCursor(next);
-    if (!fresh.length) return;
-    unseen = fresh.concat(unseen).slice(0, 20);
-    fresh.slice().reverse().forEach(toast);
+    var added = 0;
+    quotes.forEach(function (quote) {
+      if (remember({ kind: "quote", id: quote.id, number: quote.number, customer_name: quote.customer_name, origin_zip: quote.origin_zip, dest_zip: quote.dest_zip, price: quote.price })) added += 1;
+    });
+    if (!added) return;
     alertSound("quote");
     paint();
+    openPanel();
   }
 
   function connect() {
     if (source) source.close();
-    source = new EventSource("/admin/api/stream?since=" + encodeURIComponent(String(cursor)));
+    source = new EventSource("/admin/api/stream?since=" + encodeURIComponent(String(cursor)) + "&booked=" + encodeURIComponent(String(bookedCursor)));
     source.onmessage = function (event) {
       try {
         var payload = JSON.parse(event.data);
         if (payload.quotes && payload.quotes.length) receive(payload.quotes, payload.cursor);
         if (payload.reminders && payload.reminders.length) receiveReminders(payload.reminders);
+        if (payload.booked && payload.booked.length) receiveBooked(payload.booked, payload.bookedCursor);
       } catch (error) {}
     };
     source.onerror = function () {
@@ -163,6 +204,12 @@ export function adminInboxUi(): string {
       source = null;
       setTimeout(connect, 3000);
     };
+  }
+
+  function openPanel() {
+    if (!panel) return;
+    panel.hidden = false;
+    bell.setAttribute("aria-expanded", "true");
   }
 
   bell.addEventListener("click", function () {
@@ -208,8 +255,16 @@ export function adminInboxUi(): string {
 
   // Stay connected while the tab is in the background: that is exactly when
   // dispatch needs the alert. Only reconnect if the stream died.
+  // A hidden tab has no business polling: it burns the D1 read quota for nothing.
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden && !source) connect();
+    if (document.hidden) {
+      if (source) {
+        source.close();
+        source = null;
+      }
+      return;
+    }
+    if (!source) connect();
   });
 
   var soundTest = document.querySelector("[data-sound-test]");

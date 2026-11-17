@@ -54,7 +54,7 @@ const COLORS = [
 
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-const STATUS_KINDS = new Set(["quoted", "confirmed", "assigned", "picked_up", "delivered", "paid", "cancelled"]);
+const STATUS_KINDS = new Set(["quoted", "confirmed", "assigned", "picked_up", "delivered", "paid", "paid_in_full", "cancelled"]);
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
@@ -185,7 +185,7 @@ export async function loadRevenueTrends(db: D1Database): Promise<RevenueTrends> 
 
   const orders = (
     await db
-      .prepare("SELECT id, paid_amount, broker_fee, updated_at FROM orders WHERE paid_amount IS NOT NULL AND status = 'paid'")
+      .prepare("SELECT id, paid_amount, broker_fee, updated_at FROM orders WHERE paid_amount IS NOT NULL AND status IN ('paid','paid_in_full')")
       .all<{ id: number; paid_amount: number; broker_fee: number | null; updated_at: number }>()
   ).results;
 
@@ -250,7 +250,7 @@ export async function loadStaffPerformance(
 
   const paidOrders = (
     await db
-      .prepare("SELECT id, paid_amount, updated_at FROM orders WHERE paid_amount IS NOT NULL AND status = 'paid'")
+      .prepare("SELECT id, paid_amount, updated_at FROM orders WHERE paid_amount IS NOT NULL AND status IN ('paid','paid_in_full')")
       .all<{ id: number; paid_amount: number; updated_at: number }>()
   ).results;
 
@@ -402,4 +402,93 @@ export async function loadStaffPerformance(
     totalOrders: allOrders.size,
     activeStaff,
   };
+}
+
+/** The three channels we actually run. Everything else folds into direct. */
+export type Channel = "google" | "meta" | "direct";
+
+export const CHANNEL_LABELS: Record<Channel, string> = {
+  google: "Google Ads",
+  meta: "Meta",
+  direct: "Direct",
+};
+
+/** Maps a stored source/medium pair onto one of the three channels. */
+export function channelOf(source: string, medium: string): Channel {
+  const value = `${source} ${medium}`.toLowerCase();
+  if (value.includes("google") && (value.includes("cpc") || value.includes("ads") || value.includes("paid"))) return "google";
+  if (/meta|facebook|instagram|^fb /.test(value) || value.includes(" fb")) return "meta";
+  return "direct";
+}
+
+export interface ChannelRow {
+  channel: Channel;
+  quotes: number;
+  booked: number;
+  paid: number;
+  revenue: number;
+  broker: number;
+  spend: number;
+}
+
+export async function loadAdSpend(db: D1Database, month: string): Promise<Record<string, number>> {
+  const { results } = await db
+    .prepare("SELECT channel, amount FROM ad_spend WHERE month = ?")
+    .bind(month)
+    .all<{ channel: string; amount: number }>();
+  const out: Record<string, number> = {};
+  for (const row of results) out[row.channel] = row.amount;
+  return out;
+}
+
+export async function saveAdSpend(db: D1Database, month: string, amounts: Record<string, number>): Promise<void> {
+  for (const [channel, amount] of Object.entries(amounts)) {
+    await db
+      .prepare(
+        `INSERT INTO ad_spend (channel, month, amount, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(channel, month) DO UPDATE SET amount = excluded.amount, updated_at = excluded.updated_at`,
+      )
+      .bind(channel, month, Math.max(0, Math.round(amount)), Date.now())
+      .run();
+  }
+}
+
+export interface SourceRow {
+  source: string;
+  medium: string;
+  quotes: number;
+  booked: number;
+  paid: number;
+  revenue: number;
+  broker: number;
+}
+
+/**
+ * The funnel by channel: every order carries the source it arrived with, so we
+ * can see which channel produces quotes and which one actually produces money.
+ */
+export async function loadSourceFunnel(db: D1Database): Promise<SourceRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT
+         channel.source,
+         channel.medium,
+         COUNT(*) AS quotes,
+         SUM(CASE WHEN channel.status IN ('confirmed','contract_draft','assigned','picked_up','delivered','paid','paid_in_full') THEN 1 ELSE 0 END) AS booked,
+         SUM(CASE WHEN channel.status IN ('paid','paid_in_full') THEN 1 ELSE 0 END) AS paid,
+         SUM(CASE WHEN channel.status IN ('paid','paid_in_full') THEN COALESCE(channel.final_quote, channel.price, 0) ELSE 0 END) AS revenue,
+         SUM(CASE WHEN channel.status IN ('paid','paid_in_full') THEN COALESCE(channel.broker_fee, 0) ELSE 0 END) AS broker
+       FROM (
+         SELECT
+           -- normalise before grouping, otherwise NULL and 'direct' split into two rows
+           LOWER(TRIM(COALESCE(NULLIF(source, ''), 'direct'))) AS source,
+           LOWER(TRIM(COALESCE(NULLIF(medium, ''), 'none'))) AS medium,
+           status, final_quote, price, broker_fee
+         FROM orders
+       ) AS channel
+       GROUP BY channel.source, channel.medium
+       ORDER BY quotes DESC`,
+    )
+    .all<SourceRow>();
+  return results;
 }

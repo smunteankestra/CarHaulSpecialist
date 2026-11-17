@@ -6,6 +6,7 @@ export const ORDER_STATUSES = [
   "picked_up",
   "delivered",
   "paid",
+  "paid_in_full",
   "cancelled",
 ] as const;
 
@@ -19,6 +20,7 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   picked_up: "Picked up",
   delivered: "Delivered",
   paid: "Payments",
+  paid_in_full: "Paid in full",
   cancelled: "Cancelled",
 };
 
@@ -85,6 +87,10 @@ export function randomToken(): string {
 
 export interface NewOrder {
   leadId: number | null;
+  source?: string | null;
+  medium?: string | null;
+  campaign?: string | null;
+  clickId?: string | null;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -148,6 +154,10 @@ export interface OrderRow {
   client_invoice_method: string | null;
   carrier_invoice_method: string | null;
   dest_tz: string | null;
+  source: string | null;
+  medium: string | null;
+  campaign: string | null;
+  click_id: string | null;
   distance_miles: number | null;
   price: number;
   final_quote: number | null;
@@ -229,8 +239,9 @@ export async function createOrder(db: D1Database, input: NewOrder, status: Order
           vehicle_year, vehicle_make, vehicle_model, vin,
           origin_street, origin_city, origin_state, origin_zip, origin_contact, origin_phone,
           dest_street, dest_city, dest_state, dest_zip, dest_contact, dest_phone,
-          ready_date, ready_asap, distance_miles, price, status, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ready_date, ready_asap, distance_miles, price, status, notes, created_at, updated_at,
+          source, medium, campaign, click_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       "pending",
@@ -265,6 +276,10 @@ export async function createOrder(db: D1Database, input: NewOrder, status: Order
       input.notes || null,
       now,
       now,
+      input.source ?? null,
+      input.medium ?? null,
+      input.campaign ?? null,
+      input.clickId ?? null,
     )
     .run();
 

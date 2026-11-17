@@ -89,6 +89,8 @@ export function conditionTag(condition: string): string {
 }
 
 const GA_MEASUREMENT_ID = "G-N6GGYZY28S";
+/** Bump when styles.css changes, so phones do not keep a stale sheet. */
+const ASSET_VERSION = "2026-11-13-3";
 
 const NAV = [
   { href: "/services/open", label: "Open transport" },
@@ -100,6 +102,21 @@ const NAV = [
   { href: "/blog", label: "Blog" },
   { href: "/contact", label: "Contact" },
 ];
+
+/** Social and review profiles, shown in the footer and on the contact page. */
+const SOCIAL_LINKS = [
+  { label: "Google", href: "https://share.google/ux6r5Fi3qFhp2Y2kY", icon: "/social/google.png" },
+  { label: "Yelp", href: "https://www.yelp.com/biz/bond-auto-transport-san-diego-2", icon: "/social/yelp.png" },
+  { label: "Facebook", href: "https://www.facebook.com/people/Bond-Auto-Transport/61570490279661/", icon: "/social/facebook.png" },
+  { label: "LinkedIn", href: "https://www.linkedin.com/in/maxim-golovatiuc-7958ba353", icon: "/social/linkedin.png" },
+];
+
+function socialLinks(): string {
+  return `<ul class="social-links" aria-label="Social links">${SOCIAL_LINKS.map(
+    (link) =>
+      `<li><a href="${esc(link.href)}" target="_blank" rel="noreferrer noopener" aria-label="${esc(link.label)}" title="${esc(link.label)}"><img src="${esc(link.icon)}" alt="${esc(link.label)}" width="22" height="22" loading="lazy"></a></li>`,
+  ).join("")}</ul>`;
+}
 
 export function layout(options: {
   title: string;
@@ -122,16 +139,46 @@ ${canonicalUrl ? `<link rel="canonical" href="${esc(canonicalUrl)}">` : ""}
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/styles.css?v=${ASSET_VERSION}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="${esc(site.name)}">
+<meta property="og:title" content="${esc(options.title)}">
+<meta property="og:description" content="${esc(options.description)}">
+<meta property="og:url" content="${esc(canonicalUrl ?? site.url)}">
+<meta property="og:image" content="${esc(site.url)}/photos/open-1.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(options.title)}">
+<meta name="twitter:description" content="${esc(options.description)}">
+<meta name="twitter:image" content="${esc(site.url)}/photos/open-1.jpg">
 <script type="application/ld+json">${JSON.stringify({
     "@context": "https://schema.org",
     "@type": "MovingCompany",
+    "@id": `${site.url}/#organization`,
     name: site.name,
+    legalName: site.legalName,
     description: options.description,
     telephone: site.phone,
     email: site.email,
-    areaServed: "United States",
-    url: canonicalUrl ?? site.url,
+    url: site.url,
+    logo: `${site.url}/logo.png`,
+    image: `${site.url}/photos/open-1.jpg`,
+    priceRange: "$$",
+    areaServed: { "@type": "Country", name: "United States" },
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: "8332 Regents Rd Unit 1B",
+      addressLocality: "San Diego",
+      addressRegion: "CA",
+      postalCode: "92122",
+      addressCountry: "US",
+    },
+    openingHoursSpecification: {
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      opens: "08:00",
+      closes: "20:00",
+    },
+    sameAs: SOCIAL_LINKS.map((link) => link.href),
   })}</script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script>
 <script>
@@ -210,6 +257,7 @@ ${options.admin ? "" : `<footer class="site-footer">
       <a href="tel:${esc(site.phone.replace(/[^0-9+]/g, ""))}">${esc(site.phone)}</a>
       <a href="mailto:${esc(site.email)}">${esc(site.email)}</a>
       <p class="muted small">${esc(site.hours)}</p>
+      ${socialLinks()}
       <p class="muted small"><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></p>
     </div>`}
   </div>
@@ -1385,6 +1433,34 @@ ${options.admin ? "" : `<footer class="site-footer">
       }
     }
 
+    // Each step gets its own history entry, so the browser Back button walks the
+    // form backwards instead of throwing the visitor off the page.
+    var depth = 0;
+
+    function go(index, focus) {
+      var target = Math.max(0, Math.min(steps.length - 1, index));
+      if (target === current) return;
+      if (target > current) {
+        depth += 1;
+        history.pushState({ quoteStep: target }, "", location.href);
+        show(target, focus);
+        return;
+      }
+      if (depth > 0) {
+        history.back();
+        return;
+      }
+      show(target, focus);
+    }
+
+    window.addEventListener("popstate", function (event) {
+      var step = event.state && typeof event.state.quoteStep === "number" ? event.state.quoteStep : 0;
+      depth = Math.max(0, depth - 1);
+      show(step, false);
+    });
+
+    history.replaceState({ quoteStep: 0 }, "", location.href);
+
     function missingDate(root) {
       var pickers = Array.prototype.slice.call(root.querySelectorAll('[data-date-picker][data-required]'));
       for (var i = 0; i < pickers.length; i++) {
@@ -1457,20 +1533,20 @@ ${options.admin ? "" : `<footer class="site-footer">
       if (next) {
         event.preventDefault();
         if (!validate(current)) return;
-        show(current + 1, true);
+        go(current + 1, true);
         return;
       }
       var prev = event.target.closest("[data-prev-step]");
       if (prev) {
         event.preventDefault();
-        show(current - 1, true);
+        go(current - 1, true);
         return;
       }
       var target = event.target.closest("[data-step-target]");
       if (target) {
         event.preventDefault();
         var index = Number(target.getAttribute("data-step-target")) - 1;
-        if (index < current) show(index, true);
+        if (index !== current) go(index, true);
       }
     });
 
@@ -1813,6 +1889,51 @@ ${options.admin
 })();
 </script>`
       : ""}
+${!options.admin
+      ? `<script>
+(function () {
+  // Every form carries where this visit came from, so the database knows the channel.
+  var params = new URLSearchParams(location.search);
+  var source = params.get("utm_source") || "";
+  var medium = params.get("utm_medium") || "";
+  var campaign = params.get("utm_campaign") || "";
+  var clickId = params.get("gclid") || params.get("fbclid") || "";
+
+  if (!source && !medium && !clickId) {
+    try {
+      var ref = document.referrer ? new URL(document.referrer) : null;
+      if (ref && ref.hostname && ref.hostname.indexOf(location.hostname) === -1) {
+        source = ref.hostname.replace(/^www\./, "");
+        medium = "referral";
+      }
+    } catch (error) {}
+  }
+
+  function stamp() {
+    Array.prototype.forEach.call(document.querySelectorAll("form"), function (form) {
+      if ((form.getAttribute("method") || "get").toLowerCase() !== "post") return;
+      [
+        ["utm_source", source],
+        ["utm_medium", medium],
+        ["utm_campaign", campaign],
+        ["click_id", clickId],
+      ].forEach(function (pair) {
+        if (!pair[1]) return;
+        if (form.querySelector('input[name="' + pair[0] + '"]')) return;
+        var input = document.createElement("input");
+        input.type = "hidden";
+        input.name = pair[0];
+        input.value = pair[1];
+        form.appendChild(input);
+      });
+    });
+  }
+
+  stamp();
+  document.addEventListener("submit", stamp, true);
+})();
+</script>`
+      : ""}
 </body>
 </html>`;
 }
@@ -2080,6 +2201,22 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
       </fieldset>
     </template>
 
+    <div class="field">
+      <span>Vehicle photos (optional)</span>
+      <div class="photo-upload">
+        <label class="photo-drop">
+          <input class="photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple>
+          <span class="photo-plus" aria-hidden="true">+</span>
+          <strong>Add vehicle photos</strong>
+          <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
+        </label>
+        <div class="photo-preview" hidden></div>
+        <p class="photo-count muted small" hidden></p>
+        <p class="photo-warning" role="status" hidden></p>
+        <p class="photo-error form-error" role="alert" hidden></p>
+      </div>
+    </div>
+
     <div class="step-actions">
       <button class="btn btn-ghost" type="button" data-prev-step>Back</button>
       <button class="btn btn-accent" type="button" data-next-step>Continue to date</button>
@@ -2111,22 +2248,6 @@ export function quoteForm(values: QuoteFormValues = {}, error?: string): string 
       <span>Anything we should know?</span>
       <textarea name="notes" rows="3" placeholder="Modifications, tight access, second vehicle…">${v("notes")}</textarea>
     </label>
-
-    <div class="field">
-      <span>Vehicle photos (optional)</span>
-      <div class="photo-upload">
-        <label class="photo-drop">
-          <input class="photo-input" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple>
-          <span class="photo-plus" aria-hidden="true">+</span>
-          <strong>Add vehicle photos</strong>
-          <span class="photo-sub">Optional · up to 5 photos · JPEG, PNG, WebP or HEIC · 10 MB each</span>
-        </label>
-        <div class="photo-preview" hidden></div>
-        <p class="photo-count muted small" hidden></p>
-        <p class="photo-warning" role="status" hidden></p>
-        <p class="photo-error form-error" role="alert" hidden></p>
-      </div>
-    </div>
 
     <div class="step-actions">
       <button class="btn btn-ghost" type="button" data-prev-step>Back</button>
@@ -2465,13 +2586,15 @@ export function quotePage(options: {
       <div class="price-card price-card-empty">
         <p class="eyebrow">How pricing works</p>
         <ul class="breakdown">
-          <li><span>Open trailer</span><span>from $0.95 / mile</span></li>
-          <li><span>Enclosed trailer</span><span>from $1.35 / mile</span></li>
+          <li><span>Open trailer, under 300 miles</span><span>about $2.00 / mile</span></li>
+          <li><span>Open trailer, 1,000 miles</span><span>about $1.00 / mile</span></li>
+          <li><span>Open trailer, 2,500 miles</span><span>about $0.60 / mile</span></li>
+          <li><span>Enclosed trailer</span><span>about +70% on the same lane</span></li>
           <li><span>Inoperable (steer and roll)</span><span>+ $150</span></li>
           <li><span>Inoperable (no steer/roll/keys)</span><span>+ $250</span></li>
-          <li><span>Minimum</span><span>from $125 open · $175 enclosed</span></li>
+          <li><span>Short local moves</span><span>from $275 open · $450 enclosed</span></li>
         </ul>
-        <p class="muted small">Local minimums step up with distance. Prices are per vehicle, door to door, before any optional services.</p>
+        <p class="muted small">The rate per mile drops as the distance grows — the truck's loading and dispatch cost is the same whether the haul is 200 or 2,000 miles. Prices are per vehicle, door to door, before any optional services.</p>
       </div>
     </aside>
   </div>
@@ -2651,15 +2774,18 @@ export function pricingPage(): string {
   <table class="table">
     <thead><tr><th>Line</th><th>Open</th><th>Enclosed</th></tr></thead>
     <tbody>
-      <tr><td>Rate per mile</td><td>from $0.95</td><td>from $1.35</td></tr>
-      <tr><td>Minimum charge</td><td>$125 local, $450 long-haul</td><td>$175 local, $650 long-haul</td></tr>
+      <tr><td>Rate per mile, under 300 miles</td><td>about $2.05</td><td>about $3.50</td></tr>
+      <tr><td>Rate per mile, 1,000 miles</td><td>about $1.00</td><td>about $1.70</td></tr>
+      <tr><td>Rate per mile, 2,500 miles</td><td>about $0.60</td><td>about $1.00</td></tr>
+      <tr><td>Minimum charge, local</td><td>$275</td><td>$450</td></tr>
+      <tr><td>Minimum charge, 300+ miles</td><td>$600</td><td>$950</td></tr>
       <tr><td>Inoperable (steer and roll)</td><td>+ $150</td><td>+ $150</td></tr>
       <tr><td>Inoperable (doesn't steer/roll/no keys)</td><td>+ $250</td><td>+ $250</td></tr>
       <tr><td>Oversize or lifted</td><td>+ $200</td><td>+ $200</td></tr>
       <tr><td>Deposit to book</td><td>20%</td><td>20%</td></tr>
     </tbody>
   </table>
-  <p class="muted small">The minimum steps up at 25, 75, 150 and 300 miles, so a short local move is not priced like a cross-country haul. Rates are planning figures. A dispatcher confirms the final price against the actual lane and dates before you pay anything.</p>
+  <p class="muted small">The rate per mile falls as the distance grows, because loading, dispatch and the empty miles to reach you cost the carrier the same whether the haul is 200 or 2,000 miles. Minimums step up at 25, 75, 150 and 300 miles. Rates are planning figures — a dispatcher confirms the final price against the actual lane and dates before you pay anything.</p>
 </section>`,
   });
 }
@@ -2674,11 +2800,21 @@ const FAQS = [
 ];
 
 export function faqPage(): string {
+  const faqSchema = `<script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQS.map(([question, answer]) => ({
+      "@type": "Question",
+      name: question,
+      acceptedAnswer: { "@type": "Answer", text: answer },
+    })),
+  })}</script>`;
   return layout({
     title: "Vehicle transport FAQ — Bond Auto Transport",
     description: "Answers on pickup times, insurance, non-running vehicles, multiple cars and payment.",
     canonical: "/faq",
     body: `
+${faqSchema}
 <section class="wrap section">
   <h1 class="page-title">Questions we get every day</h1>
   <dl class="faq">
@@ -2714,6 +2850,7 @@ export function contactPage(): string {
     <div class="card"><h3>Email</h3><p><a href="mailto:${esc(site.email)}">${esc(site.email)}</a></p><p class="muted small">We reply within one business hour.</p></div>
     <div class="card"><h3>Quote first</h3><p><a class="btn btn-accent btn-block" href="/get-quote">Get an instant price</a></p><p class="muted small">Fastest route to a booking.</p></div>
     <div class="card"><h3>Company</h3><p>${esc(site.legalName)}</p><p class="muted small">${esc(site.address)} · ${esc(site.mc)} · ${esc(site.dot)}</p></div>
+    <div class="card"><h3>Find us</h3>${socialLinks()}<p class="muted small">Reviews, updates and the people behind the bond.</p></div>
   </div>
 </section>`,
   });
