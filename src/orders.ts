@@ -79,6 +79,18 @@ export function invoiceNumber(id: number, year: number): string {
   return `INV-${year}-${String(id).padStart(4, "0")}`;
 }
 
+/**
+ * The invoice amount is derived from the fee it represents: the broker fee for
+ * the client invoice, the carrier fee for the carrier invoice. The fee is the
+ * only editable copy of the number, so an invoice can never disagree with it.
+ */
+export function invoiceAmountFor(
+  order: Pick<OrderRow, "broker_fee" | "carrier_fee">,
+  kind: "client" | "carrier",
+): number {
+  return (kind === "carrier" ? order.carrier_fee : order.broker_fee) ?? 0;
+}
+
 export function randomToken(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);

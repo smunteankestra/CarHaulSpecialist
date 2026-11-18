@@ -307,13 +307,18 @@ export async function loadStaffPerformance(
     return series;
   };
 
+  // Only people who can still sign in get a row: deleted accounts and the
+  // "system" actor stay in the audit trail but out of the performance chart.
+  const knownActors = new Set(users.filter((user) => user.active).map((user) => user.email.toLowerCase()));
+
   for (const user of users) {
+    if (!user.active) continue;
     ensureSeries(user.email.toLowerCase(), user.name, ROLE_LABELS[user.role as Role] ?? user.role);
   }
 
   for (const event of events) {
     const actor = String(event.actor || "").toLowerCase();
-    if (!actor || actor === "customer") continue;
+    if (!actor || actor === "customer" || actor === "system" || !knownActors.has(actor)) continue;
     const index = bucketIndex.get(bucketKey(new Date(event.created_at), period));
     if (index === undefined) continue;
     const series = ensureSeries(actor);
@@ -337,7 +342,9 @@ export async function loadStaffPerformance(
 
   for (const order of paidOrders) {
     const paid = latestPaid.get(order.id);
-    const actor = (paid?.actor || "unattributed").toLowerCase();
+    const rawActor = (paid?.actor || "unattributed").toLowerCase();
+    if (rawActor !== "unattributed" && (rawActor === "system" || !knownActors.has(rawActor))) continue;
+    const actor = rawActor;
     const at = paid?.created_at ?? order.updated_at;
     if (metric === "revenue" && at >= yearStart) {
       const comparisonSeries = ensureSeries(actor, actor === "unattributed" ? "Unattributed" : undefined);
@@ -366,7 +373,7 @@ export async function loadStaffPerformance(
 
   for (const event of comparisonEvents) {
     const actor = String(event.actor || "").toLowerCase();
-    if (!actor || actor === "customer") continue;
+    if (!actor || actor === "customer" || actor === "system" || !knownActors.has(actor)) continue;
     if (!qualifies(event.kind)) continue;
     const series = ensureSeries(actor);
     series.comparison.year += 1;
@@ -491,4 +498,47 @@ export async function loadSourceFunnel(db: D1Database): Promise<SourceRow[]> {
     )
     .all<SourceRow>();
   return results;
+}
+
+export interface CommissionBase {
+  rate: number;
+  actor: string;
+  orders: { day: number; week: number; month: number };
+  commission: { day: number; week: number; month: number };
+}
+
+/**
+ * The flat commission only applies to orders a given person marked paid, so the
+ * base is that person's paid orders — not every order in the company.
+ */
+export async function loadCommissionBase(db: D1Database, rate: number, actor: string): Promise<CommissionBase> {
+  const now = new Date();
+  const todayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const weekStart = startOfWeek(now).getTime();
+  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+
+  const { results } = await db
+    .prepare("SELECT order_id, created_at FROM order_events WHERE kind = 'paid' AND LOWER(actor) = ? AND created_at >= ?")
+    .bind(actor.toLowerCase(), monthStart)
+    .all<{ order_id: number; created_at: number }>();
+
+  const seen = new Map<number, number>();
+  for (const row of results) {
+    const previous = seen.get(row.order_id) ?? 0;
+    if (row.created_at > previous) seen.set(row.order_id, row.created_at);
+  }
+
+  const count = (since: number) => Array.from(seen.values()).filter((at) => at >= since).length;
+  const orders = { day: count(todayStart), week: count(weekStart), month: count(monthStart) };
+
+  return {
+    rate,
+    actor,
+    orders,
+    commission: {
+      day: orders.day * rate,
+      week: orders.week * rate,
+      month: orders.month * rate,
+    },
+  };
 }

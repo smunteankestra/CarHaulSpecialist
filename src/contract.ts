@@ -45,6 +45,7 @@ export interface ContractOrder {
   carrier_name: string | null;
   carrier_mc: string | null;
   carrier_invoice_method?: string | null;
+  client_invoice_method?: string | null;
   carrier_company_phone: string | null;
   carrier_email: string | null;
   driver_name: string | null;
@@ -199,7 +200,7 @@ export function contractDocument(order: ContractOrder, units: ContractUnit[]): s
     ${scheduleRow("Carrier fee", [money(carrierAmount)])}
     ${scheduleRow("Carrier payment method", [text(order.carrier_invoice_method)])}
     ${scheduleRow("Broker fee", [order.broker_fee !== null ? money(order.broker_fee) : "—"])}
-    ${scheduleRow("Payment method", [text(order.payment_method)])}
+    ${scheduleRow("Client payment method", [text(order.client_invoice_method)])}
     ${scheduleRow("Payee", ["MGV Advisors LLC"])}
   </table>
 
@@ -263,7 +264,7 @@ export function contractDocx(order: ContractOrder, units: ContractUnit[]): Uint8
     ["Carrier fee", money(order.carrier_fee)],
     ["Carrier payment method", text(order.carrier_invoice_method)],
     ["Broker fee", order.broker_fee !== null ? money(order.broker_fee) : "—"],
-    ["Payment method", text(order.payment_method)],
+    ["Client payment method", text(order.client_invoice_method)],
     ["Payee", "MGV Advisors LLC"],
     ["Trailer type", TRAILER_LABEL[order.transport_type ?? ""] ?? text(order.transport_type)],
   ];

@@ -11,6 +11,7 @@ import {
   createInvoice,
   confirmOrder,
   createOrder,
+  invoiceAmountFor,
   isOrderStatus,
   markInvoicePaid,
   randomToken,
@@ -32,6 +33,7 @@ import {
   channelOf,
   loadAdSpend,
   loadRevenueTrends,
+  loadCommissionBase,
   loadSourceFunnel,
   loadStaffPerformance,
   parseStaffMetric,
@@ -41,6 +43,7 @@ import {
   type ChannelRow,
 } from "./staff.ts";
 import { stateTimezone, zonedToUtc } from "./timezone.ts";
+import { fallbackMakes, fallbackModels } from "./vehicles.ts";
 import { formatPhone } from "./phone.ts";
 import { deleteObject, getObject, putObject } from "./storage.ts";
 import { verifyTurnstile } from "./turnstile.ts";
@@ -153,14 +156,19 @@ function parseChatIds(value: string | null | undefined): string[] {
     .filter((part) => /^-?\d{5,20}$/.test(part));
 }
 
-async function loadAdsShare(db: D1Database): Promise<{ ads: number; tax: number }> {
+/** The person whose orders carry the flat commission. */
+const COMMISSION_ACTOR = "max@bondautotransport.com";
+
+async function loadAdsShare(db: D1Database): Promise<{ ads: number; tax: number; commission: number }> {
   const read = async (key: string, fallback: number) => {
     const stored = await getSetting(db, key).catch(() => null);
     if (stored === null || stored.trim() === "") return fallback;
     const number = Number(stored);
     return Number.isFinite(number) && number >= 0 && number <= 100 ? number : fallback;
   };
-  return { ads: await read("ads_percent", 15), tax: await read("tax_percent", 17) };
+  const commissionRaw = await getSetting(db, "owner_commission").catch(() => null);
+  const commission = commissionRaw && Number.isFinite(Number(commissionRaw)) ? Math.max(0, Number(commissionRaw)) : 10;
+  return { ads: await read("ads_percent", 15), tax: await read("tax_percent", 17), commission };
 }
 
 /** The console setting wins over the environment variable, so recipients can change without a deploy. */
@@ -1110,20 +1118,37 @@ async function sessionUser(c: {
 
 type VehicleMake = { id: number; name: string };
 
+/** The bundled list, shaped like the remote one. */
+function bundledMakes(vehicleType: "car" | "motorcycle"): VehicleMake[] {
+  return fallbackMakes(vehicleType)
+    .map((name: string, index: number) => ({ id: -(index + 1), name }))
+    .sort((a: VehicleMake, b: VehicleMake) => a.name.localeCompare(b.name));
+}
+
+/** Remote catalogue plus the bundled names, de-duplicated by name. */
+function mergeMakes(remote: VehicleMake[], bundled: VehicleMake[]): VehicleMake[] {
+  const byName = new Map<string, VehicleMake>();
+  for (const make of [...bundled, ...remote]) {
+    const key = make.name.trim().toLowerCase();
+    if (!byName.has(key)) byName.set(key, make);
+  }
+  return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 async function loadVehicleMakes(vehicleType: "car" | "motorcycle"): Promise<VehicleMake[]> {
   const cache = caches.default;
   const cacheKey = new Request(`https://vehicle-catalog.internal/makes-data?type=${vehicleType}`);
   const cached = await cache.match(cacheKey);
   if (cached) {
     const data = (await cached.json()) as { makes?: VehicleMake[] };
-    return data.makes ?? [];
+    if (data.makes?.length) return data.makes;
   }
 
   try {
     const response = await fetch(
       `https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/${vehicleType}?format=json`,
     );
-    if (!response.ok) return [];
+    if (!response.ok) return bundledMakes(vehicleType);
     const data = (await response.json()) as { Results?: { MakeId?: number; MakeName?: string }[] };
     const makes = Array.from(
       new Map(
@@ -1132,13 +1157,14 @@ async function loadVehicleMakes(vehicleType: "car" | "motorcycle"): Promise<Vehi
           .map((row) => [row.MakeName!.trim().toLowerCase(), { id: row.MakeId!, name: row.MakeName!.trim() }]),
       ).values(),
     ).sort((a, b) => a.name.localeCompare(b.name));
-    const cachedResponse = new Response(JSON.stringify({ makes }), {
+    const merged = mergeMakes(makes, bundledMakes(vehicleType));
+    const cachedResponse = new Response(JSON.stringify({ makes: merged }), {
       headers: { "content-type": "application/json", "Cache-Control": "public, max-age=86400" },
     });
     await cache.put(cacheKey, cachedResponse);
-    return makes;
+    return merged;
   } catch {
-    return [];
+    return bundledMakes(vehicleType);
   }
 }
 
@@ -1146,8 +1172,11 @@ app.get("/api/vehicles/makes", async (c) => {
   const requested = String(c.req.query("type") ?? "car").trim();
   const vehicleType = requested === "motorcycle" ? "motorcycle" : "car";
   const makes = await loadVehicleMakes(vehicleType);
-  const result = c.json({ makes: makes.map((row) => row.name) });
-  result.headers.set("Cache-Control", "public, max-age=86400");
+  const names = makes.map((row) => row.name);
+  const result = c.json({ makes: names });
+  // A five minute cache is plenty; an empty answer is never cached, so an
+  // upstream outage cannot blank the picker for a whole day.
+  result.headers.set("Cache-Control", names.length ? "public, max-age=300" : "no-store");
   return result;
 });
 
@@ -1186,13 +1215,15 @@ app.get("/api/vehicles/models", async (c) => {
           .filter((name): name is string => Boolean(name));
       }),
     );
-    const models = Array.from(new Set(results.flat())).sort((a, b) => a.localeCompare(b));
+    const remote = Array.from(new Set(results.flat())).sort((a, b) => a.localeCompare(b));
+    // Never let an outage blank the picker: the bundled models are the floor.
+    const models = remote.length ? remote : fallbackModels(make);
     const result = c.json({ models });
-    result.headers.set("Cache-Control", "public, max-age=86400");
-    c.executionCtx.waitUntil(cache.put(cacheKey, result.clone()));
+    result.headers.set("Cache-Control", models.length ? "public, max-age=300" : "no-store");
+    if (remote.length) c.executionCtx.waitUntil(cache.put(cacheKey, result.clone()));
     return result;
   } catch {
-    return c.json({ models: [] }, 502);
+    return c.json({ models: fallbackModels(make) });
   }
 });
 
@@ -1639,12 +1670,13 @@ function missingStepData(
     invoicesSettled: boolean;
   },
 ): string | null {
-  if (status === "quoted" && data.finalQuote === null) return "Set the final quote before moving to Booked.";
+  if (status === "quoted" && (data.brokerFee === null || data.carrierFee === null)) {
+    return "Set the broker fee and carrier fee before moving to Booked — the final quote is their sum.";
+  }
   if (status === "confirmed") {
     const missing: string[] = [];
     if (!data.pickupEta) missing.push("Pickup ETA");
     if (!data.deliveryEta) missing.push("Delivery ETA");
-    if (data.finalQuote === null) missing.push("Final quote");
     if (data.brokerFee === null) missing.push("Broker fee");
     if (data.carrierFee === null) missing.push("Carrier fee");
     if (!data.originContact) missing.push("Pickup contact");
@@ -1652,7 +1684,6 @@ function missingStepData(
     if (missing.length) return `Add ${missing.join(", ")} before moving to Contract draft.`;
   }
   if (status === "contract_draft" && !data.pickupEta) return "Add the pickup ETA before moving to Carrier assigned.";
-  if (status === "contract_draft" && !data.paymentMethod) return "Add the payment method before moving to Carrier assigned.";
   if (status === "assigned" && !data.pickupEta) return "Add the pickup ETA before moving to Picked up.";
   if (status === "assigned" && !data.originContact) return "Add the pickup contact before moving to Picked up.";
   if (status === "assigned" && !data.destContact) return "Add the delivery contact before moving to Picked up.";
@@ -1774,14 +1805,21 @@ app.post("/admin/orders/:id/status", async (c) => {
     paidAmount,
     paymentMethod,
   );
-  if (hasFinal) {
-    await c.env.DB.prepare("UPDATE orders SET final_quote = ? WHERE id = ?").bind(finalQuote, id).run();
-  }
   if (hasBroker) {
     await c.env.DB.prepare("UPDATE orders SET broker_fee = ? WHERE id = ?").bind(brokerFee, id).run();
   }
   if (hasCarrier) {
     await c.env.DB.prepare("UPDATE orders SET carrier_fee = ? WHERE id = ?").bind(carrierFee, id).run();
+  }
+  // The total is the sum of the two fees, never a separate number to keep in sync.
+  const settledBroker = hasBroker ? brokerFee : (order?.broker_fee ?? null);
+  const settledCarrier = hasCarrier ? carrierFee : (order?.carrier_fee ?? null);
+  if (settledBroker !== null && settledCarrier !== null) {
+    await c.env.DB.prepare("UPDATE orders SET price = ?, final_quote = ? WHERE id = ?")
+      .bind(settledBroker + settledCarrier, settledBroker + settledCarrier, id)
+      .run();
+  } else if (hasFinal) {
+    await c.env.DB.prepare("UPDATE orders SET final_quote = ? WHERE id = ?").bind(finalQuote, id).run();
   }
   if (order) {
     const fromLabel = isOrderStatus(order.status) ? STATUS_LABELS[order.status] : order.status;
@@ -1834,7 +1872,6 @@ const ORDER_FIELD_LABELS: Record<string, string> = {
   driver_name: "Driver name",
   carrier_phone: "Driver phone",
   paid_amount: "Paid amount",
-  payment_method: "Payment method",
   payment_state: "Payment status",
   picked_up_at: "Picked up at",
   pickup_eta: "Pickup ETA",
@@ -1958,14 +1995,6 @@ const ORDER_FIELD_GROUPS: Record<string, FieldGroup> = {
     parse: (body) => {
       const state = fieldText(body, "payment_state");
       return { payment_state: ["unpaid", "partial", "full"].includes(state) ? state : "unpaid" };
-    },
-  },
-  payment_method: {
-    label: "Payment method",
-    columns: ["payment_method"],
-    parse: (body) => {
-      const method = fieldText(body, "payment_method");
-      return { payment_method: PAYMENT_METHODS.includes(method) ? method : null };
     },
   },
   ready_date: {
@@ -2116,7 +2145,7 @@ app.post("/admin/orders/:id/field", async (c) => {
   // Total price is always broker + carrier, so the order price follows the fees.
   if (key === "broker_fee" || key === "carrier_fee") {
     await c.env.DB.prepare(
-      "UPDATE orders SET price = COALESCE(broker_fee, 0) + COALESCE(carrier_fee, 0) WHERE id = ?",
+      "UPDATE orders SET price = COALESCE(broker_fee, 0) + COALESCE(carrier_fee, 0), final_quote = COALESCE(broker_fee, 0) + COALESCE(carrier_fee, 0) WHERE id = ?",
     )
       .bind(id)
       .run();
@@ -2155,10 +2184,12 @@ app.post("/admin/orders/:id/invoice/:kind/paid", async (c) => {
   if (!order) return c.html(notFoundPage(), 404);
 
   const now = Date.now();
+  // Prefer the fee (the single source of truth). Invoices sent before the fee
+  // became authoritative fall back to the amount they were actually sent with.
   const paidAmount =
-    kind === "carrier"
-      ? (order.carrier_invoice_amount ?? order.carrier_fee ?? 0)
-      : (order.client_invoice_amount ?? order.final_quote ?? order.price);
+    invoiceAmountFor(order, kind) ||
+    (kind === "carrier" ? order.carrier_invoice_amount : order.client_invoice_amount) ||
+    0;
   await c.env.DB.prepare(
     "INSERT INTO order_events (order_id, kind, note, actor, created_at, amount) VALUES (?, ?, ?, ?, ?, ?)",
   )
@@ -2592,6 +2623,55 @@ app.get("/admin/orders/:id/contract", async (c) => {
 });
 
 /** Send the client or carrier invoice for a paid order. */
+app.get("/admin/orders/:id/invoice/:kind/preview", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const id = Number(c.req.param("id"));
+  const kind = c.req.param("kind") === "carrier" ? "carrier" : "client";
+  const order = await c.env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<OrderRow>();
+  if (!order) return c.html(notFoundPage(), 404);
+
+  const { results: units } = await c.env.DB.prepare("SELECT * FROM order_units WHERE order_id = ? ORDER BY position")
+    .bind(id)
+    .all<OrderUnitRow>();
+  const origin = new URL(c.req.url).origin;
+  const day = (value: number | null) =>
+    value ? new Date(value).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", timeZone: "UTC" }) : "";
+  const mail = buildInvoiceMail(
+    {
+      ...order,
+      units,
+      invoice_amount: invoiceAmountFor(order, kind),
+      track_url: `${origin}/track/${order.token}`,
+      logo_url: `${origin}/logo.png`,
+      issued_on: day(Date.now()),
+      delivered_on: day(order.delivered_at ?? order.delivery_eta),
+    },
+    kind,
+  );
+  return c.html(mail.html);
+});
+
+/** Records that the dispatcher looked at the invoice before sending it. */
+app.post("/admin/orders/:id/invoice/:kind/previewed", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.json({ ok: false }, 401);
+
+  const id = Number(c.req.param("id"));
+  const kind = c.req.param("kind") === "carrier" ? "carrier" : "client";
+  const kindName = `invoice_${kind}_previewed`;
+  const existing = await c.env.DB.prepare("SELECT id FROM order_events WHERE order_id = ? AND kind = ? LIMIT 1")
+    .bind(id, kindName)
+    .first<{ id: number }>();
+  if (!existing) {
+    await c.env.DB.prepare("INSERT INTO order_events (order_id, kind, note, actor, created_at) VALUES (?, ?, ?, ?, ?)")
+      .bind(id, kindName, `${kind === "carrier" ? "Carrier" : "Client"} invoice previewed`, user.email, Date.now())
+      .run();
+  }
+  return c.json({ ok: true });
+});
+
 app.post("/admin/orders/:id/invoice/:kind/send", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.redirect("/admin/login", 303);
@@ -2614,8 +2694,16 @@ app.post("/admin/orders/:id/invoice/:kind/send", async (c) => {
   }
 
   const body = await c.req.parseBody();
-  const amount = moneyOrNull(body.amount);
-  if (amount === null) return fail("Enter the invoice amount before sending.");
+  // The invoice amount is not editable: it always mirrors the fee it represents,
+  // so the fee field is the single source of truth for the number.
+  const amount = invoiceAmountFor(order, kind);
+  if (!amount) {
+    return fail(
+      kind === "carrier"
+        ? "Set the Carrier fee on this order before sending the carrier invoice."
+        : "Set the Broker fee on this order before sending the client invoice.",
+    );
+  }
 
   const method = String(body.method ?? "").trim();
   await c.env.DB.prepare(
@@ -2687,8 +2775,10 @@ app.post("/admin/orders/:id/edit", async (c) => {
   const paidRaw = text("paid_amount");
   const paidNumber = paidRaw ? Number(paidRaw) : NaN;
   const paidAmount = Number.isFinite(paidNumber) && paidNumber >= 0 ? Math.round(paidNumber) : null;
+  // The payment method now lives on each invoice, so this form no longer posts
+  // it. Keep whatever the order already had instead of wiping it.
   const methodRaw = text("payment_method");
-  const paymentMethod = PAYMENT_METHODS.includes(methodRaw) ? methodRaw : null;
+  const paymentMethod = PAYMENT_METHODS.includes(methodRaw) ? methodRaw : old.payment_method;
 
   const newValues = {
     customer_name: name,
@@ -2935,7 +3025,8 @@ app.get("/admin/calendar", async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT id, number, customer_name, status, origin_zip, dest_zip, pickup_eta, delivery_eta
        FROM orders
-      WHERE status <> 'cancelled'
+      -- Settled and cancelled orders are done with: the schedule only shows live work.
+      WHERE status NOT IN ('cancelled', 'paid_in_full')
         AND ((pickup_eta >= ? AND pickup_eta < ?) OR (delivery_eta >= ? AND delivery_eta < ?))
       ORDER BY COALESCE(pickup_eta, delivery_eta)
       LIMIT 500`,
@@ -3011,6 +3102,9 @@ app.get("/admin/staff", async (c) => {
     loadAdSpend(c.env.DB, spendMonth),
   ]);
 
+  // The flat commission is tied to one person, not to the whole company.
+  const commissionBase = await loadCommissionBase(c.env.DB, marketing.commission, COMMISSION_ACTOR);
+
   // Fold whatever channels exist into the three we actually run.
   const channels: ChannelRow[] = (["google", "meta", "direct"] as Channel[]).map((channel) => {
     const rows = rawSources.filter((row) => channelOf(row.source, row.medium) === channel);
@@ -3025,7 +3119,7 @@ app.get("/admin/staff", async (c) => {
     };
   });
 
-  return c.html(staffPerformancePage(data, user, trends, marketing, channels, spendMonth, spendMonthLabel));
+  return c.html(staffPerformancePage(data, user, trends, marketing, channels, spendMonth, spendMonthLabel, commissionBase));
 });
 
 app.post("/admin/staff/marketing", async (c) => {

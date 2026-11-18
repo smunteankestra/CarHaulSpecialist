@@ -5,6 +5,7 @@ import {
   CUSTOMER_STAGES,
   ORDER_STATUSES,
   STATUS_LABELS,
+  invoiceAmountFor,
   isOrderStatus,
   type InvoiceRow,
   type OrderEventRow,
@@ -528,7 +529,7 @@ function countdownTag(value: number | null): string {
   return `<br><span class="eta-countdown" data-countdown="${new Date(value).toISOString()}"></span>`;
 }
 
-function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = false): string {
+export function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = false): string {
   const vehicle = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(" ") || "—";
   const carrierLine = [order.carrier_mc, order.carrier_company_phone, order.carrier_email].filter(Boolean).join(" · ");
   const driverLine = [order.driver_name, order.carrier_phone].filter(Boolean).join(" · ");
@@ -635,13 +636,6 @@ function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = fal
       ${editable("Delivery ETA", "delivery_eta", dueSpan(order.delivery_eta, order.delivery_eta ? `${whenHtml(order.delivery_eta)}${countdownTag(order.delivery_eta)}` : ""), dateTime("delivery_eta", "Date & time", order.delivery_eta), Boolean(order.delivery_eta))}
       ${editable("Delivered at", "delivered_at", order.delivered_at ? whenHtml(order.delivered_at) : "", dateTime("delivered_at", "Date & time", order.delivered_at), Boolean(order.delivered_at))}
       ${editable(
-        "Payment method",
-        "payment_method",
-        esc(order.payment_method ?? ""),
-        `<select name="payment_method" required><option value="">Select method</option>${PAYMENT_METHODS.map((method) => `<option value="${method}"${order.payment_method === method ? " selected" : ""}>${method}</option>`).join("")}</select>`,
-        Boolean(order.payment_method),
-      )}
-      ${editable(
         "Payment status",
         "payment_state",
         paymentStateBadge(order.payment_state, order.paid_amount),
@@ -656,22 +650,20 @@ function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = fal
         `<input type="date" name="ready_date" value="${esc(order.ready_date ?? "")}">`,
       )}
       ${editable("Distance", "distance_miles", order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "", `<input type="number" min="0" name="distance_miles" value="${order.distance_miles ?? ""}" placeholder="Miles">`)}
-      ${editable(
-        "Price",
-        "price",
+      ${plain(
+        "Price = final quote",
         priceMark(
-          `Now: <strong>${money(order.price)}</strong>${
-            order.original_price !== null && order.original_price > order.price
-              ? ` <span class="due-red">=&gt; Discounted ${money(order.original_price - order.price)}</span>`
-              : ""
-          }`,
+          order.broker_fee !== null && order.carrier_fee !== null
+            ? `<strong>${money((order.broker_fee ?? 0) + (order.carrier_fee ?? 0))}</strong> <span class="muted small">broker + carrier, set automatically</span>${
+                order.original_price !== null && order.original_price > (order.broker_fee ?? 0) + (order.carrier_fee ?? 0)
+                  ? ` <span class="due-red">=&gt; Discounted ${money(order.original_price - ((order.broker_fee ?? 0) + (order.carrier_fee ?? 0)))}</span>`
+                  : ""
+              }`
+            : `<strong>${money(order.price)}</strong> <span class="muted small">from the calculator — becomes broker + carrier once both fees are set</span>`,
         ),
-        `<input type="number" min="0" name="price" value="${order.price}" placeholder="USD">`,
       )}
-      ${editable("Final quote", "final_quote", priceMark(order.final_quote !== null ? `<strong>${money(order.final_quote)}</strong>` : ""), `<input type="number" min="0" step="1" name="final_quote" value="${order.final_quote ?? ""}" placeholder="Same as quote">`, order.final_quote !== null)}
       ${editable("Broker fee", "broker_fee", priceMark(order.broker_fee !== null ? money(order.broker_fee) : ""), `<input type="number" min="0" step="1" name="broker_fee" value="${order.broker_fee ?? ""}" placeholder="0">`, order.broker_fee !== null)}
       ${editable("Carrier fee", "carrier_fee", priceMark(order.carrier_fee !== null ? money(order.carrier_fee) : ""), `<input type="number" min="0" step="1" name="carrier_fee" value="${order.carrier_fee ?? ""}" placeholder="0">`, order.carrier_fee !== null)}
-      ${plain("Total price", priceMark(order.broker_fee !== null || order.carrier_fee !== null ? `<strong>${money((order.broker_fee ?? 0) + (order.carrier_fee ?? 0))}</strong><br><span class="muted small">broker + carrier</span>` : `<span class="muted small">set the broker and carrier fees</span>`))}
       ${editable("Paid amount", "paid_amount", order.paid_amount !== null ? `<strong>${money(order.paid_amount)}</strong>` : "", `<input type="number" min="0" name="paid_amount" value="${order.paid_amount ?? ""}" placeholder="0">`)}
       ${editable(
     "Carrier",
@@ -690,11 +682,14 @@ function orderFieldsTable(order: OrderRow, anchor: string, hideVehicleRows = fal
 
 /** Fields the current step needs before it can advance, with their labels. */
 const REQUIRED_FIELDS: Record<string, [string, string][]> = {
-  quoted: [["final_quote", "Final quote"]],
+  // The quote is only complete once the two fees exist: their sum is the price.
+  quoted: [
+    ["broker_fee", "Broker fee"],
+    ["carrier_fee", "Carrier fee"],
+  ],
   confirmed: [
     ["pickup_eta", "Pickup ETA"],
     ["delivery_eta", "Delivery ETA"],
-    ["final_quote", "Final quote"],
     ["broker_fee", "Broker fee"],
     ["carrier_fee", "Carrier fee"],
     ["origin_contact", "Pickup contact"],
@@ -710,7 +705,6 @@ const REQUIRED_FIELDS: Record<string, [string, string][]> = {
     ["driver_name", "Driver name"],
     ["carrier_phone", "Driver phone"],
   ],
-  contract_draft: [["payment_method", "Payment method"]],
   picked_up: [
     ["picked_up_at", "Picked up at"],
     ["delivery_eta", "Delivery ETA"],
@@ -733,6 +727,19 @@ function carrierComplete(order: OrderRow): boolean {
 }
 
 /** Labels of the required fields still empty at this step. */
+/** The admin nav, with the current page marked. Every admin page renders this. */
+export function adminNav(current: string, isAdmin: boolean): string {
+  const link = (href: string, label: string) =>
+    `<a href="${href}"${current === href ? ' class="active"' : ""}>${label}</a>`;
+  return `<nav class="admin-nav">
+        ${link("/admin/orders", "Orders")}
+        ${link("/admin/calendar", "Schedule")}
+        ${link("/admin/staff", "Performance")}
+        ${isAdmin ? link("/admin/users", "Staff") : ""}
+        ${link("/admin/account", "Account")}
+      </nav>`;
+}
+
 function missingRequired(order: OrderRow, target?: OrderStatus): string[] {
   const missing = (REQUIRED_FIELDS[order.status] ?? [])
     .filter(([column]) => isBlank((order as unknown as Record<string, unknown>)[column]))
@@ -798,19 +805,26 @@ function invoiceTotalLine(events: OrderEventRow[]): string {
 }
 
 /** Send button plus sent/paid state for one invoice kind. */
-function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" | "carrier"): string {
+export function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" | "carrier"): string {
   const to = kind === "carrier" ? order.carrier_email : order.customer_email;
   const sent = events.some((event) => event.kind === `invoice_${kind}`);
   const paidEvent = events.find((event) => event.kind === `invoice_${kind}_paid`);
   const paid = Boolean(paidEvent);
   const label = kind === "carrier" ? "Carrier invoice" : "Client invoice";
-  const button = to
-    ? `<button class="btn btn-accent btn-small" type="submit">Send to ${kind}</button>`
-    : `<button class="btn btn-ghost btn-small" type="submit" disabled>No ${kind} email</button>`;
-  const amount =
-    kind === "client"
-      ? (order.client_invoice_amount ?? order.final_quote ?? order.price)
-      : (order.carrier_invoice_amount ?? order.carrier_fee ?? 0);
+  const feeLabel = kind === "carrier" ? "Carrier fee" : "Broker fee";
+  const feeMissing = (kind === "carrier" ? order.carrier_fee : order.broker_fee) === null;
+  const previewed = events.some((event) => event.kind === `invoice_${kind}_previewed`);
+  const button = !to
+    ? `<button class="btn btn-ghost btn-small" type="submit" disabled>No ${kind} email</button>`
+    : feeMissing
+      ? `<button class="btn btn-ghost btn-small" type="submit" disabled title="Set the ${feeLabel} on this order first">Set the ${feeLabel.toLowerCase()} first</button>`
+      : previewed
+        ? `<button class="btn btn-accent btn-small" type="submit">Send to ${kind}</button>`
+        : `<button class="btn btn-ghost btn-small" type="submit" disabled data-invoice-send title="Open the preview first">Send to ${kind}</button>`;
+  // The preview needs no email: you can read the document before deciding to send it.
+  const preview = `<a class="btn btn-ghost btn-small" href="/admin/orders/${order.id}/invoice/${kind}/preview" target="_blank" rel="noopener"
+         data-invoice-preview="${kind}" data-order="${order.id}">${previewed ? "Preview again" : "Preview invoice"}</a>`;
+  const amount = invoiceAmountFor(order, kind);
   const savedMethod = (kind === "client" ? order.client_invoice_method : order.carrier_invoice_method) ?? order.payment_method ?? "";
   return `<div class="invoice-card">
       <form method="post" action="/admin/orders/${order.id}/invoice/${kind}/send" class="invoice-action" data-kind="${kind}" data-to="${esc(to ?? "")}">
@@ -819,12 +833,17 @@ function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" 
           ${paid ? `<span class="badge badge-paid">Paid ${money(paidEvent?.amount ?? amount ?? 0)}</span>` : sent ? '<span class="badge badge-sent">Sent</span>' : '<span class="badge badge-unpaid">Not sent</span>'}
         </div>
         <span class="muted small">${to ? esc(to) : "Add an email on this order first"}</span>
-        <label class="field invoice-amount"><span>Amount (USD)</span><input name="amount" type="number" min="0" step="1" value="${amount ?? ""}" required></label>
+        <label class="field invoice-amount"><span>Amount (USD)</span><input name="amount" type="number" min="0" step="1" value="${amount}" readonly aria-readonly="true" tabindex="-1"></label>
+        <span class="muted small">${
+          feeMissing
+            ? `Set the ${feeLabel} on this order — the invoice uses it automatically.`
+            : `Amount comes from the ${feeLabel.toLowerCase()} on the order. To change it, edit the order — not this field.`
+        }</span>
         <label class="field invoice-amount"><span>Payment method *</span><select name="method" required>
           <option value="">Select method</option>
           ${PAYMENT_METHODS.map((method) => `<option value="${method}"${savedMethod === method ? " selected" : ""}>${method}</option>`).join("")}
         </select></label>
-        ${button}
+        <div class="invoice-send-row">${preview}${button}</div>
       </form>
       ${paid
         ? ""
@@ -832,6 +851,36 @@ function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "client" 
         <button class="btn btn-ghost btn-small" type="submit">Mark ${kind} invoice paid</button>
       </form>`}
     </div>`;
+}
+
+/** Previewing an invoice unlocks its Send button, and the server remembers it. */
+function invoicePreviewScript(): string {
+  return `<script>
+(function () {
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest ? event.target.closest("[data-invoice-preview]") : null;
+    if (!link) return;
+    var kind = link.getAttribute("data-invoice-preview");
+    var orderId = link.getAttribute("data-order");
+    var card = link.closest(".invoice-card");
+    var send = card ? card.querySelector("[data-invoice-send]") : null;
+    if (send) {
+      send.disabled = false;
+      send.classList.remove("btn-ghost");
+      send.classList.add("btn-accent");
+      send.removeAttribute("title");
+    }
+    link.textContent = "Preview again";
+    fetch("/admin/orders/" + orderId + "/invoice/" + kind + "/previewed", { method: "POST", credentials: "same-origin" }).catch(function () {});
+  });
+})();
+</script>`;
+}
+
+/** Invoices open up at Contract draft and stay available through every later stage. *//** Invoices open up at Contract draft and stay available through every later stage. */
+function invoicesUnlocked(order: OrderRow): boolean {
+  if (order.status === "cancelled") return false;
+  return ORDER_STATUSES.indexOf(order.status as OrderStatus) >= ORDER_STATUSES.indexOf("contract_draft");
 }
 
 /** A contract exists once the order reached the draft step (and survives later statuses). */
@@ -1033,13 +1082,15 @@ export function orderModalCard(
     ${signedContracts(order, contracts)}`
       : ""}
 
-    ${(order.status === "paid" || order.status === "paid_in_full")
+    ${invoicesUnlocked(order)
       ? `<h3 class="section-title mt">Invoices</h3>
+    <p class="muted small">Optional at this stage. Send the client invoice for the broker fee now, or wait — nothing is blocked either way. Marking an invoice paid is allowed from here on.</p>
     <div class="invoice-actions">
       ${invoiceAction(order, events, "client")}
       ${invoiceAction(order, events, "carrier")}
     </div>
-    ${invoiceTotalLine(events)}`
+    ${invoiceTotalLine(events)}
+    ${invoicePreviewScript()}`
       : ""}
 
     ${unitBlocks(order, units, "h3")}
@@ -1697,7 +1748,7 @@ export function adminOrdersPage(
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Orders</h1></div>
     <nav class="admin-nav">
-      <a href="/admin/orders"${status === "all" ? ' class="active"' : ""}>Orders</a><a href="/admin/calendar">Schedule</a><a href="/admin/staff">Performance</a>${isAdmin ? '<a href="/admin/users">Staff</a>' : ""}<a href="/admin/account">Account</a>
+      ${adminNav("/admin/orders", isAdmin)}
     </nav>
   </div>
   <form class="orders-search" method="get" action="/admin/orders" role="search">
@@ -1798,6 +1849,17 @@ export function adminOrderPage(
     <a class="btn btn-accent" href="/admin/orders/${order.id}/contract">View contract</a>
     <a class="btn btn-ghost" href="/admin/orders/${order.id}/contract?download=1">Download Word</a>
   </div>`
+      : ""}
+
+  ${invoicesUnlocked(order)
+      ? `<h2 class="section-title mt">Invoices</h2>
+  <p class="muted small">Optional. Send either invoice whenever you need it; marking one paid is allowed at any stage from Contract draft on.</p>
+  <div class="invoice-actions">
+    ${invoiceAction(order, events, "client")}
+    ${invoiceAction(order, events, "carrier")}
+  </div>
+  ${invoiceTotalLine(events)}
+  ${invoicePreviewScript()}`
       : ""}
 
   <h2 class="section-title mt">Full record</h2>
@@ -1950,10 +2012,7 @@ export function adminUsersPage(
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Staff accounts</h1>
       <nav class="admin-nav">
-        <a href="/admin/orders">Orders</a>
-        <a href="/admin/staff">Performance</a>
-        <a href="/admin/users" class="active">Staff</a>
-        <a href="/admin/account">Account</a>
+        ${adminNav("/admin/users", true)}
       </nav>
     </div>
     <div class="admin-user"><span class="muted small">${esc(viewer.email)}</span><form method="post" action="/admin/logout"><button class="btn btn-ghost" type="submit">Sign out</button></form></div>
@@ -2016,10 +2075,7 @@ export function accountPage(
     <div>
       <p class="eyebrow">Dispatch</p><h1 class="page-title">Your account</h1>
       <nav class="admin-nav">
-        <a href="/admin/orders">Orders</a>
-        <a href="/admin/staff">Performance</a>
-        ${user.role === "admin" ? '<a href="/admin/users">Staff</a>' : ""}
-        <a href="/admin/account" class="active">Account</a>
+        ${adminNav("/admin/account", user.role === "admin")}
       </nav>
     </div>
   </div>
@@ -2088,9 +2144,7 @@ export function telegramPage(
   <div class="admin-head">
     <div><p class="eyebrow">Dispatch</p><h1 class="page-title">Telegram notifications</h1>
       <nav class="admin-nav">
-        <a href="/admin/orders">Orders</a>
-        <a href="/admin/telegram" class="active">Telegram</a>
-        <a href="/admin/account">Account</a>
+        ${adminNav("/admin/telegram", true)}
       </nav>
     </div>
   </div>

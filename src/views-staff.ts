@@ -1,4 +1,5 @@
 import { esc, layout, money, whenHtml } from "./views.ts";
+import { adminNav } from "./views-order.ts";
 import type { UserRow } from "./users.ts";
 import { CHANNEL_LABELS } from "./staff.ts";
 import type {
@@ -138,6 +139,13 @@ function trendChart(trend: TrendSeries): string {
     : '<p class="muted">No paid orders in this range.</p>';
 }
 
+/** The profit table reads like a period, not like a bucket. */
+const RANGE_LABELS: Record<"day" | "week" | "month", string> = {
+  day: "Today",
+  week: "Last 7 days",
+  month: "Last 30 days",
+};
+
 const TREND_LABELS: Record<"day" | "week" | "month", string> = {
   day: "Per day — last 14 days",
   week: "Per week — last 12 weeks",
@@ -250,11 +258,15 @@ export function calendarPage(
   const columns = days.length;
   const head = days
     .map(
-      (day) =>
-        `<div class="gantt-day${day.isToday ? " is-today" : ""}${day.isWeekStart ? " is-week" : ""}">
+      (day, index) =>
+        `<div class="gantt-day${day.isToday ? " is-today" : ""}${day.isWeekStart ? " is-week" : ""}" data-day="${index}">
       <span>${esc(day.weekday)}</span><strong>${esc(day.label)}</strong>
     </div>`,
     )
+    .join("");
+
+  const cells = days
+    .map((day, index) => `<span class="gantt-cell${day.isWeekStart ? " is-week" : ""}${day.isToday ? " is-today" : ""}" data-day="${index}" style="grid-column:${index + 2};grid-row:1"></span>`)
     .join("");
 
   const rows = bars.length
@@ -265,7 +277,8 @@ export function calendarPage(
         <strong>${esc(bar.number)}</strong>
         <span>${esc(bar.customer)}</span>
       </a>
-      <div class="gantt-track" style="grid-column:${bar.start + 2} / span ${bar.span}">
+      ${cells}
+      <div class="gantt-track" style="grid-column:${bar.start + 2} / span ${bar.span};grid-row:1">
         <a class="gantt-bar gantt-${esc(bar.status)}" href="/admin/orders?q=${encodeURIComponent(bar.number)}#order-${bar.id}"
            title="${esc(bar.number)} · ${esc(bar.customer)} · ${esc(bar.route)}">
           ${bar.pickup ? '<span class="gantt-cap start"></span>' : ""}
@@ -287,12 +300,7 @@ export function calendarPage(
   <div class="admin-head">
     <div>
       <p class="eyebrow">Dispatch</p><h1 class="page-title">Schedule</h1>
-      <nav class="admin-nav">
-        <a href="/admin/orders">Orders</a>
-        <a href="/admin/calendar" class="active">Schedule</a>
-        <a href="/admin/staff">Performance</a>
-        <a href="/admin/account">Account</a>
-      </nav>
+      ${adminNav("/admin/calendar", true)}
     </div>
   </div>
   <div class="card chart-card">
@@ -307,6 +315,7 @@ export function calendarPage(
     <p class="muted small">One row per order. The bar runs from the pickup date to the delivery date; the colour is the status. A dot at the edge means that end is not scheduled yet.</p>
     <div class="gantt-scroll">
       <div class="gantt" style="--gantt-days:${columns}">
+        <div class="gantt-cursor" hidden></div>
         <div class="gantt-head">
           <div class="gantt-corner">Order</div>
           ${head}
@@ -315,6 +324,37 @@ export function calendarPage(
       </div>
     </div>
   </div>
+  <script>
+(function () {
+  var gantt = document.querySelector(".gantt");
+  var band = document.querySelector(".gantt-cursor");
+  if (!gantt || !band) return;
+
+  function place(event) {
+    var cell = event.target.closest ? event.target.closest("[data-day]") : null;
+    if (!cell) {
+      band.hidden = true;
+      return;
+    }
+    var index = Number(cell.getAttribute("data-day"));
+    var header = gantt.querySelector('.gantt-day[data-day="' + index + '"]');
+    if (!header) {
+      band.hidden = true;
+      return;
+    }
+    var box = header.getBoundingClientRect();
+    var parent = gantt.getBoundingClientRect();
+    band.style.left = box.left - parent.left + "px";
+    band.style.width = box.width + "px";
+    band.style.top = gantt.querySelector(".gantt-head").getBoundingClientRect().bottom - parent.top + "px";
+    band.style.height = parent.height - (gantt.querySelector(".gantt-head").getBoundingClientRect().bottom - parent.top) + "px";
+    band.hidden = false;
+  }
+
+  gantt.addEventListener("mousemove", place);
+  gantt.addEventListener("mouseleave", function () { band.hidden = true; });
+})();
+</script>
 </section>`,
   });
 }
@@ -323,10 +363,16 @@ export function staffPerformancePage(
   data: StaffPerformance,
   viewer: UserRow,
   trends: RevenueTrends,
-  marketing: { ads: number; tax: number },
+  marketing: { ads: number; tax: number; commission: number },
   sources: ChannelRow[] = [],
   spendMonth = "",
   spendMonthLabel = "",
+  commissionBase: { rate: number; actor: string; orders: { day: number; week: number; month: number }; commission: { day: number; week: number; month: number } } = {
+    rate: 10,
+    actor: "",
+    orders: { day: 0, week: 0, month: 0 },
+    commission: { day: 0, week: 0, month: 0 },
+  },
 ): string {
   const href = (period: StaffPeriod, metric: StaffMetric) => `/admin/staff?period=${period}&metric=${metric}`;
   const periodTabs = (Object.keys(PERIOD_LABELS) as StaffPeriod[])
@@ -417,12 +463,7 @@ export function staffPerformancePage(
     <div>
       <p class="eyebrow">Dispatch</p>
       <h1 class="page-title">Staff performance</h1>
-      <nav class="admin-nav">
-        <a href="/admin/orders">Orders</a>
-        <a href="/admin/staff" class="active">Performance</a>
-        ${viewer.role === "admin" ? '<a href="/admin/users">Staff</a>' : ""}
-        <a href="/admin/account">Account</a>
-      </nav>
+      ${adminNav("/admin/staff", viewer.role === "admin")}
     </div>
   </div>
 
@@ -492,29 +533,32 @@ export function staffPerformancePage(
     <div class="field-row">
       <label class="field"><span>Advertising % of broker profit</span><input name="ads_percent" type="number" min="0" max="100" step="0.1" value="${marketing.ads}"></label>
       <label class="field"><span>Tax reserve % of broker profit</span><input name="tax_percent" type="number" min="0" max="100" step="0.1" value="${marketing.tax}"></label>
+      <div class="field"><span>Flat commission</span><p class="field-value">${money(marketing.commission)} per paid order, Max's orders only</p></div>
     </div>
     <button class="btn btn-accent btn-small" type="submit">Save percentages</button>
-    <p class="form-note">Both percentages apply to broker profit — the broker fee on orders marked paid. Dispatchers see the numbers; only admins change them.</p>
+    <p class="form-note">The two percentages apply to broker profit — the broker fee on orders marked paid. The flat commission is taken per paid order, whoever executed it. Dispatchers see the numbers; only admins change them.</p>
   </form>
 
   <table class="table">
-    <thead><tr><th>Range</th><th>Paid orders</th><th>Collected</th><th>Carrier payout</th><th>Broker profit</th><th>Tax (${marketing.tax}%)</th><th>Ads (${marketing.ads}%)</th><th>Kept</th><th>Ad budget / day</th></tr></thead>
+    <thead><tr><th>Range</th><th>Paid orders</th><th>Collected</th><th>Carrier payout</th><th>Broker profit</th><th>Tax (${marketing.tax}%)</th><th>Ads (${marketing.ads}%)</th><th>Your commission</th><th>Kept</th><th>Ad budget / day</th></tr></thead>
     <tbody>${(["day", "week", "month"] as const)
         .map((key) => {
           const trend = trends[key];
           const payout = Math.max(0, trend.revenueTotal - trend.profitTotal);
           const tax = Math.round((trend.profitTotal * marketing.tax) / 100);
           const ads = Math.round((trend.profitTotal * marketing.ads) / 100);
+          const commission = commissionBase.commission[key];
           const days = key === "day" ? 1 : key === "week" ? 7 : 30;
           return `<tr>
-      <td>${TREND_LABELS[key]}</td>
+      <td>${RANGE_LABELS[key]}</td>
       <td>${trend.orderTotal.toLocaleString()}</td>
       <td>${money(trend.revenueTotal)}</td>
       <td>${money(payout)}</td>
       <td>${money(trend.profitTotal)}</td>
       <td>${money(tax)}</td>
       <td>${money(ads)}</td>
-      <td><strong>${money(trend.profitTotal - tax - ads)}</strong></td>
+      <td><strong>${money(commission)}</strong><br><span class="muted small">${commissionBase.orders[key]} × ${money(marketing.commission)}</span></td>
+      <td><strong>${money(trend.profitTotal - tax - ads - commission)}</strong></td>
       <td class="muted small">${money(Math.round(ads / days))}</td>
     </tr>`;
         })

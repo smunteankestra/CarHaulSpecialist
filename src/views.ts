@@ -1739,7 +1739,7 @@ ${options.admin ? "" : `<footer class="site-footer">
       makeBox.enable(false);
       modelBox.enable(false);
       var typeValue = type.value || "car";
-      fetch("/api/vehicles/makes?type=" + encodeURIComponent(typeValue))
+      fetch("/api/vehicles/makes?type=" + encodeURIComponent(typeValue) + "&v=2")
         .then(function (response) { return response.ok ? response.json() : { makes: [] }; })
         .then(function (data) {
           makes = data.makes || [];
@@ -1761,7 +1761,7 @@ ${options.admin ? "" : `<footer class="site-footer">
       var request = ++modelRequest;
       if (!makeKey) { clearModels(); return; }
       modelBox.enable(false);
-      var url = "/api/vehicles/models?make=" + encodeURIComponent(makeKey) + "&type=" + encodeURIComponent(type.value || "car");
+      var url = "/api/vehicles/models?make=" + encodeURIComponent(makeKey) + "&type=" + encodeURIComponent(type.value || "car") + "&v=2";
       if (yearValue) url += "&year=" + encodeURIComponent(yearValue);
       fetch(url)
         .then(function (response) { return response.ok ? response.json() : { models: [] }; })
