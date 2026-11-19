@@ -43,6 +43,7 @@ import {
   type ChannelRow,
 } from "./staff.ts";
 import { stateTimezone, zonedToUtc } from "./timezone.ts";
+import { paypalLink, qrPng } from "./qr.ts";
 import { fallbackMakes, fallbackModels } from "./vehicles.ts";
 import { formatPhone } from "./phone.ts";
 import { deleteObject, getObject, putObject } from "./storage.ts";
@@ -155,6 +156,11 @@ function parseChatIds(value: string | null | undefined): string[] {
     .map((part) => part.trim())
     .filter((part) => /^-?\d{5,20}$/.test(part));
 }
+
+/** Defaults so the invoice works before anyone touches the settings. */
+const DEFAULT_PAYPAL_LINK = "https://www.paypal.com/ncp/payment/XF8EJYEJS2DG8";
+const DEFAULT_CASHAPP_LINK = "https://cash.app/$golomaxi";
+const DEFAULT_VENMO_LINK = "https://account.venmo.com/u/bondat";
 
 /** The person whose orders carry the flat commission. */
 const COMMISSION_ACTOR = "max@bondautotransport.com";
@@ -1999,11 +2005,12 @@ const ORDER_FIELD_GROUPS: Record<string, FieldGroup> = {
   },
   ready_date: {
     label: "Pickup date",
-    columns: ["ready_date"],
+    // A concrete date replaces "as soon as possible", so the flag is cleared with it.
+    columns: ["ready_date", "ready_asap"],
     parse: (body) => {
       const date = fieldText(body, "ready_date");
       if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-      return { ready_date: date || null };
+      return { ready_date: date || null, ready_asap: 0 };
     },
   },
   distance_miles: { label: "Distance", columns: ["distance_miles"], parse: (body) => numberField(body, "distance_miles") },
@@ -2647,6 +2654,12 @@ app.get("/admin/orders/:id/invoice/:kind/preview", async (c) => {
       logo_url: `${origin}/logo.png`,
       issued_on: day(Date.now()),
       delivered_on: day(order.delivered_at ?? order.delivery_eta),
+      pay_base: origin,
+      paypal_link: (await getSetting(c.env.DB, "paypal_link").catch(() => null)) ?? DEFAULT_PAYPAL_LINK,
+      cashapp_link: (await getSetting(c.env.DB, "cashapp_link").catch(() => null)) ?? DEFAULT_CASHAPP_LINK,
+      venmo_link: (await getSetting(c.env.DB, "venmo_link").catch(() => null)) ?? DEFAULT_VENMO_LINK,
+      invoice_method:
+        (kind === "client" ? order.client_invoice_method : order.carrier_invoice_method) ?? order.payment_method,
     },
     kind,
   );
@@ -2729,6 +2742,11 @@ app.post("/admin/orders/:id/invoice/:kind/send", async (c) => {
       logo_url: `${origin}/logo.png`,
       issued_on: day(Date.now()),
       delivered_on: day(order.delivered_at ?? order.delivery_eta),
+      pay_base: origin,
+      paypal_link: (await getSetting(c.env.DB, "paypal_link").catch(() => null)) ?? DEFAULT_PAYPAL_LINK,
+      cashapp_link: (await getSetting(c.env.DB, "cashapp_link").catch(() => null)) ?? DEFAULT_CASHAPP_LINK,
+      venmo_link: (await getSetting(c.env.DB, "venmo_link").catch(() => null)) ?? DEFAULT_VENMO_LINK,
+      invoice_method: method || (kind === "client" ? order.client_invoice_method : order.carrier_invoice_method) || order.payment_method,
     },
     kind,
   );
@@ -3366,7 +3384,66 @@ app.get("/admin/account", async (c) => {
   if (!user) return c.redirect("/admin/login", 303);
   const token = await calendarToken(c.env.DB);
   const origin = new URL(c.req.url).origin;
-  return c.html(accountPage(user, undefined, undefined, { feed: `${origin}/calendar/${token}.ics`, webcal: `webcal://${origin.replace(/^https?:\/\//, "")}/calendar/${token}.ics` }));
+  const paypalHandle = (await getSetting(c.env.DB, "paypal_link").catch(() => null)) ?? DEFAULT_PAYPAL_LINK;
+  const cashappLink = (await getSetting(c.env.DB, "cashapp_link").catch(() => null)) ?? DEFAULT_CASHAPP_LINK;
+  const venmoLink = (await getSetting(c.env.DB, "venmo_link").catch(() => null)) ?? DEFAULT_VENMO_LINK;
+  return c.html(
+    accountPage(
+      user,
+      undefined,
+      undefined,
+      { feed: `${origin}/calendar/${token}.ics`, webcal: `webcal://${origin.replace(/^https?:\/\//, "")}/calendar/${token}.ics` },
+      paypalHandle,
+      cashappLink,
+      venmoLink,
+    ),
+  );
+});
+
+app.post("/admin/account/payment-links", async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.redirect("/admin/login", 303);
+
+  const body = await c.req.parseBody();
+  const clean = (value: unknown, fallback: string) => {
+    const text = String(value ?? "").trim();
+    return /^https?:\/\//i.test(text) ? text : fallback;
+  };
+  await setSetting(c.env.DB, "paypal_link", clean(body.paypal_link, DEFAULT_PAYPAL_LINK));
+  await setSetting(c.env.DB, "cashapp_link", clean(body.cashapp_link, DEFAULT_CASHAPP_LINK));
+  await setSetting(c.env.DB, "venmo_link", clean(body.venmo_link, DEFAULT_VENMO_LINK));
+  return c.redirect("/admin/account", 303);
+});
+
+/** Venmo code, generated from the saved profile link. */
+app.get("/pay/venmo-qr.png", async (c) => {
+  const link = (await getSetting(c.env.DB, "venmo_link").catch(() => null)) ?? DEFAULT_VENMO_LINK;
+  const png = qrPng(link, { scale: 6, margin: 2 });
+  return c.body(png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer, 200, {
+    "content-type": "image/png",
+    "cache-control": "public, max-age=86400",
+  });
+});
+
+/** Cash App code, generated from the saved link. */
+app.get("/pay/cashapp-qr.png", async (c) => {
+  const link = (await getSetting(c.env.DB, "cashapp_link").catch(() => null)) ?? DEFAULT_CASHAPP_LINK;
+  const png = qrPng(link, { scale: 6, margin: 2 });
+  return c.body(png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer, 200, {
+    "content-type": "image/png",
+    "cache-control": "public, max-age=86400",
+  });
+});
+
+/** The QR a client scans when the invoice is paid by PayPal. */
+app.get("/pay/qr.png", async (c) => {
+  const amount = Number(c.req.query("amount") ?? "0");
+  const handle = (await getSetting(c.env.DB, "paypal_me").catch(() => null)) ?? "bondautotransport";
+  const png = qrPng(paypalLink(handle, Number.isFinite(amount) ? amount : 0), { scale: 6, margin: 2 });
+  return c.body(png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer, 200, {
+    "content-type": "image/png",
+    "cache-control": "public, max-age=86400",
+  });
 });
 
 app.post("/admin/account", async (c) => {

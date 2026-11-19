@@ -18,7 +18,8 @@ test("open transport follows the distance curve above the minimum", () => {
   assert.equal(quote.base, 1014);
   assert.equal(quote.conditionFee, 0);
   assert.equal(quote.total, 1014);
-  assert.equal(quote.deposit, 203);
+  // 10% of $1,014, above the $100 floor
+  assert.equal(quote.deposit, 101);
   assert.equal(quote.minimumApplied, false);
 });
 
@@ -26,7 +27,8 @@ test("a short local move uses the local minimum, not the long-haul floor", () =>
   const quote = priceQuote(7, "open", "running", false, undefined, { at: new Date("2026-05-01T12:00:00Z") });
   assert.equal(quote.base, 275);
   assert.equal(quote.total, 275);
-  assert.equal(quote.deposit, 55);
+  // 10% would be $27.50, so the $100 floor applies
+  assert.equal(quote.deposit, 100);
   assert.equal(quote.minimumApplied, true);
 });
 

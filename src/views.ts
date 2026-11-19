@@ -74,6 +74,18 @@ export const when = (value: number) => {
 };
 
 /** Format an ISO date or timestamp as Month/DD/YYYY without timezone drift. */
+/** Compact date for narrow controls: `Nov/19/2026`. */
+export function dateOnlyShort(value: string | number | null): string {
+  if (value === null || value === "") return "";
+  if (typeof value === "number") {
+    const date = new Date(value);
+    return `${MONTHS_SHORT[date.getUTCMonth()] ?? ""}/${String(date.getUTCDate()).padStart(2, "0")}/${date.getUTCFullYear()}`;
+  }
+  const [year, month, day] = value.slice(0, 10).split("-");
+  const monthName = month ? MONTHS_SHORT[Number(month) - 1] : undefined;
+  return year && monthName && day ? `${monthName}/${day}/${year}` : value;
+}
+
 export function dateOnly(value: string | number | null): string {
   if (value === null || value === "") return "";
   if (typeof value === "number") return formatDate(new Date(value));
@@ -88,7 +100,7 @@ export function conditionTag(condition: string): string {
   return condition === "running" ? esc(label) : `<strong class="condition-alert">${esc(label)}</strong>`;
 }
 
-const GA_MEASUREMENT_ID = "G-N6GGYZY28S";
+const GA_MEASUREMENT_ID = "G-3JXJLCZL4L";
 /** Bump when styles.css changes, so phones do not keep a stale sheet. */
 const ASSET_VERSION = "2026-11-13-3";
 
@@ -125,6 +137,9 @@ export function layout(options: {
   canonical?: string;
   admin?: boolean;
 }): string {
+  // WhatsApp wants the full international number, tel: wants plain digits.
+  const chatDigits = site.phone.replace(/\D/g, "");
+  const chatInternational = chatDigits.startsWith("1") ? chatDigits : `1${chatDigits}`;
   const canonicalUrl = options.canonical ? new URL(options.canonical, site.url).toString() : null;
   return `<!doctype html>
 <html lang="en">
@@ -265,9 +280,10 @@ ${options.admin ? "" : `<footer class="site-footer">
 <script>
 (function () {
   var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  var MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   function pad(n) { return String(n).padStart(2, "0"); }
   function iso(date) { return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()); }
-  function format(date) { return MONTHS[date.getMonth()] + "/" + pad(date.getDate()) + "/" + date.getFullYear(); }
+  function format(date) { return MONTHS_SHORT[date.getMonth()] + "/" + pad(date.getDate()) + "/" + date.getFullYear(); }
   function parse(value) {
     var match = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(value);
     return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
@@ -351,17 +367,14 @@ ${options.admin ? "" : `<footer class="site-footer">
     }
 
     function positionPopover() {
-      var rect = root.getBoundingClientRect();
-      var container = root.closest(".hero-card, .card, .modal-card");
-      var bounds = container
-        ? container.getBoundingClientRect()
-        : { left: 0, right: window.innerWidth, width: window.innerWidth, top: 0, bottom: window.innerHeight };
-      var width = Math.max(220, Math.min(300, bounds.width - 56));
+      // Never wider than the field it belongs to, so it cannot leave the page.
+      var rect = trigger.getBoundingClientRect();
+      var width = Math.min(300, Math.max(220, Math.round(rect.width)));
       root.style.setProperty("--date-popover-width", width + "px");
-      var alignRight = rect.left + width > bounds.right - 12;
-      var alignLeft = rect.right - width < bounds.left + 12;
+      var alignRight = rect.left + width > window.innerWidth - 12;
+      var alignLeft = rect.right - width < 12;
       root.classList.toggle("align-right", alignRight && !alignLeft);
-      var alignTop = rect.bottom + 6 + 340 > bounds.bottom - 12 && rect.top - 6 - 340 > bounds.top + 12;
+      var alignTop = rect.bottom + 6 + 340 > window.innerHeight - 12 && rect.top - 6 - 340 > 12;
       root.classList.toggle("align-top", alignTop);
     }
 
@@ -748,19 +761,26 @@ ${options.admin ? "" : `<footer class="site-footer">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
     Chat with us
   </button>
-  <div class="chat-panel" role="dialog" aria-label="Chat with Bond Auto Transport" hidden>
+  <div class="chat-panel" role="dialog" aria-label="Contact Bond Auto Transport" hidden>
     <div class="chat-head">
-      <div><strong>Chat with dispatch</strong><span class="chat-sub">We reply as soon as we can.</span></div>
+      <div><strong>Talk to dispatch</strong><span class="chat-sub">Pick the app you already use.</span></div>
       <button class="chat-close" type="button" aria-label="Close chat">×</button>
     </div>
-    <form class="chat-form">
-      <label>Name<input name="name" required maxlength="100" autocomplete="name"></label>
-      <label>Email or phone<input name="contact" maxlength="200" autocomplete="email"></label>
-      <label>Message<textarea name="message" rows="3" required maxlength="2000"></textarea></label>
-      <input class="chat-honeypot" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
-      <button class="btn btn-accent btn-block" type="submit">Send message</button>
-      <p class="chat-status" role="status"></p>
-    </form>
+    <div class="chat-actions">
+      <a class="chat-action chat-whatsapp" href="https://wa.me/${chatInternational}" target="_blank" rel="noopener">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm5.1 14.1c-.2.6-1.2 1.2-1.7 1.2-.5.1-1 .1-1.6-.1a12 12 0 0 1-5.9-5.2c-.4-.7-.8-1.6-.8-2.4 0-.8.4-1.3.6-1.5.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.7 1.7c.1.2 0 .4-.1.5l-.4.5c-.1.2-.3.3-.1.6.2.4.7 1.1 1.4 1.7.9.8 1.5 1 1.8 1.2.2.1.4 0 .5-.1l.6-.7c.2-.2.3-.2.5-.1l1.6.8c.2.1.4.2.4.3.1.2.1.7-.1 1.3Z"/></svg>
+        WhatsApp
+      </a>
+      <a class="chat-action chat-telegram" href="https://t.me/+${chatInternational}" target="_blank" rel="noopener">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.9 4.3 19 19.1c-.2 1-.8 1.2-1.6.8l-4.5-3.3-2.2 2.1c-.2.2-.4.4-.9.4l.3-4.6 8.4-7.6c.4-.3-.1-.5-.6-.2L7.4 13.1 3 11.7c-1-.3-1-1 .2-1.4l17.3-6.7c.8-.3 1.5.2 1.4 1.3Z"/></svg>
+        Telegram
+      </a>
+      <a class="chat-action chat-call" href="tel:${chatDigits}">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/></svg>
+        Call ${esc(site.phone)}
+      </a>
+    </div>
+    <p class="chat-hint">We answer on WhatsApp and Telegram, or pick up the phone.</p>
   </div>
 </div>
 <script>
@@ -772,34 +792,11 @@ ${options.admin ? "" : `<footer class="site-footer">
   var toggle = widget.querySelector(".chat-toggle");
   var panel = widget.querySelector(".chat-panel");
   var close = widget.querySelector(".chat-close");
-  var form = widget.querySelector(".chat-form");
-  var status = widget.querySelector(".chat-status");
   function open() { panel.hidden = false; toggle.setAttribute("aria-expanded", "true"); }
   function closePanel() { panel.hidden = true; toggle.setAttribute("aria-expanded", "false"); }
   toggle.addEventListener("click", function () { if (panel.hidden) open(); else closePanel(); });
   close.addEventListener("click", closePanel);
   document.addEventListener("keydown", function (event) { if (event.key === "Escape") closePanel(); });
-  form.addEventListener("submit", async function (event) {
-    event.preventDefault();
-    var data = Object.fromEntries(new FormData(form).entries());
-    status.textContent = "Sending…";
-    try {
-      var response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(Object.assign({}, data, { page: location.pathname })),
-      });
-      var result = await response.json();
-      if (result.ok) {
-        status.textContent = "Thanks — dispatch will reply shortly.";
-        form.reset();
-      } else {
-        status.textContent = result.error || "Could not send. Please call us.";
-      }
-    } catch (error) {
-      status.textContent = "Could not send. Please call us.";
-    }
-  });
 })();
 </script>
 <script>
@@ -1955,7 +1952,7 @@ export interface QuoteFormValues {
 }
 
 export function datePicker(name: string, value: string, allowPast = false, required = false): string {
-  const label = value ? dateOnly(value) : "Select a date";
+  const label = value ? dateOnlyShort(value) : "Select a date";
   return `<div class="date-picker" data-date-picker data-allow-past="${allowPast ? "true" : "false"}"${required ? ' data-required="true"' : ""}>
   <input type="hidden" name="${esc(name)}" value="${esc(value)}">
   <input type="hidden" name="${esc(name)}_asap" value="" data-asap>

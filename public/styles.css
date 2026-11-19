@@ -84,6 +84,14 @@ p {
   font-size: 1.1rem;
   letter-spacing: -0.02em;
   white-space: nowrap;
+  /* the wordmark gives way before the CTA is pushed off the page */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.brand span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand-logo {
@@ -1524,6 +1532,9 @@ a.card:hover {
 
 .date-trigger {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1559,6 +1570,14 @@ a.card:hover {
   margin: 0.35rem 0 0;
   font-size: 0.78rem;
   color: #b23030;
+}
+
+.date-value {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .date-icon {
@@ -2360,7 +2379,9 @@ main {
 
 .date-popover {
   width: var(--date-popover-width, 300px);
-  max-width: var(--date-popover-width, 300px);
+  /* 100% is the field width: the calendar can never stick out of the page. */
+  max-width: min(100%, calc(100vw - 2rem));
+  box-sizing: border-box;
 }
 
 .date-picker.align-top .date-popover {
@@ -4606,4 +4627,73 @@ main {
   border-right: 1px solid rgba(118, 160, 60, 0.35);
   pointer-events: none;
   border-radius: 3px;
+}
+
+.invoice-hint {
+  display: block;
+  margin-top: 0.3rem;
+}
+
+@media (max-width: 620px) {
+  .header-inner {
+    gap: 0.6rem;
+  }
+
+  .brand {
+    font-size: 1rem;
+  }
+
+  .brand-logo {
+    height: 34px;
+  }
+
+  .header-cta {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.85rem;
+  }
+}
+
+/* chat: the apps people already use, above the message form */
+.chat-actions {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.2rem 0 0.7rem;
+}
+
+.chat-action {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.62rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid #e3eaf0;
+  background: #fff;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.chat-action:hover {
+  border-color: var(--accent);
+  background: #f7fbf2;
+}
+
+.chat-whatsapp svg {
+  color: #25d366;
+}
+
+.chat-telegram svg {
+  color: #2aabee;
+}
+
+.chat-call svg {
+  color: var(--accent);
+}
+
+.chat-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #7b8fa1;
 }

@@ -1,5 +1,6 @@
 import { esc, MONTH_NAMES, conditionTag, dateOnly, datePicker, layout, money, shortWhenHtml, site, whenHtml } from "./views.ts";
 import { US_STATES, stateCode, stateName } from "./states.ts";
+import { DEFAULT_RULES, depositFor } from "./quote.ts";
 import { ROLE_LABELS, type Role, type UserRow } from "./users.ts";
 import {
   CUSTOMER_STAGES,
@@ -97,7 +98,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       <h1>Book your transport.</h1>
       <p class="lede">We need both addresses and a contact at each end. Dispatch confirms the carrier and the pickup window after you submit.</p>
       <ul class="ticks">
-        <li class="is-free">No card required to book</li>
+        <li class="is-free">No card charged online</li>
         <li>Both addresses and contacts in one form</li>
         <li>Dispatch confirms the carrier before pickup</li>
       </ul>
@@ -108,10 +109,10 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
       <p class="muted small">${price === null ? "Dispatch will confirm the price against the actual lane." : "Based on your route and trailer type. Dispatch confirms before pickup."}</p>
       <ul class="breakdown">
         <li><span>Payment</span><span>On delivery</span></li>
-        <li><span>Deposit</span><span class="is-free">None online</span></li>
+        <li><span>Deposit to reserve</span><span>${price === null ? "—" : money(depositFor(price))}</span></li>
         <li><span>Due now</span><span class="is-free">$0</span></li>
       </ul>
-      <p class="muted small">No card is charged now.</p>
+      <p class="muted small">Nothing is charged online. The deposit is invoiced after dispatch confirms the carrier and the pickup window.</p>
     </aside>
   </div>
 </section>
@@ -219,7 +220,7 @@ export function bookPage(values: BookValues, price: number | null, error?: strin
         <button class="btn btn-ghost" type="button" data-prev-step>Back</button>
         <button class="btn btn-accent" type="submit">Submit booking request</button>
       </div>
-      <p class="form-note">No card is charged now. Dispatch confirms the carrier and price before pickup.</p>
+      <p class="form-note">Nothing is charged online. Dispatch confirms the carrier and the price, then invoices the deposit.</p>
       </section>
     </form>
 
@@ -377,6 +378,35 @@ export function showsCallBanner(justBooked: boolean, status: string): boolean {
   return justBooked && CALL_BANNER_STATUSES.has(status as OrderStatus);
 }
 
+/** What the customer owes and to whom, mirroring the quote page breakdown. */
+function paymentCard(order: OrderRow): string {
+  const total = order.final_quote ?? order.price;
+  const broker = order.broker_fee;
+  const balance = broker !== null ? Math.max(0, total - broker) : null;
+  const deposit = depositFor(total);
+  const paid = order.paid_amount;
+  const stateLabel =
+    order.payment_state === "full" ? "Paid in full" : order.payment_state === "partial" ? "Partially paid" : "Not paid yet";
+
+  const row = (label: string, value: string, note = "") =>
+    `<tr><th>${esc(label)}</th><td><strong>${value}</strong>${note ? `<br><span class="muted small">${note}</span>` : ""}</td></tr>`;
+
+  return `<div class="card mt">
+    <h3>Payment</h3>
+    <table class="table">
+      <tbody>
+        ${row("Total price", money(total), order.distance_miles ? `${order.distance_miles.toLocaleString()} miles` : "")}
+        ${row(`Deposit to reserve (${DEFAULT_RULES.depositPercent}%, min ${money(DEFAULT_RULES.depositMinimum)})`, money(deposit), "Invoiced once dispatch confirms the carrier")}
+        ${broker !== null ? row("Broker fee", money(broker), "Paid to Bond Auto Transport") : ""}
+        ${balance !== null ? row("Balance to the driver", money(balance), "Collected at delivery, after the inspection") : ""}
+        ${order.payment_method ? row("Payment method", esc(order.payment_method)) : ""}
+        ${paid !== null ? row("Received so far", money(paid), stateLabel) : row("Status", esc(stateLabel))}
+      </tbody>
+    </table>
+    <p class="muted small">The balance is paid to the driver when the vehicle is delivered, after you and the driver walk around the car together.</p>
+  </div>`;
+}
+
 export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: InvoiceRow[], justBooked = false): string {
   const done = new Set(events.map((event) => event.kind));
   const current = ORDER_STATUSES.indexOf(order.status as OrderStatus);
@@ -453,6 +483,8 @@ export function trackPage(order: OrderRow, events: OrderEventRow[], invoices: In
       <ul class="timeline">${timeline}</ul>
     </div>
   </div>
+
+  ${paymentCard(order)}
 
   <div class="card mt">
     <h3>Book another vehicle</h3>
@@ -818,10 +850,9 @@ export function invoiceAction(order: OrderRow, events: OrderEventRow[], kind: "c
     ? `<button class="btn btn-ghost btn-small" type="submit" disabled>No ${kind} email</button>`
     : feeMissing
       ? `<button class="btn btn-ghost btn-small" type="submit" disabled title="Set the ${feeLabel} on this order first">Set the ${feeLabel.toLowerCase()} first</button>`
-      : previewed
-        ? `<button class="btn btn-accent btn-small" type="submit">Send to ${kind}</button>`
-        : `<button class="btn btn-ghost btn-small" type="submit" disabled data-invoice-send title="Open the preview first">Send to ${kind}</button>`;
+      : `<button class="btn btn-accent btn-small" type="submit">Send to ${kind}</button>`;
   // The preview needs no email: you can read the document before deciding to send it.
+  // Until it has been opened it is the primary action, so the gate is obvious.
   const preview = `<a class="btn btn-ghost btn-small" href="/admin/orders/${order.id}/invoice/${kind}/preview" target="_blank" rel="noopener"
          data-invoice-preview="${kind}" data-order="${order.id}">${previewed ? "Preview again" : "Preview invoice"}</a>`;
   const amount = invoiceAmountFor(order, kind);
@@ -2064,6 +2095,9 @@ export function accountPage(
   message?: string,
   error?: string,
   calendar?: { feed: string; webcal: string },
+  paypalHandle = "",
+  cashappLink = "",
+  venmoLink = "",
 ): string {
   return layout({
     admin: true,
@@ -2090,6 +2124,21 @@ export function accountPage(
     <label class="field"><span>Confirm new password</span><input name="confirm" type="password" required minlength="10" autocomplete="new-password"></label>
     <button class="btn btn-accent" type="submit">Update password</button>
     <p class="form-note">At least 10 characters. You stay signed in on this device.</p>
+  </form>
+
+  <h2 class="section-title mt">Payment links</h2>
+  <form class="card quote-form" method="post" action="/admin/account/payment-links">
+    <label class="field"><span>PayPal payment link</span>
+      <input name="paypal_link" value="${esc(paypalHandle)}" placeholder="https://www.paypal.com/ncp/payment/XXXXXXXX">
+    </label>
+    <label class="field"><span>Cash App link</span>
+      <input name="cashapp_link" value="${esc(cashappLink)}" placeholder="https://cash.app/$yourtag">
+    </label>
+    <label class="field"><span>Venmo link</span>
+      <input name="venmo_link" value="${esc(venmoLink)}" placeholder="https://account.venmo.com/u/yourtag">
+    </label>
+    <button class="btn btn-accent btn-small" type="submit">Save links</button>
+    <p class="form-note">Shown on client invoices. PayPal uses the QR image in the invoice; Cash App gets a code generated from this link.</p>
   </form>
 
   ${calendar

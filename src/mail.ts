@@ -11,6 +11,16 @@ export interface MailMessage {
 }
 
 export interface InvoiceOrder {
+  /** Public origin, used to build the QR image URL. */
+  pay_base?: string;
+  /** Where a PayPal payment goes. */
+  paypal_link?: string;
+  /** Where a Cash App payment goes. */
+  cashapp_link?: string;
+  /** Where a Venmo payment goes. */
+  venmo_link?: string;
+  /** Method chosen for this invoice; falls back to the order's own method. */
+  invoice_method?: string | null;
   number: string;
   customer_name: string;
   customer_email: string;
@@ -48,6 +58,7 @@ export interface InvoiceOrder {
   track_url?: string;
 }
 
+
 const esc = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const usd = (value: number | null | undefined) =>
@@ -69,6 +80,7 @@ function invoiceShell(options: {
   origin: string[];
   destination: string[];
   footnote: string;
+  pay?: { amount: number; url: string; qrUrl: string; label: string };
 }): string {
   const row = (label: string, value: string) =>
     `<tr><td style="padding:3px 0;color:#5b7186;font-size:12px;white-space:nowrap;padding-right:12px;">${esc(label)}</td><td style="padding:3px 0;font-size:12px;font-weight:600;text-align:right;">${esc(value)}</td></tr>`;
@@ -140,6 +152,28 @@ function invoiceShell(options: {
   </td></tr>
 
   <tr><td style="padding:18px 24px 22px;">
+    ${options.pay
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 0;border:1px solid #e3eaf0;border-radius:8px;">
+      <tr>
+        <td style="padding:12px 14px;vertical-align:middle;">
+          <div style="font-size:13px;font-weight:700;color:#10161c;">Pay ${esc(usd(options.pay.amount))} with ${esc(options.pay.label)}</div>
+          <div style="font-size:12px;color:#33475b;line-height:1.6;margin-top:4px;">
+            ${options.pay.label === "Zelle"
+              ? `Open your bank's app, scan the code, then send <strong>${esc(usd(options.pay.amount))}</strong>.`
+              : `Scan the code with your phone camera, then send <strong>${esc(usd(options.pay.amount))}</strong>.`}
+          </div>
+          ${options.pay.url
+            ? `<div style="font-size:12px;color:#33475b;margin-top:6px;">
+            Or open <a href="${esc(options.pay.url)}" style="color:#4d7020;font-weight:600;">${esc(options.pay.url.replace("https://", ""))}</a>
+          </div>`
+            : ""}
+        </td>
+        <td style="padding:12px 14px;text-align:right;width:150px;">
+          <img src="${esc(options.pay.qrUrl)}" width="132" height="132" alt="${esc(options.pay.label)} QR code" style="display:block;border:0;">
+        </td>
+      </tr>
+    </table>`
+      : ""}
     <p style="margin:0;font-size:12px;line-height:1.6;color:#33475b;">${esc(options.footnote)}</p>
   </td></tr>
 
@@ -153,6 +187,61 @@ function invoiceShell(options: {
 }
 
 /** Client or carrier invoice built from the order. */
+/** The "scan and pay" block: PayPal uses the account's own code, Cash App is generated. */
+function payBlock(
+  order: InvoiceOrder,
+  kind: "client" | "carrier",
+  amount: number,
+): { amount: number; url: string; qrUrl: string; label: string } | undefined {
+  if (kind !== "client" || amount <= 0 || !order.pay_base) return undefined;
+  const method = (order.invoice_method ?? order.payment_method ?? "").trim().toLowerCase();
+  if (method === "paypal") {
+    return {
+      amount,
+      label: "PayPal",
+      url: order.paypal_link ?? "",
+      // The account's own code, so the payer lands on the real profile.
+      qrUrl: `${order.pay_base}/pay/paypal-qr.png`,
+    };
+  }
+  if (method === "cashapp") {
+    return {
+      amount,
+      label: "Cash App",
+      url: order.cashapp_link ?? "",
+      qrUrl: `${order.pay_base}/pay/cashapp-qr.png`,
+    };
+  }
+  if (method === "venmo") {
+    return {
+      amount,
+      label: "Venmo",
+      url: order.venmo_link ?? "",
+      qrUrl: `${order.pay_base}/pay/venmo-qr.png`,
+    };
+  }
+  if (method === "zelle") {
+    return {
+      amount,
+      label: "Zelle",
+      url: "",
+      // Zelle has no payment links: this is the bank's own enrolment code.
+      qrUrl: `${order.pay_base}/pay/zelle-qr.png`,
+    };
+  }
+  return undefined;
+}
+
+/** PayPal takes a cut; the invoice shows it as a line instead of hiding it in the price. */
+const PAYPAL_FEE_PERCENT = 3;
+
+function paymentFee(order: InvoiceOrder, kind: "client" | "carrier", amount: number): number {
+  if (kind !== "client" || amount <= 0) return 0;
+  const method = (order.invoice_method ?? order.payment_method ?? "").trim().toLowerCase();
+  if (method !== "paypal") return 0;
+  return Math.round(amount * PAYPAL_FEE_PERCENT) / 100;
+}
+
 export function buildInvoiceMail(order: InvoiceOrder, kind: "client" | "carrier"): InvoiceMail {
   const vehicleType = order.transport_type === "enclosed" ? "Enclosed trailer" : "Open trailer";
   const lineFor = (year: string | null, make: string | null, model: string | null, vin: string | null, condition: string | null) => {
@@ -174,7 +263,12 @@ export function buildInvoiceMail(order: InvoiceOrder, kind: "client" | "carrier"
           amount: order.invoice_amount ?? (kind === "carrier" ? (order.carrier_fee ?? 0) : (order.price ?? 0)),
         },
       ];
-  const amount = lines.reduce((sum, line) => sum + line.amount, 0);
+  const base = lines.reduce((sum, line) => sum + line.amount, 0);
+  const fee = paymentFee(order, kind, base);
+  if (fee > 0) {
+    lines.push({ qty: 1, description: `PayPal processing fee (${PAYPAL_FEE_PERCENT}%)`, amount: fee });
+  }
+  const amount = base + fee;
   const destination = [
     order.dest_contact || "—",
     [order.dest_street, order.dest_city, [order.dest_state, order.dest_zip].filter(Boolean).join(" ")].filter(Boolean).join(", "),
@@ -215,6 +309,7 @@ export function buildInvoiceMail(order: InvoiceOrder, kind: "client" | "carrier"
       total: amount,
       origin,
       destination,
+      pay: payBlock(order, kind, amount),
       footnote:
         kind === "carrier"
           ? "Payment is released per the terms agreed with dispatch. Reply to this email with any question about the amount."
@@ -235,7 +330,8 @@ export async function sendMail(
   message: MailMessage,
 ): Promise<void> {
   if (!env.RESEND_API_KEY) throw new Error("Email is not configured: set the RESEND_API_KEY secret.");
-  const from = env.MAIL_FROM?.trim() || "Bond Auto Transport <onboarding@resend.dev>";
+  // Dispatch address on the verified domain; the Resend sandbox only as a last resort.
+  const from = env.MAIL_FROM?.trim() || "Bond Auto Transport <operations@bondautotransport.com>";
   // Always the address stored on the order — no test redirection.
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",

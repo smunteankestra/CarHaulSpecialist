@@ -24,6 +24,8 @@ export interface PricingRules {
   noSteerFee: number;
   oversizeFee: number;
   depositPercent: number;
+  /** A booking always reserves at least this much, even on a short local move. */
+  depositMinimum: number;
   minimums: MinimumBand[];
   /** Seasonal demand, applied on top of the curve. */
   seasonFactor: (miles: number, originState: string | null, destState: string | null, at?: Date) => number;
@@ -62,7 +64,8 @@ export const DEFAULT_RULES: PricingRules = {
   inopFee: 150,
   noSteerFee: 250,
   oversizeFee: 200,
-  depositPercent: 20,
+  depositPercent: 10,
+  depositMinimum: 100,
   seasonFactor: defaultSeasonFactor,
   minimums: [
     { upToMiles: 25, open: 275, enclosed: 450 },
@@ -163,6 +166,12 @@ export interface QuoteBreakdown {
   minimumApplied: boolean;
 }
 
+/** 10% of the total, but never under the floor and never more than the total. */
+export function depositFor(total: number, rules: PricingRules = DEFAULT_RULES): number {
+  const percent = Math.round((total * rules.depositPercent) / 100);
+  return Math.min(total, Math.max(percent, rules.depositMinimum));
+}
+
 export function priceQuote(
   distanceMiles: number,
   transport: TransportType,
@@ -188,7 +197,7 @@ export function priceQuote(
     base,
     conditionFee: conditionFee + sizeFee,
     total,
-    deposit: Math.round((total * rules.depositPercent) / 100),
+    deposit: depositFor(total, rules),
     minimumApplied,
   };
 }
